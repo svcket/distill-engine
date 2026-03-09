@@ -1,0 +1,16 @@
+# Environment Variables
+.env
+
+# Google API Credentials
+credentials.json
+token.json
+
+# Temporary Intermediates (as per AGENTS.md)
+.tmp/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
