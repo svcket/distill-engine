@@ -317,7 +317,8 @@ function DraftResult({ data, compact }: { data: Record<string, unknown>; compact
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-between border-b border-border/40 pb-3">
+                <span className="text-sm font-semibold text-foreground">Generated Output</span>
                 <Badge variant="success">{wordCount} words</Badge>
             </div>
             <div className="prose prose-sm max-w-none text-muted-foreground">
@@ -345,6 +346,15 @@ function GenericResult({ data }: { data: Record<string, unknown> }) {
             {message && <p className="text-sm text-muted-foreground">{message}</p>}
             {!status && !message && (
                 <p className="text-sm text-muted-foreground italic">Stage completed successfully.</p>
+            )}
+
+            {/* Fallback to show raw data if no specific status/message is provided but data exists */}
+            {!status && !message && Object.keys(data).length > 0 && typeof data === 'object' && (
+                <div className="mt-4 p-4 rounded-lg bg-muted/30 border border-border/40 overflow-x-auto">
+                    <pre className="text-[10px] sm:text-xs text-muted-foreground font-mono leading-relaxed">
+                        {JSON.stringify(data, null, 2)}
+                    </pre>
+                </div>
             )}
         </div>
     )
@@ -381,7 +391,7 @@ export function StageResultPanel({ stageId, data }: { stageId: StageId; data: Re
         <div className="space-y-6">
             <div className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Stage Output</span>
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Engine Output</span>
             </div>
             <StageResultView stageId={stageId} data={data} compact={false} />
         </div>

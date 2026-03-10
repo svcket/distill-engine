@@ -361,7 +361,6 @@ export default function SourceMissionControl() {
                                 {Boolean(stageResults.qa_rationale) && (
                                     <div className="px-4 py-2.5 rounded-lg bg-muted/20 border border-border/40">
                                         <p className="text-xs text-muted-foreground leading-relaxed">
-                                            <span className="font-medium text-foreground/70">Evaluation rationale: </span>
                                             {String(stageResults.qa_rationale ?? "")}
                                         </p>
                                     </div>
