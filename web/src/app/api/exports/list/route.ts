@@ -17,11 +17,15 @@ export async function GET() {
             try {
                 const raw = fs.readFileSync(path.join(draftsDir, file), 'utf-8')
                 const data = JSON.parse(raw)
-                const videoId = data.video_id || file.replace('_draft.json', '')
+                const sourceId = data.source_id || data.video_id || file.replace('_draft.json', '')
 
                 // Also try to load the angle data for format info
                 let angle = null
-                const anglePath = path.resolve(process.cwd(), `../execution/.tmp/angles/${videoId}_angle.json`)
+                let anglePath = path.resolve(process.cwd(), `../execution/.tmp/angles/${sourceId}_angle.json`)
+                if (!fs.existsSync(anglePath) && data.video_id) {
+                    anglePath = path.resolve(process.cwd(), `../execution/.tmp/angles/${data.video_id}_angle.json`)
+                }
+
                 if (fs.existsSync(anglePath)) {
                     try {
                         angle = JSON.parse(fs.readFileSync(anglePath, 'utf-8'))
@@ -29,7 +33,7 @@ export async function GET() {
                 }
 
                 drafts.push({
-                    id: videoId,
+                    id: sourceId,
                     title: data.data?.title || 'Untitled Draft',
                     content: data.data?.content || '',
                     wordCount: data.data?.word_count || 0,

@@ -37,7 +37,7 @@ export default function Home() {
 
         if (exportsRes.ok) {
           const data = await exportsRes.json()
-          setDrafts((data.items || []) as DraftItem[])
+          setDrafts((data.drafts || []) as DraftItem[])
         }
       } catch { /* silently fail */ }
       finally { setIsLoaded(true) }
