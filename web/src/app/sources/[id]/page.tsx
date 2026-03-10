@@ -29,7 +29,7 @@ interface WorkflowStage {
 }
 
 const STAGES: WorkflowStage[] = [
-    { id: "judge", label: "Source Judge", description: "Score signal quality across any source type", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }) },
+    { id: "judge", label: "Ingest Source", description: "Enrich source metadata and prepare for pipeline", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }) },
     { id: "transcript", label: "Fetch Transcript", description: "Retrieve and index the source transcript", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (id) => ({ sourceId: id }) },
     { id: "refine", label: "Refine Transcript", description: "Clean artifacts, chunk into logical segments", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (id) => ({ transcriptId: id }) },
     { id: "packet", label: "Build Insight Packet", description: "Package top-density segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcriptId: id }) },
@@ -37,7 +37,7 @@ const STAGES: WorkflowStage[] = [
     { id: "angle", label: "Choose Angle", description: "Strategic angle and editorial framing", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id) => ({ transcriptId: id }) },
     { id: "draft", label: "Generate Draft", description: "Full editorial output with streaming", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id) => ({ transcriptId: id }) },
     { id: "visual", label: "Visual Planning", description: "Suggest visuals, diagrams, quote cards", icon: Sparkles, stub: true },
-    { id: "qa", label: "Quality Review", description: "Confidence scoring and fact-checking", icon: ShieldCheck, stub: true },
+    { id: "qa", label: "Evaluate Draft", description: "Grade final editorial output on density and value", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
     { id: "export", label: "Export Asset", description: "Package and deliver final outputs", icon: Download, apiEndpoint: "/api/assets/export", apiBody: (id) => ({ draftId: id }) },
 ]
 
@@ -59,7 +59,10 @@ export default function SourceMissionControl() {
     // Track which stages are completed
     const [completedStages, setCompletedStages] = useState<Set<StageId>>(() => {
         const initial = new Set<StageId>()
-        if (source.score > 0) initial.add("judge")
+        if (source.score > 0) {
+            initial.add("judge")
+            initial.add("qa") // If score exists, evaluation completed historically
+        }
         return initial
     })
 
@@ -79,8 +82,7 @@ export default function SourceMissionControl() {
 
     // Processing logs
     const [logs, setLogs] = useState<{ event: string; time: string; status: "success" | "info" | "error" }[]>([
-        { event: "Discovered via Scouter Agent", time: "Today", status: "info" },
-        ...(source.score > 0 ? [{ event: "Source Judge completed", time: "Today", status: "success" as const }] : [])
+        { event: "Discovered via Scouter Agent", time: "Today", status: "info" }
     ])
 
     // Load persisted state on mount
@@ -163,17 +165,22 @@ export default function SourceMissionControl() {
             // Mark completed
             setCompletedStages(prev => new Set([...prev, stage.id]))
 
-            // Update source score + rationale if judge
-            if (stage.id === "judge" && data.result?.score !== undefined) {
+            // Update source score + rationale if this is the evaluation stage
+            if (stage.id === "qa" && data.result?.score !== undefined) {
                 setSource(s => ({
                     ...s,
                     score: data.result.score,
                     status: data.result.score >= 6 ? "done" : "failed",
-                    title: data.result.title || s.title,
-                    channel: data.result.channel || s.channel,
                 }))
-                // Persist rationale for display
-                setStageResults(prev => ({ ...prev, judge_rationale: data.result.rationale }))
+                setStageResults(prev => ({ ...prev, qa_rationale: data.result.rationale }))
+            }
+            if (stage.id === "judge") {
+                // If judge updates title/channel
+                setSource(s => ({
+                    ...s,
+                    title: data.result?.title || s.title,
+                    channel: data.result?.channel || s.channel,
+                }))
             }
 
             // Add log
@@ -229,15 +236,20 @@ export default function SourceMissionControl() {
                 setStageResults(prev => ({ ...prev, [stage.id]: data.result || data }))
                 setCompletedStages(prev => new Set([...prev, stage.id]))
 
-                if (stage.id === "judge" && data.result?.score !== undefined) {
+                if (stage.id === "qa" && data.result?.score !== undefined) {
                     setSource(s => ({
                         ...s,
                         score: data.result.score,
                         status: data.result.score >= 6 ? "done" : "failed",
-                        title: data.result.title || s.title,
-                        channel: data.result.channel || s.channel,
                     }))
-                    setStageResults(prev => ({ ...prev, judge_rationale: data.result.rationale }))
+                    setStageResults(prev => ({ ...prev, qa_rationale: data.result.rationale }))
+                }
+                if (stage.id === "judge") {
+                    setSource(s => ({
+                        ...s,
+                        title: data.result?.title || s.title,
+                        channel: data.result?.channel || s.channel,
+                    }))
                 }
 
                 setLogs(prev => [{ event: `${stage.label} completed`, time: "Just now", status: "success" }, ...prev])
@@ -334,23 +346,23 @@ export default function SourceMissionControl() {
                                     <div className="w-px h-4 bg-border/60 hidden sm:block" />
                                     <div className="flex items-center gap-2 text-sm">
                                         <BarChart3 className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                        <span className="text-muted-foreground">Score</span>
+                                        <span className="text-muted-foreground">Draft Score</span>
                                         <span className={cn("font-semibold tabular-nums", source.score >= 8 ? "text-emerald-600" : source.score >= 6 ? "text-amber-600" : source.score > 0 ? "text-red-500" : "text-muted-foreground")}>
-                                            {source.score > 0 ? `${source.score}/10` : "—"}
+                                            {source.score > 0 ? `${source.score}/10` : <span className="opacity-70 font-normal italic">Pending...</span>}
                                         </span>
                                         {source.score > 0 && (
                                             <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", source.score >= 6 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600")}>
-                                                {source.score >= 8 ? "Approved" : source.score >= 6 ? "Accepted" : "Rejected"}
+                                                {source.score >= 8 ? "Excellent" : source.score >= 6 ? "Passable" : "Rejected"}
                                             </span>
                                         )}
                                     </div>
                                 </div>
-                                {/* Judge Rationale */}
-                                {Boolean(stageResults.judge_rationale) && (
+                                {/* Draft Evaluate Rationale */}
+                                {Boolean(stageResults.qa_rationale) && (
                                     <div className="px-4 py-2.5 rounded-lg bg-muted/20 border border-border/40">
                                         <p className="text-xs text-muted-foreground leading-relaxed">
-                                            <span className="font-medium text-foreground/70">Decision rationale: </span>
-                                            {String(stageResults.judge_rationale ?? "")}
+                                            <span className="font-medium text-foreground/70">Evaluation rationale: </span>
+                                            {String(stageResults.qa_rationale ?? "")}
                                         </p>
                                     </div>
                                 )}
@@ -510,18 +522,20 @@ export default function SourceMissionControl() {
                             {/* Decision Rationale */}
                             <div className="rounded-xl border border-border/60 bg-background p-5 space-y-4">
                                 <div>
-                                    <h3 className="text-[13px] font-semibold tracking-tight">Decision Rationale</h3>
-                                    <p className="text-[11px] text-muted-foreground/70 mt-0.5">Why this source was evaluated</p>
+                                    <h3 className="text-[13px] font-semibold tracking-tight">Generate Draft to Evaluate</h3>
+                                    <p className="text-[11px] text-muted-foreground/70 mt-0.5">Pipeline converts source to final draft, which is then scored blindly for insight density.</p>
                                 </div>
                                 {source.score > 0 ? (
                                     <div className="space-y-2.5">
-                                        <Badge variant="success">High Signal</Badge>
+                                        <Badge variant={source.score >= 8 ? "success" : source.score >= 6 ? "secondary" : "destructive"}>
+                                            Score: {source.score}/10
+                                        </Badge>
                                         <p className="text-[12px] text-muted-foreground leading-relaxed">
-                                            Source is an established reference. Topic matches NorthStar criteria. Very low clickbait markers.
+                                            {String(stageResults.qa_rationale || "Evaluated by Draft Quality Review system.")}
                                         </p>
                                     </div>
                                 ) : (
-                                    <p className="text-[12px] text-muted-foreground italic">Run the Source Judge to generate a rationale.</p>
+                                    <p className="text-[12px] text-muted-foreground italic">Run the pipeline through &apos;Evaluate Draft&apos; to generate a score.</p>
                                 )}
                             </div>
 

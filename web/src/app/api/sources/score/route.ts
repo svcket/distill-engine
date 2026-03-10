@@ -59,8 +59,8 @@ export async function POST(request: Request) {
             )
         }
 
-        const { success, error, rawOutput } = await runPythonScript(
-            'score_source_candidates.py',
+        const { success, data, error, rawOutput } = await runPythonScript(
+            'ingest_source.py',
             ['--source-id', sourceId]
         )
 
@@ -68,8 +68,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Failed to execute judge script', details: error }, { status: 500 })
         }
 
-        // Return full result — includes score, decision, rationale, title, channel
-        const result = JSON.parse(rawOutput || '{}')
+        const result = data || {}
         return NextResponse.json({ result, message: `Judged source: ${sourceId}` })
 
     } catch (err: unknown) {
