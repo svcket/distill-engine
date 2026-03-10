@@ -8,7 +8,7 @@ import { SourceCandidate } from "@/lib/mockData"
 import {
     ArrowLeft, ExternalLink, Calendar, Clock, BarChart3,
     Loader2, FileText, Bot, Sparkles, Target, Edit3, CheckCircle,
-    ChevronDown, ChevronRight, X, ArrowRight, ShieldCheck, Download, Play
+    ChevronDown, ChevronRight, X, ShieldCheck, Download, Play
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -357,20 +357,12 @@ export default function SourceMissionControl() {
                                         )}
                                     </div>
                                 </div>
-                                {/* Draft Evaluate Rationale */}
-                                {Boolean(stageResults.qa_rationale) && (
-                                    <div className="px-4 py-2.5 rounded-lg bg-muted/20 border border-border/40">
-                                        <p className="text-xs text-muted-foreground leading-relaxed">
-                                            {String(stageResults.qa_rationale ?? "")}
-                                        </p>
-                                    </div>
-                                )}
                             </div>
 
                             {/* ═══ PROGRESSIVE WORKFLOW ACTION STACK ═══ */}
                             <div>
                                 <div className="flex items-center justify-between mb-4">
-                                    <h2 className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-widest">Pipeline Stages</h2>
+                                    <h2 className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-widest font-serif">Pipeline Stages</h2>
                                     {activeIndex < STAGES.length && (
                                         <Button
                                             variant="outline"
@@ -423,7 +415,7 @@ export default function SourceMissionControl() {
                                                 >
                                                     {/* Status Indicator */}
                                                     <div className={cn(
-                                                        "w-[30px] h-[30px] rounded-[10px] flex items-center justify-center shrink-0 transition-all duration-300",
+                                                        "w-[26px] h-[26px] rounded-full flex items-center justify-center shrink-0 transition-all duration-300",
                                                         isCompleted && "bg-emerald-500 text-white shadow-sm shadow-emerald-200",
                                                         isActive && "bg-brand/10 ring-1 ring-brand/30 text-brand",
                                                         isLocked && "bg-muted/60 text-muted-foreground/50",
@@ -461,26 +453,24 @@ export default function SourceMissionControl() {
                                                             {/* Action Buttons */}
                                                             <div className="flex items-center gap-2 shrink-0">
                                                                 {isActive && stage.apiEndpoint && (
-                                                                    <Button
-                                                                        size="sm"
-                                                                        className="gap-1.5 h-8 text-xs rounded-lg shadow-sm"
+                                                                    <button
                                                                         onClick={(e) => { e.stopPropagation(); executeStage(stage) }}
                                                                         disabled={isExecuting}
+                                                                        className="text-xs text-brand font-medium hover:underline transition-all"
                                                                     >
-                                                                        {isExecuting ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
-                                                                        {isExecuting ? "Running..." : "Execute"}
-                                                                    </Button>
-                                                                )}
-                                                                {isCompleted && hasResult && (
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); openPanel(stage) }}
-                                                                        className="text-xs text-muted-foreground hover:text-brand transition-colors px-2 py-1 rounded-md hover:bg-muted"
-                                                                    >
-                                                                        Inspect
+                                                                        {isExecuting ? "Executing..." : "Execute stage"}
                                                                     </button>
                                                                 )}
-                                                                {isCompleted && (
-                                                                    isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                                                                {isCompleted && hasResult && (
+                                                                    <div className="flex items-center gap-2">
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); openPanel(stage) }}
+                                                                            className="text-xs text-muted-foreground hover:text-brand transition-colors px-2 py-1 rounded-md hover:bg-muted"
+                                                                        >
+                                                                            Inspect
+                                                                        </button>
+                                                                        {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                                                                    </div>
                                                                 )}
                                                             </div>
                                                         </div>
@@ -521,7 +511,8 @@ export default function SourceMissionControl() {
                             {/* Decision Rationale */}
                             <div className="rounded-xl border border-border/60 bg-background p-5 space-y-4">
                                 <div>
-                                    <h3 className="text-[13px] font-semibold tracking-tight">Generate Draft to Evaluate</h3>
+                                    <h3 className="text-[13px] font-semibold tracking-tight font-serif text-muted-foreground/80">Decision Rationale</h3>
+                                    <h3 className="text-[13px] font-semibold tracking-tight font-serif mt-1">Generate Draft to Evaluate</h3>
                                     <p className="text-[11px] text-muted-foreground/70 mt-0.5">Pipeline converts source to final draft, which is then scored blindly for insight density.</p>
                                 </div>
                                 {source.score > 0 ? (
@@ -540,7 +531,7 @@ export default function SourceMissionControl() {
 
                             {/* Processing Logs */}
                             <div className="rounded-xl border border-border/60 bg-background p-5 space-y-4">
-                                <h3 className="text-[13px] font-semibold tracking-tight">Processing Log</h3>
+                                <h3 className="text-[13px] font-semibold tracking-tight font-serif">Processing Log</h3>
                                 <div className="space-y-0">
                                     {logs.map((log, i) => (
                                         <div key={i} className={cn(

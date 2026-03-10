@@ -146,7 +146,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Thesis */}
             {thesis && (
                 <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
                         <Lightbulb className="w-3.5 h-3.5" /> Core Thesis
                     </div>
                     <p className="text-sm text-foreground leading-relaxed font-medium">{thesis}</p>
@@ -156,7 +156,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Key Ideas */}
             {keyIdeas.length > 0 && (
                 <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
                         <Zap className="w-3.5 h-3.5" /> Key Ideas
                     </div>
                     <ul className="space-y-1.5">
@@ -173,7 +173,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Frameworks */}
             {!compact && frameworks.length > 0 && (
                 <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
                         <BookOpen className="w-3.5 h-3.5" /> Frameworks
                     </div>
                     <div className="grid gap-2">
@@ -193,7 +193,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Quotes */}
             {!compact && quotes.length > 0 && (
                 <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
                         <MessageSquareQuote className="w-3.5 h-3.5" /> Notable Quotes
                     </div>
                     {quotes.map((q, i) => (
@@ -207,7 +207,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Takeaways */}
             {takeaways.length > 0 && (
                 <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
                         <Target className="w-3.5 h-3.5" /> Builder Takeaways
                     </div>
                     <ul className="space-y-1.5">
@@ -224,7 +224,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Tensions */}
             {!compact && tensions.length > 0 && (
                 <div className="space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Open Questions</div>
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Open Questions</div>
                     <ul className="space-y-1">
                         {tensions.map((t, i) => (
                             <li key={i} className="text-sm text-muted-foreground">? {String(t)}</li>
@@ -263,21 +263,21 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
 
             {framing && (
                 <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Framing Angle</p>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1 font-serif">Framing Angle</p>
                     <p className="text-sm text-foreground font-medium">{framing}</p>
                 </div>
             )}
 
             {audience && (
                 <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Target Audience</p>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1 font-serif">Target Audience</p>
                     <p className="text-sm text-muted-foreground">{audience}</p>
                 </div>
             )}
 
             {titles.length > 0 && (
                 <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Working Titles</p>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 font-serif">Working Titles</p>
                     <div className="space-y-1.5">
                         {titles.map((t, i) => (
                             <div key={i} className="flex items-center gap-2">
@@ -317,15 +317,11 @@ function DraftResult({ data, compact }: { data: Record<string, unknown>; compact
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-border/40 pb-3">
-                <span className="text-sm font-semibold text-foreground">Generated Output</span>
-                <Badge variant="success">{wordCount} words</Badge>
-            </div>
-            <div className="prose prose-sm max-w-none text-muted-foreground">
+            <div className="prose prose-sm max-w-none text-muted-foreground font-serif">
                 {content.split("\n").map((line, i) => {
-                    if (line.startsWith("# ")) return <h1 key={i} className="text-lg font-bold text-foreground mt-4 mb-2">{line.slice(2)}</h1>
-                    if (line.startsWith("## ")) return <h2 key={i} className="text-base font-semibold text-foreground mt-4 mb-1.5">{line.slice(3)}</h2>
-                    if (line.startsWith("### ")) return <h3 key={i} className="text-sm font-semibold text-foreground mt-3 mb-1">{line.slice(4)}</h3>
+                    if (line.startsWith("# ")) return <h1 key={i} className="text-lg font-bold text-foreground mt-4 mb-2 font-serif">{line.slice(2)}</h1>
+                    if (line.startsWith("## ")) return <h2 key={i} className="text-base font-semibold text-foreground mt-4 mb-1.5 font-serif">{line.slice(3)}</h2>
+                    if (line.startsWith("### ")) return <h3 key={i} className="text-sm font-semibold text-foreground mt-3 mb-1 font-serif">{line.slice(4)}</h3>
                     if (line.startsWith("- ")) return <ul key={i}><li className="text-sm text-muted-foreground ml-4">{line.slice(2)}</li></ul>
                     if (line.startsWith("> ")) return <blockquote key={i} className="border-l-2 border-brand/30 pl-3 text-sm italic text-muted-foreground my-2">{line.slice(2)}</blockquote>
                     if (line.trim() === "") return <br key={i} />
@@ -381,17 +377,24 @@ export function StageResultView({ stageId, data, compact = false }: StageResultV
         case "draft":
             return <DraftResult data={d} compact={compact} />
         default:
-            return <GenericResult data={d} />
+            return <GenericResult data={d as Record<string, unknown>} />
     }
 }
 
 // Export for use in Inspect panel with full detail
 export function StageResultPanel({ stageId, data }: { stageId: StageId; data: Record<string, unknown> }) {
+    const wordCount = stageId === "draft" ? getNum(data.data || data, "word_count") : null;
+
     return (
         <div className="space-y-6">
-            <div className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Engine Output</span>
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Engine Output</span>
+                </div>
+                {wordCount !== null && (
+                    <Badge variant="success" className="font-sans">{wordCount} words</Badge>
+                )}
             </div>
             <StageResultView stageId={stageId} data={data} compact={false} />
         </div>
