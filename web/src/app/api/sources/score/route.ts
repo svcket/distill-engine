@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
-import { adaptJudgeResponse } from '@/lib/adapters'
 import path from 'path'
 import fs from 'fs'
 
+/**
+ * Score any source using the quality-based scoring engine.
+ * Now works for all source types, not just YouTube.
+ * Returns full result including rationale string for display in the UI.
+ */
 export async function POST(request: Request) {
     try {
         const { sourceId } = await request.json()
@@ -12,50 +16,60 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing 'sourceId' parameter." }, { status: 400 })
         }
 
-        // Ensure metadata exists for this source so the scoring script can find it
         const executionDir = path.resolve(process.cwd(), '../execution')
         const sourceDir = path.join(executionDir, '.tmp', 'sources')
         fs.mkdirSync(sourceDir, { recursive: true })
 
-        // Check if any discovery file already contains this source ID
-        const existingFiles = fs.readdirSync(sourceDir).filter(f => f.endsWith('.json'))
-        let found = false
-        for (const file of existingFiles) {
-            try {
-                const data = JSON.parse(fs.readFileSync(path.join(sourceDir, file), 'utf8'))
-                if (Array.isArray(data) && data.some((item: Record<string, unknown>) => item.video_id === sourceId)) {
-                    found = true
-                    break
-                }
-            } catch { /* skip corrupted files */ }
+        // Ensure source metadata exists — try direct file, then scan all files
+        const directFile = path.join(sourceDir, `${sourceId}.json`)
+        let found = fs.existsSync(directFile)
+
+        if (!found) {
+            const existingFiles = fs.readdirSync(sourceDir).filter(f => f.endsWith('.json'))
+            for (const file of existingFiles) {
+                try {
+                    const data = JSON.parse(fs.readFileSync(path.join(sourceDir, file), 'utf8'))
+                    const items = Array.isArray(data) ? data : [data]
+                    if (items.some((item: Record<string, unknown>) =>
+                        item.video_id === sourceId || item.source_id === sourceId
+                    )) {
+                        found = true
+                        break
+                    }
+                } catch { /* skip */ }
+            }
         }
 
-        // If not found, write a minimal metadata file so the scorer can process it
+        // If still not found, write a minimal stub so scorer can run
         if (!found) {
-            const metadata = [{
+            const stub = [{
+                source_id: sourceId,
                 video_id: sourceId,
+                source_type: 'youtube',
                 title: `Source ${sourceId}`,
-                channel: "unknown",
-                duration: "PT10M0S",
-                description: "",
-                topic_matches: [],
-                whitelist_match: false,
+                channel: 'Unknown',
+                duration: 'PT10M0S',
+                duration_seconds: 600,
+                description: '',
+                transcript_status: 'unknown',
             }]
             fs.writeFileSync(
-                path.join(sourceDir, `fallback_${sourceId}.json`),
-                JSON.stringify(metadata, null, 2)
+                path.join(sourceDir, `${sourceId}.json`),
+                JSON.stringify(stub, null, 2)
             )
         }
 
-        const { success, error, rawOutput } = await runPythonScript("score_source_candidates.py", ["--video-id", sourceId])
+        const { success, error, rawOutput } = await runPythonScript(
+            'score_source_candidates.py',
+            ['--source-id', sourceId]
+        )
 
         if (!success) {
-            return NextResponse.json({ error: "Failed to execute judge script", details: error }, { status: 500 })
+            return NextResponse.json({ error: 'Failed to execute judge script', details: error }, { status: 500 })
         }
 
-        // Convert raw script output to UI status
-        const result = adaptJudgeResponse(rawOutput || "")
-
+        // Return full result — includes score, decision, rationale, title, channel
+        const result = JSON.parse(rawOutput || '{}')
         return NextResponse.json({ result, message: `Judged source: ${sourceId}` })
 
     } catch (err: unknown) {

@@ -15,7 +15,7 @@ import { useParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 
 // ─── Workflow Stage Definitions ────────────────────────────────────────
-type StageId = "judge" | "transcript" | "refine" | "packet" | "insights" | "angle" | "draft" | "qa" | "export"
+type StageId = "judge" | "transcript" | "refine" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "export"
 type StageStatus = "completed" | "active" | "locked"
 
 interface WorkflowStage {
@@ -23,19 +23,21 @@ interface WorkflowStage {
     label: string
     description: string
     icon: React.ElementType
+    stub?: boolean   // Not yet implemented — renders as locked
     apiEndpoint?: string
     apiBody?: (id: string) => Record<string, string>
 }
 
 const STAGES: WorkflowStage[] = [
-    { id: "judge", label: "Source Judge", description: "Evaluate signal quality and NorthStar alignment", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }) },
-    { id: "transcript", label: "Fetch Transcript", description: "Retrieve raw YouTube transcript data", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (id) => ({ url: `https://youtube.com/watch?v=${id}` }) },
+    { id: "judge", label: "Source Judge", description: "Score signal quality across any source type", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }) },
+    { id: "transcript", label: "Fetch Transcript", description: "Retrieve and index the source transcript", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (id) => ({ sourceId: id }) },
     { id: "refine", label: "Refine Transcript", description: "Clean artifacts, chunk into logical segments", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "packet", label: "Build Insight Packet", description: "Package metadata and transcript for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "insights", label: "Extract Insights", description: "LLM-powered thesis, frameworks, and takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (id) => ({ transcriptId: id }) },
+    { id: "packet", label: "Build Insight Packet", description: "Package top-density segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcriptId: id }) },
+    { id: "insights", label: "Extract Insights", description: "LLM-powered thesis, frameworks, takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (id) => ({ transcriptId: id }) },
     { id: "angle", label: "Choose Angle", description: "Strategic angle and editorial framing", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "draft", label: "Generate Draft", description: "Full editorial output generation", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "qa", label: "Quality Review", description: "Confidence scoring and fact-checking", icon: ShieldCheck },
+    { id: "draft", label: "Generate Draft", description: "Full editorial output with streaming", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id) => ({ transcriptId: id }) },
+    { id: "visual", label: "Visual Planning", description: "Suggest visuals, diagrams, quote cards", icon: Sparkles, stub: true },
+    { id: "qa", label: "Quality Review", description: "Confidence scoring and fact-checking", icon: ShieldCheck, stub: true },
     { id: "export", label: "Export Asset", description: "Package and deliver final outputs", icon: Download, apiEndpoint: "/api/assets/export", apiBody: (id) => ({ draftId: id }) },
 ]
 
@@ -161,9 +163,17 @@ export default function SourceMissionControl() {
             // Mark completed
             setCompletedStages(prev => new Set([...prev, stage.id]))
 
-            // Update source score if judge
-            if (stage.id === "judge" && data.result?.score) {
-                setSource(s => ({ ...s, score: data.result.score, status: data.result.status || "done" }))
+            // Update source score + rationale if judge
+            if (stage.id === "judge" && data.result?.score !== undefined) {
+                setSource(s => ({
+                    ...s,
+                    score: data.result.score,
+                    status: data.result.score >= 6 ? "done" : "failed",
+                    title: data.result.title || s.title,
+                    channel: data.result.channel || s.channel,
+                }))
+                // Persist rationale for display
+                setStageResults(prev => ({ ...prev, judge_rationale: data.result.rationale }))
             }
 
             // Add log
@@ -215,8 +225,15 @@ export default function SourceMissionControl() {
                 setStageResults(prev => ({ ...prev, [stage.id]: data.result || data }))
                 setCompletedStages(prev => new Set([...prev, stage.id]))
 
-                if (stage.id === "judge" && data.result?.score) {
-                    setSource(s => ({ ...s, score: data.result.score, status: data.result.status || "done" }))
+                if (stage.id === "judge" && data.result?.score !== undefined) {
+                    setSource(s => ({
+                        ...s,
+                        score: data.result.score,
+                        status: data.result.score >= 6 ? "done" : "failed",
+                        title: data.result.title || s.title,
+                        channel: data.result.channel || s.channel,
+                    }))
+                    setStageResults(prev => ({ ...prev, judge_rationale: data.result.rationale }))
                 }
 
                 setLogs(prev => [{ event: `${stage.label} completed`, time: "Just now", status: "success" }, ...prev])
@@ -296,27 +313,43 @@ export default function SourceMissionControl() {
                         {/* ═══ LEFT COLUMN ═══ */}
                         <div className="space-y-8">
 
-                            {/* Metadata Row */}
-                            <div className="flex items-center gap-6 py-3.5 px-5 rounded-xl bg-muted/30 border border-border/60 backdrop-blur-sm">
-                                <div className="flex items-center gap-2 text-sm">
-                                    <Calendar className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                    <span className="text-muted-foreground">Published</span>
-                                    <span className="font-medium">{source.published}</span>
+                            {/* Metadata Row — horizontal, single line */}
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-4 py-3 px-4 rounded-xl bg-muted/30 border border-border/60 flex-wrap">
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <Calendar className="w-3.5 h-3.5 text-muted-foreground/70" />
+                                        <span className="text-muted-foreground">Published</span>
+                                        <span className="font-medium">{source.published}</span>
+                                    </div>
+                                    <div className="w-px h-4 bg-border/60 hidden sm:block" />
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
+                                        <span className="text-muted-foreground">Duration</span>
+                                        <span className="font-medium">{source.duration}</span>
+                                    </div>
+                                    <div className="w-px h-4 bg-border/60 hidden sm:block" />
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <BarChart3 className="w-3.5 h-3.5 text-muted-foreground/70" />
+                                        <span className="text-muted-foreground">Score</span>
+                                        <span className={cn("font-semibold tabular-nums", source.score >= 8 ? "text-emerald-600" : source.score >= 6 ? "text-amber-600" : source.score > 0 ? "text-red-500" : "text-muted-foreground")}>
+                                            {source.score > 0 ? `${source.score}/10` : "—"}
+                                        </span>
+                                        {source.score > 0 && (
+                                            <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", source.score >= 6 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600")}>
+                                                {source.score >= 8 ? "Approved" : source.score >= 6 ? "Accepted" : "Rejected"}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="w-px h-4 bg-border/60" />
-                                <div className="flex items-center gap-2 text-sm">
-                                    <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                    <span className="text-muted-foreground">Duration</span>
-                                    <span className="font-medium">{source.duration}</span>
-                                </div>
-                                <div className="w-px h-4 bg-border/60" />
-                                <div className="flex items-center gap-2 text-sm">
-                                    <BarChart3 className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                    <span className="text-muted-foreground">Score</span>
-                                    <span className={cn("font-semibold tabular-nums", source.score >= 8 ? "text-emerald-600" : source.score >= 6 ? "text-amber-600" : source.score > 0 ? "text-red-500" : "text-muted-foreground")}>
-                                        {source.score > 0 ? `${source.score}/10` : "—"}
-                                    </span>
-                                </div>
+                                {/* Judge Rationale */}
+                                {Boolean(stageResults.judge_rationale) && (
+                                    <div className="px-4 py-2.5 rounded-lg bg-muted/20 border border-border/40">
+                                        <p className="text-xs text-muted-foreground leading-relaxed">
+                                            <span className="font-medium text-foreground/70">Decision rationale: </span>
+                                            {String(stageResults.judge_rationale ?? "")}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
 
                             {/* ═══ PROGRESSIVE WORKFLOW ACTION STACK ═══ */}
@@ -364,7 +397,8 @@ export default function SourceMissionControl() {
                                                     "relative z-10 flex items-start gap-3.5 py-3.5 px-4 rounded-xl transition-all duration-200",
                                                     isActive && "bg-brand/[0.04] border border-brand/15 shadow-sm",
                                                     isCompleted && "hover:bg-muted/30 cursor-pointer",
-                                                    isLocked && "opacity-35"
+                                                    stage.stub && !isCompleted && "opacity-40 cursor-not-allowed",
+                                                    !stage.stub && isLocked && "opacity-35"
                                                 )}
                                                     onClick={() => {
                                                         if (isCompleted && hasResult) {

@@ -1,115 +1,195 @@
+"""
+Transcript Harvester — multi-source transcript fetcher.
+Routes to the appropriate adapter based on source type.
+Supports: YouTube (youtube_transcript_api), Vimeo (manual), Podcast/Upload (Whisper stub).
+"""
+
 import sys
 import argparse
 import json
 import os
 import re
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.formatters import JSONFormatter
 
-def extract_video_id(url: str):
-    """Safely extract the v= ID from a youtube url or just return the ID if already short."""
-    if "v=" in url:
-        return url.split("v=")[1].split("&")[0]
-    elif "youtu.be/" in url:
-        return url.split("youtu.be/")[1].split("?")[0]
-    return url
+def extract_video_id(url_or_id: str) -> str:
+    """Extract YouTube video ID from URL or return bare ID."""
+    if "v=" in url_or_id:
+        return url_or_id.split("v=")[1].split("&")[0]
+    elif "youtu.be/" in url_or_id:
+        return url_or_id.split("youtu.be/")[1].split("?")[0]
+    return url_or_id
 
-def fetch_video_transcript(url_or_id: str):
+
+def load_source_metadata(source_id: str) -> dict:
+    """Load normalized source from .tmp/sources/."""
+    base = os.path.dirname(__file__)
+    # Try direct file first
+    direct = os.path.join(base, ".tmp", "sources", f"{source_id}.json")
+    if os.path.exists(direct):
+        try:
+            with open(direct, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data[0] if isinstance(data, list) and data else data
+        except Exception:
+            pass
+    return {"source_id": source_id, "source_type": "youtube"}
+
+
+def fetch_youtube_transcript(source_id: str, output_dir: str) -> dict:
+    """Fetch YouTube transcript via youtube_transcript_api."""
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    api = YouTubeTranscriptApi()
+    transcript = api.fetch(source_id, languages=("en",))
+
+    transcript_list = []
+    for chunk in getattr(transcript, "snippets", transcript):
+        transcript_list.append({
+            "text": getattr(chunk, "text", ""),
+            "start": getattr(chunk, "start", 0),
+            "duration": getattr(chunk, "duration", 0),
+        })
+
+    json_path = os.path.join(output_dir, f"{source_id}_raw.json")
+    txt_path = os.path.join(output_dir, f"{source_id}_raw.txt")
+
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(transcript_list, f, indent=2)
+
+    with open(txt_path, "w", encoding="utf-8") as f:
+        f.write(" ".join(c["text"] for c in transcript_list))
+
+    return {
+        "source_id": source_id,
+        "video_id": source_id,
+        "status": "success",
+        "json_path": json_path,
+        "text_path": txt_path,
+        "segment_count": len(transcript_list),
+        "chunk_count": len(transcript_list),
+    }
+
+
+def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str) -> dict:
     """
-    Retrieves the actual transcript data for a requested video.
+    Whisper-based transcription for podcasts, uploads, and Vimeo.
+    Currently a stub — returns a clear status for the UI to display.
     """
-    video_id = extract_video_id(url_or_id)
-    
-    output_dir = os.path.join(os.getcwd(), ".tmp", "transcripts", video_id)
+    # TODO: Implement OpenAI Whisper API call when audio URL is accessible
+    stub_segments = [
+        {"text": "Whisper transcription is not yet implemented for this source type.", "start": 0.0, "duration": 5.0},
+        {"text": "Upload the audio file directly or provide a direct MP3/WAV URL to enable auto-transcription.", "start": 5.0, "duration": 5.0},
+    ]
+
+    json_path = os.path.join(output_dir, f"{source_id}_raw.json")
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(stub_segments, f, indent=2)
+
+    return {
+        "source_id": source_id,
+        "status": "success_stub",
+        "json_path": json_path,
+        "segment_count": len(stub_segments),
+        "chunk_count": len(stub_segments),
+        "note": "Whisper transcription stub — implement OpenAI Whisper API for full support.",
+    }
+
+
+def make_mock_transcript(source_id: str, output_dir: str, reason: str = "") -> dict:
+    """Fallback mock transcript when real fetch fails."""
+    mock = [
+        {"text": f"Mock transcript for source {source_id}.", "start": 0.0, "duration": 5.0},
+        {"text": reason or "The transcript could not be retrieved for this source.", "start": 5.0, "duration": 5.0},
+        {"text": "The pipeline execution layer is working correctly.", "start": 10.0, "duration": 4.0},
+    ]
+    json_path = os.path.join(output_dir, f"{source_id}_raw.json")
+    txt_path = os.path.join(output_dir, f"{source_id}_raw.txt")
+
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(mock, f, indent=2)
+    with open(txt_path, "w", encoding="utf-8") as f:
+        f.write(" ".join(c["text"] for c in mock))
+
+    return {
+        "source_id": source_id,
+        "video_id": source_id,
+        "status": "success_mocked",
+        "json_path": json_path,
+        "text_path": txt_path,
+        "segment_count": len(mock),
+        "chunk_count": len(mock),
+        "note": f"Mock transcript served. Reason: {reason or 'unknown'}",
+    }
+
+
+def fetch_transcript(source_id: str, source_url: str = None, source_type: str = None):
+    """Main entrypoint — dispatch to correct fetcher based on source type."""
+    base = os.path.dirname(__file__)
+
+    # Load metadata if not provided
+    if not source_type or not source_url:
+        metadata = load_source_metadata(source_id)
+        source_type = source_type or metadata.get("source_type", "youtube")
+        source_url = source_url or metadata.get("url", f"https://youtube.com/watch?v={source_id}")
+
+    # Determine the actual YouTube ID for YouTube sources
+    yt_id = source_id
+    if source_type == "youtube":
+        yt_id = extract_video_id(source_url) if source_url else source_id
+        if not yt_id or len(yt_id) > 20:
+            yt_id = source_id
+
+    output_dir = os.path.join(base, ".tmp", "transcripts", source_id)
     os.makedirs(output_dir, exist_ok=True)
-    
+
     try:
-        # Fetch the transcript
-        api = YouTubeTranscriptApi()
-        transcript = api.fetch(video_id, languages=("en",))
-        
-        # Format into basic dicts for json saving
-        transcript_list = []
-        for chunk in getattr(transcript, 'snippets', transcript):
-             transcript_list.append({
-                 "text": getattr(chunk, 'text', ''),
-                 "start": getattr(chunk, 'start', 0),
-                 "duration": getattr(chunk, 'duration', 0)
-             })
-        
-        # Format the JSON raw data natively
-        json_formatted = json.dumps(transcript_list, indent=2)
-        
-        # Save JSON output (Preserves timestamps)
-        json_out_path = os.path.join(output_dir, f"{video_id}_raw.json")
-        with open(json_out_path, "w", encoding='utf-8') as f:
-            f.write(json_formatted)
-            
-        # Save Flat Text output (Easy human reading / basic chunking)
-        text_out_path = os.path.join(output_dir, f"{video_id}_raw.txt")
-        text_content = " ".join([chunk['text'] for chunk in transcript_list])
-        
-        # Basic artifact cleanup for the flat text
-        text_content = text_content.replace("\n", " ").replace("  ", " ")
-        
-        with open(text_out_path, "w", encoding='utf-8') as f:
-            f.write(text_content)
-            
-        # Prepare structured metadata for Node to read from stdout
-        result = {
-            "video_id": video_id,
-            "status": "success",
-            "json_path": json_out_path,
-            "text_path": text_out_path,
-            "chunk_count": len(transcript_list)
-        }
-        print(json.dumps(result))
+        if source_type == "youtube":
+            result = fetch_youtube_transcript(yt_id, output_dir)
+            # Normalise source_id reference in result
+            result["source_id"] = source_id
+            result["video_id"] = source_id
+            print(json.dumps(result))
+
+        elif source_type in ("podcast", "upload"):
+            result = fetch_whisper_transcript(source_id, source_url, output_dir)
+            print(json.dumps(result))
+
+        elif source_type == "vimeo":
+            result = make_mock_transcript(source_id, output_dir, "Vimeo transcripts require manual upload.")
+            print(json.dumps(result))
+
+        else:
+            result = make_mock_transcript(source_id, output_dir, f"Unsupported source type: {source_type}")
+            print(json.dumps(result))
 
     except Exception as e:
-        # Fallback to mock data if network or API fails (e.g. in restricted environments)
         error_str = str(e)
-        if ("Failed to resolve" in error_str or "nodename nor servname" in error_str 
-            or "Max retries exceeded" in error_str or "CouldNotRetrieveTranscript" in error_str 
-            or "TranscriptsDisabled" in error_str or "VideoUnavailable" in error_str 
-            or "NoTranscriptFound" in error_str or "mock_" in video_id or "src_" in video_id):
-            transcript_list = [
-                {"text": "This is a mock transcript because the network connection to YouTube failed or the video is a mock test.", "start": 0.0, "duration": 5.0},
-                {"text": "The execution bridge and script architecture are working perfectly.", "start": 5.0, "duration": 4.5},
-                {"text": "We are just bypassing the network firewall in this container.", "start": 9.5, "duration": 4.0}
-            ]
-            json_formatted = json.dumps(transcript_list, indent=2)
-            
-            json_out_path = os.path.join(output_dir, f"{video_id}_raw.json")
-            with open(json_out_path, "w", encoding='utf-8') as f:
-                f.write(json_formatted)
-                
-            text_out_path = os.path.join(output_dir, f"{video_id}_raw.txt")
-            text_content = " ".join([chunk['text'] for chunk in transcript_list])
-            with open(text_out_path, "w", encoding='utf-8') as f:
-                f.write(text_content)
-                
-            result = {
-                "video_id": video_id,
-                "status": "success_mocked",
-                "json_path": json_out_path,
-                "text_path": text_out_path,
-                "chunk_count": len(transcript_list),
-                "note": "Network blocked, served mock."
-            }
+        recoverable = any(x in error_str for x in [
+            "CouldNotRetrieveTranscript", "TranscriptsDisabled",
+            "VideoUnavailable", "NoTranscriptFound",
+            "Failed to resolve", "nodename nor servname", "Max retries",
+        ])
+        if recoverable or "mock_" in source_id or "src_" in source_id:
+            result = make_mock_transcript(source_id, output_dir, error_str[:120])
             print(json.dumps(result))
-            return
+        else:
+            print(json.dumps({"source_id": source_id, "status": "error", "error_detail": error_str}), file=sys.stderr)
+            sys.exit(1)
 
-        error_result = {
-            "video_id": video_id,
-            "status": "error",
-            "error_detail": str(e)
-        }
-        print(json.dumps(error_result), file=sys.stderr)
-        sys.exit(1)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Fetch and save raw YouTube transcripts.")
-    parser.add_argument("--url", required=True, help="YouTube Video URL or strict Video ID.")
-    
+    parser = argparse.ArgumentParser(description="Fetch transcript for any source type.")
+    parser.add_argument("--url", help="Source URL (YouTube, Vimeo, podcast, etc.)")
+    parser.add_argument("--source-id", help="Normalized source ID")
+    parser.add_argument("--source-type", default=None, help="Source type override")
     args = parser.parse_args()
-    fetch_video_transcript(args.url)
+
+    # Resolve source_id from URL if not provided
+    source_id = args.source_id
+    if not source_id and args.url:
+        source_id = extract_video_id(args.url)
+
+    if not source_id:
+        print(json.dumps({"status": "error", "error_detail": "Must provide --url or --source-id"}), file=sys.stderr)
+        sys.exit(1)
+
+    fetch_transcript(source_id, args.url, args.source_type)

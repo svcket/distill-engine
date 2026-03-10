@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/Badge"
 import { cn } from "@/lib/utils"
 import { BarChart3, BookOpen, Lightbulb, MessageSquareQuote, Target, Zap } from "lucide-react"
 
-type StageId = "judge" | "transcript" | "refine" | "packet" | "insights" | "angle" | "draft" | "qa" | "export"
+type StageId = "judge" | "transcript" | "refine" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "export"
 
 interface StageResultViewProps {
     stageId: StageId
