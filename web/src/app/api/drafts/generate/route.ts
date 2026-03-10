@@ -121,7 +121,10 @@ function runBatch(script: string, args: string[]): Promise<{ success: boolean; r
         proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
         proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
         proc.on('close', (code: number) => {
-            resolve({ success: code === 0, rawOutput: stdout.trim(), error: stderr.trim() })
+            const out = stdout.trim()
+            const lines = out.split('\n')
+            const possibleJson = [...lines].reverse().find(l => l.trim().startsWith('{') || l.trim().startsWith('['))
+            resolve({ success: code === 0, rawOutput: possibleJson || out, error: stderr.trim() })
         })
         proc.on('error', (err: Error) => {
             resolve({ success: false, error: err.message })

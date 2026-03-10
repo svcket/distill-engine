@@ -73,8 +73,8 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
                 <Badge variant="secondary">{segmentCount} segments retrieved</Badge>
             </div>
             {!compact && segments.length > 0 && (
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {segments.slice(0, 5).map((seg, i) => {
+                <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
+                    {segments.map((seg, i) => {
                         const s = seg as Record<string, unknown>
                         return (
                             <div key={i} className="p-3 rounded-lg bg-muted/40 border border-border/40">
@@ -85,9 +85,6 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
                             </div>
                         )
                     })}
-                    {segments.length > 5 && (
-                        <p className="text-xs text-muted-foreground italic">+ {segments.length - 5} more segments</p>
-                    )}
                 </div>
             )}
         </div>

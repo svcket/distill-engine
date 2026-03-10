@@ -42,11 +42,12 @@ export async function runPythonScript<T = any>(
             // in production we should ensure scripts ONLY print JSON to stdout.
 
             const lines = output.split('\n')
-            const possibleJson = lines.find(l => l.trim().startsWith('{') || l.trim().startsWith('['))
+            // Reversing so if there are multiple JSON-like lines (e.g. warnings), we get the actual final output payload
+            const possibleJson = [...lines].reverse().find(l => l.trim().startsWith('{') || l.trim().startsWith('['))
 
             if (possibleJson) {
                 const data = JSON.parse(possibleJson) as T
-                return { success: true, data, rawOutput: output }
+                return { success: true, data, rawOutput: possibleJson }
             }
 
             // Fallback: try parsing the entire output
