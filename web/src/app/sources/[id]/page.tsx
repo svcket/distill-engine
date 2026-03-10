@@ -214,10 +214,14 @@ export default function SourceMissionControl() {
             setExecutingStage(stage.id)
 
             try {
+                const bodyPayload = stage.id === "draft"
+                    ? { ...stage.apiBody(id), stream: false }
+                    : stage.apiBody(id)
+
                 const res = await fetch(stage.apiEndpoint, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(stage.apiBody(id))
+                    body: JSON.stringify(bodyPayload)
                 })
                 const data = await res.json()
                 if (!res.ok) throw new Error(data.error || "Execution failed")
