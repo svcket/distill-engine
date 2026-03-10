@@ -9,6 +9,7 @@ export interface SourceCandidate {
     published: string;
     status: Status;
     score: number;
+    completedStages?: string[];
 }
 
 export interface TranscriptChunk {

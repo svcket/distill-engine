@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/Card"
 import { Button } from "@/components/ui/Button"
 import { Input } from "@/components/ui/Input"
@@ -14,20 +15,19 @@ import { cn } from "@/lib/utils"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-type Tab = "accepted" | "processing" | "pending" | "rejected"
+type Tab = "processed" | "processing" | "unprocessed"
 
 const TABS: { key: Tab; label: string; color: string }[] = [
-    { key: "accepted", label: "Accepted", color: "text-emerald-600" },
+    { key: "processed", label: "Processed", color: "text-emerald-600" },
     { key: "processing", label: "Processing", color: "text-brand" },
-    { key: "pending", label: "Pending", color: "text-amber-600" },
-    { key: "rejected", label: "Rejected", color: "text-red-500" },
+    { key: "unprocessed", label: "Unprocessed", color: "text-amber-600" },
 ]
 
 function getTab(source: SourceCandidate): Tab {
-    if (source.status === "processing") return "processing"
-    if (source.score >= 6) return "accepted"
-    if (source.score > 0) return "rejected"
-    return "pending"
+    const completed = source.completedStages || []
+    if (completed.includes("export")) return "processed"
+    if (source.status === "processing" || (completed.length > 1 && !completed.includes("export"))) return "processing"
+    return "unprocessed"
 }
 
 function scoreColor(s: number) {
@@ -75,9 +75,9 @@ export default function SourcesPage() {
     const [query, setQuery] = useState("")
     const [sources, setSources] = useState<SourceCandidate[]>([])
     const [suggestions, setSuggestions] = useState<SourceCandidate[]>([])
-    const [activeTab, setActiveTab] = useState<Tab>("accepted")
+    const [activeTab, setActiveTab] = useState<Tab>("unprocessed")
+    const router = useRouter()
     const [isDiscovering, setIsDiscovering] = useState(false)
-    const [isJudging, setIsJudging] = useState<string | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [isLoaded, setIsLoaded] = useState(false)
     const [showFilters, setShowFilters] = useState(false)
@@ -102,39 +102,7 @@ export default function SourcesPage() {
         return () => document.removeEventListener("mousedown", handler)
     }, [])
 
-    const autoJudge = async (source: SourceCandidate) => {
-        setIsJudging(source.id)
-        try {
-            const res = await fetch("/api/sources/score", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ sourceId: source.id }),
-            })
-            const data = await res.json()
-            if (res.ok && data.result) {
-                const r = data.result
-                const updated: SourceCandidate = {
-                    ...source,
-                    score: r.score || 0,
-                    status: (r.score || 0) >= 6 ? "done" : "failed",
-                    title: r.title || source.title,
-                    channel: r.channel || source.channel,
-                }
-                setSources(prev => prev.map(s => s.id === source.id ? updated : s))
-                persistSource(updated)
-
-                // Set active tab to where this source lands
-                setActiveTab(getTab(updated))
-
-                await fetch("/api/store", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ action: "complete_stage", sourceId: source.id, stageId: "judge" }),
-                }).catch(() => { })
-            }
-        } catch { /* ignore */ }
-        finally { setIsJudging(null) }
-    }
+    // autoJudge has been removed. We now auto-navigate to the detailed page to run the pipeline.
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -153,15 +121,15 @@ export default function SourcesPage() {
                 url: query,
                 published: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
                 duration: "—",
-                status: "processing",
+                status: "idle",
                 score: 0,
             }
             setSources(prev => [newSource, ...prev])
             persistSource(newSource)
             setQuery("")
-            setSuggestions([])
-            setActiveTab("processing")
-            autoJudge(newSource)
+
+            // Auto navigate to the detailed page to let user run pipeline
+            router.push(`/sources/${id}`)
             return
         }
 
@@ -186,21 +154,22 @@ export default function SourcesPage() {
 
     const importSuggestion = (s: SourceCandidate) => {
         if (sources.find(src => src.id === s.id)) return
-        const importing: SourceCandidate = { ...s, status: "processing" }
+        const importing: SourceCandidate = { ...s, status: "idle" }
         setSources(prev => [importing, ...prev])
         setSuggestions(prev => prev.filter(x => x.id !== s.id))
         persistSource(importing)
-        setActiveTab("processing")
-        autoJudge(importing)
+
+        // Auto navigate to the detailed page
+        router.push(`/sources/${s.id}`)
     }
 
     // ── Tab filtering ──────────────────────────────────────────────
     const tabCounts = Object.fromEntries(
-        TABS.map(t => [t.key, sources.filter(s => getTab(s) === t.key || (t.key === "processing" && isJudging === s.id)).length])
+        TABS.map(t => [t.key, sources.filter(s => getTab(s) === t.key).length])
     ) as Record<Tab, number>
 
     const filtered = sources
-        .filter(s => getTab(s) === activeTab || (activeTab === "processing" && isJudging === s.id))
+        .filter(s => getTab(s) === activeTab)
         .sort((a, b) => b.score - a.score)
 
 
@@ -354,7 +323,7 @@ export default function SourcesPage() {
                 <div className="flex items-center justify-center py-20">
                     <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                 </div>
-            ) : filtered.length === 0 && !isJudging ? (
+            ) : filtered.length === 0 ? (
                 <div className="text-center py-20 space-y-3">
                     <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto">
                         <Search className="w-6 h-6 text-muted-foreground/40" />
@@ -363,19 +332,17 @@ export default function SourcesPage() {
                         No {activeTab} sources yet
                     </p>
                     <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-                        {activeTab === "accepted"
-                            ? "Import a source and run Source Judge to see accepted sources here."
-                            : activeTab === "pending"
-                                ? "Sources waiting to be judged will appear here."
-                                : activeTab === "rejected"
-                                    ? "Sources that score below 6/10 will appear here."
-                                    : "Sources currently being processed appear here."}
+                        {activeTab === "processed"
+                            ? "Fully processed sources will appear here."
+                            : activeTab === "unprocessed"
+                                ? "Import a source or select one from below to start processing."
+                                : "Sources currently being processed appear here."}
                     </p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filtered.map(source => {
-                        const judging = isJudging === source.id
+                        const isProcessing = source.status === "processing"
                         const accepted = source.score >= 6
                         const rejected = source.score > 0 && source.score < 6
 
@@ -385,7 +352,7 @@ export default function SourcesPage() {
                                     "h-full transition-all duration-200 hover:shadow-soft cursor-pointer group relative overflow-hidden",
                                     accepted ? scoreBorder(source.score) : rejected ? "border-red-200/50 opacity-80" : ""
                                 )}>
-                                    {judging && (
+                                    {isProcessing && (
                                         <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-brand/0 via-brand to-brand/0 animate-pulse" />
                                     )}
                                     <div className="p-5 space-y-3">
@@ -394,9 +361,9 @@ export default function SourcesPage() {
                                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                                 <Clock className="w-3.5 h-3.5" />{source.duration}
                                             </div>
-                                            {judging ? (
+                                            {isProcessing ? (
                                                 <div className="flex items-center gap-1.5 text-xs text-brand">
-                                                    <Loader2 className="w-3 h-3 animate-spin" />Judging...
+                                                    <Loader2 className="w-3 h-3 animate-spin" />Processing...
                                                 </div>
                                             ) : source.score > 0 ? (
                                                 <div className={cn("flex items-center gap-1.5 text-xs font-semibold", scoreColor(source.score))}>
