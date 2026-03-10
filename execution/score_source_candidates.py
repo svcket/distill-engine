@@ -128,13 +128,13 @@ def score_source(source_id: str):
     for term in CLICKBAIT_SIGNALS:
         if term in title or term in description:
             score -= 2.5
-            rationale.append(f"Clickbait signal detected: "{term}".")
+            rationale.append(f'Clickbait signal detected: "{term}".')
             break  # One penalty per category
 
     for term in SHALLOW_SIGNALS:
         if term in title:
             score -= 1.5
-            rationale.append(f"Shallow format signal: "{term}".")
+            rationale.append(f'Shallow format signal: "{term}".')
             break
 
     # ── 3. Creator credibility bonus ─────────────────────────────────
