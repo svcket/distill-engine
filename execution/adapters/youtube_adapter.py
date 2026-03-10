@@ -99,10 +99,31 @@ class YouTubeAdapter(BaseAdapter):
             except Exception:
                 pass  # Fall through to stub
 
-        # Minimal stub — title/metadata will be enriched by judge stage
+        # Fallback: Scrape the page for the <title> tag if API is missing or fails
+        try:
+            import urllib.request
+            import re
+            req = urllib.request.Request(
+                f"https://www.youtube.com/watch?v={video_id}",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                html = resp.read().decode("utf-8")
+                if m := re.search(r"<title>(.*?)</title>", html, re.IGNORECASE):
+                    title = m.group(1).replace(" - YouTube", "").strip()
+                    return {
+                        "title": title,
+                        "channel": "YouTube",
+                        "duration_seconds": 0,
+                        "description": "",
+                    }
+        except Exception:
+            pass
+
+        # Minimal stub if all else fails
         return {
             "title": f"YouTube Video ({video_id})",
-            "channel": "YouTube",
+            "channel": "Unknown",
             "duration_seconds": 0,
             "description": "",
         }

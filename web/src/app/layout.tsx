@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { Inter, Noto_Serif } from "next/font/google";
+import { Inter, Bricolage_Grotesque } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-const serif = Noto_Serif({ subsets: ["latin"], variable: "--font-serif", weight: ['400', '500', '700'] });
+const serif = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-serif", weight: ['400', '500', '600', '700', '800'] });
 
 export const metadata: Metadata = {
   title: "Distill | Editorial Engine",

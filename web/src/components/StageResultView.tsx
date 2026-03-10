@@ -73,7 +73,7 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
                 <Badge variant="secondary">{segmentCount} segments retrieved</Badge>
             </div>
             {!compact && segments.length > 0 && (
-                <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
+                <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 pb-6">
                     {segments.map((seg, i) => {
                         const s = seg as Record<string, unknown>
                         return (
@@ -317,8 +317,7 @@ function DraftResult({ data, compact }: { data: Record<string, unknown>; compact
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <p className="text-lg font-semibold text-foreground">{title}</p>
+            <div className="flex items-center justify-end">
                 <Badge variant="success">{wordCount} words</Badge>
             </div>
             <div className="prose prose-sm max-w-none text-muted-foreground">
