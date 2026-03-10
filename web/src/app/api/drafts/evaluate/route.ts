@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
+import path from 'path'
+
+const EXECUTION_DIR = path.resolve(process.cwd(), '../execution')
 
 export async function POST(request: Request) {
     try {
@@ -9,17 +12,52 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing 'sourceId' parameter." }, { status: 400 })
         }
 
-        const { success, data, error, rawOutput } = await runPythonScript(
-            'score_draft_output.py',
-            ['--source-id', sourceId]
-        )
+        let currentEval: Record<string, any> = {};
 
-        if (!success) {
-            return NextResponse.json({ error: 'Failed to evaluate draft', details: error }, { status: 500 })
+        // Up to 3 evaluation cycles total (Initial + max 2 revisions)
+        for (let cycle = 0; cycle < 3; cycle++) {
+            const { success, data, error } = await runPythonScript(
+                'editorial_qa.py',
+                ['--source-id', sourceId]
+            )
+
+            if (!success) {
+                return NextResponse.json({ error: 'Failed to evaluate draft', details: error }, { status: 500 })
+            }
+
+            const parsedBundle = typeof data === 'object' && data !== null ? data as Record<string, unknown> : {};
+            currentEval = parsedBundle?.data || parsedBundle || {};
+
+            // Stop loop if Publishable or Reject
+            if (currentEval.decision && currentEval.decision !== "Revise") {
+                break;
+            }
+
+            // It's a "Revise", so if we have structural cycles left, regenerate the draft
+            if (cycle < 2 && currentEval.feedback) {
+                const insightsPath = path.join(EXECUTION_DIR, '.tmp', 'insights', `${sourceId}_insights.json`)
+                const outlinePath = path.join(EXECUTION_DIR, '.tmp', 'outlines', `${sourceId}_outline.json`)
+                const packetPath = path.join(EXECUTION_DIR, '.tmp', 'insight_packets', `${sourceId}_packet.json`)
+
+                // Re-run the writer in batch mode synchronously, passing feedback
+                await runPythonScript('writer.py', [
+                    '--outline_input', outlinePath,
+                    '--insights_input', insightsPath,
+                    '--packet_input', packetPath,
+                    '--feedback', currentEval.feedback
+                ])
+                // Loop continues, evaluating this newly generated draft
+            }
         }
 
-        const result = data || {}
-        return NextResponse.json({ result, message: `Draft evaluated for: ${sourceId}` })
+        const result = currentEval || {}
+        // Normalise score from 60 point scale to a 10 point scale for the UI
+        if (result.total_score !== undefined) {
+            result.score = parseFloat((result.total_score / 6.0).toFixed(1))
+            result.rationale = `Verdict: ${result.decision}. ` + (result.feedback || "")
+        }
+
+        return NextResponse.json({ result, message: `Draft evaluated and stabilized for: ${sourceId}` })
 
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Unknown error'

@@ -51,9 +51,15 @@ def extract_angle(insights_path: str):
     client = OpenAI()
     
     system_prompt = """
-    You are the Angle Strategist. Given these extracted insights from a technical creator's video,
-    determine the smartest editorial angle, formats, and titles to turn this into a high-signal written artifact.
-    Target technical builders, engineers, and designers.
+    You are the Angle Strategist—a senior editor for a premium technical blog.
+    Given these extracted insights from a source, determine the smartest editorial angle, formats, and titles.
+    
+    CRITICAL RULE:
+    The article must revolve around exactly ONE strong, non-generic central thesis.
+    Example of a weak thesis: "AI is transforming industries."
+    Example of a strong thesis: "AI gives small teams an asymmetric advantage over large corporations by collapsing the cost of specialized labor."
+    
+    Choose a specific, opinionated framing angle based on the insights provided. Target technical builders, engineers, and designers.
     """
     
     try:

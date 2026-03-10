@@ -356,6 +356,67 @@ function GenericResult({ data }: { data: Record<string, unknown> }) {
     )
 }
 
+function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
+    const d = (data.data || data) as Record<string, unknown>
+    const totalScore = getNum(d, "total_score", 0)
+    const decision = getStr(d, "decision", "Pending")
+    const feedback = getStr(d, "feedback")
+
+    if (compact) {
+        return (
+            <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                    <span className="text-xl font-bold font-serif">{totalScore}/60</span>
+                    <Badge variant={decision === "Publishable" ? "success" : decision === "Revise" ? "secondary" : "destructive"}>
+                        {decision}
+                    </Badge>
+                </div>
+            </div>
+        )
+    }
+
+    const categories = [
+        { label: "Source Grounding", value: getNum(d, "source_grounding") },
+        { label: "Clarity", value: getNum(d, "clarity") },
+        { label: "Original Insight", value: getNum(d, "original_insight") },
+        { label: "Human Tone", value: getNum(d, "human_tone") },
+        { label: "SEO Structure", value: getNum(d, "seo_structure") },
+        { label: "Specificity", value: getNum(d, "specificity") }
+    ]
+
+    return (
+        <div className="space-y-6">
+            <div className="flex items-center gap-3">
+                <span className="text-3xl font-bold tabular-nums font-serif">{totalScore}/60</span>
+                <Badge variant={decision === "Publishable" ? "success" : decision === "Revise" ? "secondary" : "destructive"} className="text-sm">
+                    {decision}
+                </Badge>
+            </div>
+
+            <div className="space-y-3">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Category Breakdown</h4>
+                <div className="grid grid-cols-2 gap-3">
+                    {categories.map((c, i) => (
+                        <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/40 border border-border/40">
+                            <span className="text-xs text-muted-foreground">{c.label}</span>
+                            <span className="text-sm font-medium">{c.value}/10</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {feedback && (
+                <div className="space-y-2">
+                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Revision Feedback</h4>
+                    <p className="text-sm leading-relaxed p-4 rounded-xl bg-amber-50/50 border border-amber-100 text-amber-900 shadow-sm">
+                        {feedback}
+                    </p>
+                </div>
+            )}
+        </div>
+    )
+}
+
 // ─── Main Component ────────────────────────────────────────────
 
 export function StageResultView({ stageId, data, compact = false }: StageResultViewProps) {
@@ -376,6 +437,8 @@ export function StageResultView({ stageId, data, compact = false }: StageResultV
             return <AngleResult data={d} />
         case "draft":
             return <DraftResult data={d} compact={compact} />
+        case "qa":
+            return <QaResult data={d} compact={compact} />
         default:
             return <GenericResult data={d as Record<string, unknown>} />
     }

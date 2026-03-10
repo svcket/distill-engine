@@ -21,6 +21,7 @@ export async function POST(request: Request) {
     const insightsPath = path.join(EXECUTION_DIR, '.tmp', 'insights', `${sourceId}_insights.json`)
     const anglePath = path.join(EXECUTION_DIR, '.tmp', 'angles', `${sourceId}_angle.json`)
     const outlinePath = path.join(EXECUTION_DIR, '.tmp', 'outlines', `${sourceId}_outline.json`)
+    const packetPath = path.join(EXECUTION_DIR, '.tmp', 'insight_packets', `${sourceId}_packet.json`)
 
     // Step 1: Generate outline (batch, fast)
     const architectResult = await runBatch('article_architect.py', [
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
                     path.join(EXECUTION_DIR, 'writer.py'),
                     '--outline_input', outlinePath,
                     '--insights_input', insightsPath,
+                    '--packet_input', packetPath,
                     '--stream'
                 ], {
                     cwd: EXECUTION_DIR,
@@ -53,7 +55,7 @@ export async function POST(request: Request) {
                     const lines = chunk.toString().split('\n').filter(Boolean)
                     for (const line of lines) {
                         try {
-                            const event = JSON.parse(line)
+                            JSON.parse(line)
                             controller.enqueue(new TextEncoder().encode(line + '\n'))
                         } catch { /* skip non-JSON lines */ }
                     }
@@ -98,6 +100,7 @@ export async function POST(request: Request) {
     const { success, error, rawOutput } = await runBatch('writer.py', [
         '--outline_input', outlinePath,
         '--insights_input', insightsPath,
+        '--packet_input', packetPath,
     ])
 
     if (!success) {

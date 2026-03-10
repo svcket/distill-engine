@@ -17,8 +17,8 @@ class WrittenDraft(BaseModel):
     word_count: int = Field(description="The total word count of the generated content.")
 
 
-def generate_draft(outline_path: str, insights_path: str, stream: bool = False):
-    if not os.path.exists(outline_path) or not os.path.exists(insights_path):
+def generate_draft(outline_path: str, insights_path: str, packet_path: str, feedback: str = None, stream: bool = False):
+    if not os.path.exists(outline_path) or not os.path.exists(insights_path) or not os.path.exists(packet_path):
         print(json.dumps({"status": "failed", "error": "Missing input payloads."}), file=sys.stderr)
         sys.exit(1)
 
@@ -26,10 +26,14 @@ def generate_draft(outline_path: str, insights_path: str, stream: bool = False):
         outline_bundle = json.load(f)
     with open(insights_path, "r", encoding="utf-8") as f:
         insights_bundle = json.load(f)
+    with open(packet_path, "r", encoding="utf-8") as f:
+        packet_bundle = json.load(f)
 
     source_id = outline_bundle.get("source_id") or outline_bundle.get("video_id")
     outline_data = outline_bundle.get("data", {})
     insights_data = insights_bundle.get("data", {})
+    transcript_segments = packet_bundle.get("transcript_segments", [])
+    transcript_text = "\n\n".join([f"[{c.get('start', 0)}s]: {c.get('text', '')}" for c in transcript_segments])
 
     if not os.environ.get("OPENAI_API_KEY"):
         mock_result = {
@@ -49,10 +53,15 @@ def generate_draft(outline_path: str, insights_path: str, stream: bool = False):
     client = OpenAI()
 
     system_prompt = """You are the Senior Writer Agent for Distill — a premium editorial engine.
-You receive a structural blueprint and grounded insights extracted from an original source.
+You receive a structural blueprint, grounded insights, and direct transcript excerpts extracted from an original source.
 Write in a premium, high-signal, practitioner-grade tone. No filler. No fluff.
-Format strictly in clean Markdown with headers, bullet points where appropriate.
-Prioritize builders, makers, and practitioners as the reader."""
+
+CRITICAL RULES:
+1. Must follow standard blog structure: Compelling hook, context of the source, core thesis, insights/frameworks, implications/applications, conclusion.
+2. Must SOUND HUMAN and confident. Use short paragraphs. Avoid academic filler and corporate jargon (e.g., "signifies a pivotal transformation").
+3. Must EXPLICITLY reference the source (e.g., "In the talk, the speaker explains...", "One of the most interesting ideas introduced is...").
+4. Be specific. Use the exact quotes, themes, and frameworks provided. Do not invent details.
+Format strictly in clean Markdown with strong subheadings and bullet points where appropriate."""
 
     user_prompt = f"""Structure Blueprint:
 {json.dumps(outline_data, indent=2)}
@@ -60,7 +69,13 @@ Prioritize builders, makers, and practitioners as the reader."""
 Grounded Insights:
 {json.dumps(insights_data, indent=2)}
 
-Write the complete article now."""
+Source Transcript Excerpts (Use for specific grounding):
+{transcript_text}"""
+
+    if feedback:
+        user_prompt += f"\n\nPRIORITY EDITORIAL FEEDBACK to address in this revision:\n{feedback}"
+
+    user_prompt += "\n\nWrite the complete article now."
 
     try:
         if stream:
@@ -136,6 +151,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate a written draft from outline + insights.")
     parser.add_argument("--outline_input", required=True)
     parser.add_argument("--insights_input", required=True)
+    parser.add_argument("--packet_input", required=True)
+    parser.add_argument("--feedback", required=False, help="Editorial feedback for revision loop.")
     parser.add_argument("--stream", action="store_true", help="Enable streaming output.")
     args = parser.parse_args()
-    generate_draft(args.outline_input, args.insights_input, stream=args.stream)
+    generate_draft(args.outline_input, args.insights_input, args.packet_input, feedback=args.feedback, stream=args.stream)

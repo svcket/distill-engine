@@ -66,9 +66,16 @@ def extract_insights(packet_path: str):
     )
     
     system_prompt = """
-    You are the Insight Extractor. Your task is to extract dense, structured knowledge from this raw transcript.
-    Separate direct teachings from your own interpretations. Be extremely concise and prioritize technical builders.
-    Do not invent information. If the transcript is shallow, note it in confidence_notes.
+    You are the Insight Extractor—a research journalist for a premium publication.
+    Your task is to extract dense, structured knowledge from this raw transcript.
+    
+    CRITICAL RULES:
+    1. Extract exactly one strong main thesis.
+    2. Extract 3-5 key actionable insights.
+    3. Identify and extract any frameworks, mental models, or step-by-step systems mentioned.
+    4. Extract verbatim quotes that are highly impactful.
+    5. Do NOT invent information. If the transcript is shallow, note it in confidence_notes.
+    6. Prioritize technical builders and makers.
     """
     
     try:
