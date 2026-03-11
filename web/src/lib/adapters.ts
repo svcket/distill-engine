@@ -37,9 +37,9 @@ export function adaptScoutResponse(rawOutput: string, query: string): SourceCand
             }
 
             return {
-                id: item.video_id,
+                id: item.source_id,
                 title: item.title,
-                channel: item.channel,
+                channel: item.creator || item.channel,
                 url: item.url,
                 published: published,
                 duration: formattedDuration || "Unknown",

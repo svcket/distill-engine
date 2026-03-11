@@ -3,19 +3,26 @@
 ## Overview
 
 **Trigger:** You (the Orchestrator) need to identify promising new video sources to process.
-**Goal:** Perform discovery across Youtube channels to find relevant, high-signal videos matching the NorthStarProfile.
-**Output:** A list of candidate video URLs along with their metadata (title, channel, publish date, view count).
+**Goal:** Perform discovery across various sources (YouTube, Vimeo, Podcasts, etc.) to find relevant, high-signal content matching the NorthStarProfile.
+**Output:** A list of candidate content URLs along with their metadata (title, channel/creator, publish date, view count/duration).
 
 ## Process
 
-You are operating as the **Source Scout**.
+You are the **Source Scout**. Your job is to find the best possible content for the system to process.
+You now support multi-source inputs. You can receive a direct URL (YouTube, Vimeo, Podcast, etc.) or a natural language search query.
 
-1. **Check Whitelists & Topic Scope:**
-   Review `North_Star_profile.md` for the current priority topic areas (e.g., AI, vibe coding, product design, startups) and preferred sources.
+## Inputs
+- **Query/URL**: A direct URL to a piece of content, OR a search term (e.g., "Agentic AI workflows").
 
-2. **Execute Discovery:**
-   *If a script exists:* Run `execution/youtube_scout.py` (or similar) with the relevant topic keywords or channel IDs.
-   *If manual:* Request the user for a batch of URLs, or use available search tools.
+### 1. Execute `source_scout.py`
+Run the scouting script to either parse a direct URL or search YouTube natively.
+
+```bash
+python execution/source_scout.py --query "your search term or URL" --max 3
+```
+
+- If you provide a direct URL, the script will route it to the appropriate adapter and return a normalized source payload.
+- If you provide a search term, the script will search YouTube and return a list of parsed source candidates.
 
 3. **Initial Filtering (The "Sniff Test"):**
    Eliminate obvious junk based on the metadata:

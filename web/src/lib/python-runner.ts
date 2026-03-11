@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile)
  * Executes a python script located in the `execution/` directory.
  * The Next.js app sits in `web/`, so we navigate up to `../execution/`.
  */
-export async function runPythonScript<T = any>(
+export async function runPythonScript<T = unknown>(
     scriptName: string,
     args: string[] = []
 ): Promise<{ success: boolean; data?: T; error?: string; rawOutput?: string }> {
@@ -22,7 +22,7 @@ export async function runPythonScript<T = any>(
 
         const { stdout, stderr } = await execFileAsync('python3', [scriptPath, ...args], {
             cwd: executionDir,
-            timeout: 120000, // 120 second timeout (chained LLM calls can take 60s+)
+            timeout: 600000, // 600 second timeout (large podcast transcribing can take minutes)
             env: { ...process.env }, // Explicitly forward all env vars (YOUTUBE_API_KEY, OPENAI_API_KEY, etc.)
         })
 
@@ -54,18 +54,19 @@ export async function runPythonScript<T = any>(
             const data = JSON.parse(output) as T
             return { success: true, data, rawOutput: output }
 
-        } catch (e) {
+        } catch {
             // Scripts currently just print strings.
             // E.g.: "Scouting for 'query' (max 5 results)... (Not implemented)"
             return { success: true, data: undefined, rawOutput: output }
         }
 
-    } catch (error: any) {
-        console.error(`[Python Runner] Error executing ${scriptName}:`, error)
+    } catch (error: unknown) {
+        const err = error as { message?: string; stdout?: string }
+        console.error(`[Python Runner] Error executing ${scriptName}:`, err)
         return {
             success: false,
-            error: error.message || 'Unknown execution error',
-            rawOutput: error.stdout || undefined
+            error: err.message || 'Unknown execution error',
+            rawOutput: err.stdout || undefined
         }
     }
 }

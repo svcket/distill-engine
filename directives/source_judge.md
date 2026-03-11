@@ -3,12 +3,16 @@
 ## Overview
 
 **Trigger:** The Source Scout has passed a candidate video URL (or the user has directly provided one).
-**Goal:** Evaluate whether the specific source video is intellectually dense enough and relevant enough to be processed by the distillation engine.
+**Goal:** Run the lightweight enrichment script.
+
+```bash
+python execution/ingest_source.py --source-id "source123"
+```
 **Output:** A Go/No-Go decision, a source score (1-10), and a brief rationale.
 
 ## Process
 
-You are operating as the **Source Judge**.
+You are the **Source Judge**. Your role has simplified. You no longer strictly reject sources based on algorithms. Instead, you enrich the `source` payload through `ingest_source.py`, making the content ready for the pipeline.
 
 1. **Review Metadata:**
    Examine the video title, channel/speaker information, and description.

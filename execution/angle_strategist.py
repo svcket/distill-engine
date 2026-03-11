@@ -22,13 +22,13 @@ def extract_angle(insights_path: str):
     with open(insights_path, 'r', encoding='utf-8') as f:
         insights_bundle = json.load(f)
         
-    video_id = insights_bundle.get("video_id")
+    source_id = insights_bundle.get("source_id") or insights_bundle.get("video_id")
     insights_data = insights_bundle.get("data", {})
     
     if "OPENAI_API_KEY" not in os.environ or not os.environ["OPENAI_API_KEY"]:
         mock_result = {
             "status": "success_mocked",
-            "video_id": video_id,
+            "source_id": source_id,
             "data": {
                 "recommended_format": "Technical Deep Dive Essay",
                 "secondary_formats": ["X Thread", "LinkedIn Post"],
@@ -41,7 +41,7 @@ def extract_angle(insights_path: str):
         
         out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "angles")
         os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, f"{video_id}_angle.json")
+        out_path = os.path.join(out_dir, f"{source_id}_angle.json")
         with open(out_path, 'w', encoding='utf-8') as f:
             json.dump(mock_result, f, indent=2)
             
@@ -76,11 +76,11 @@ def extract_angle(insights_path: str):
         
         out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "angles")
         os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, f"{video_id}_angle.json")
+        out_path = os.path.join(out_dir, f"{source_id}_angle.json")
         
         bundle = {
             "status": "success",
-            "video_id": video_id,
+            "source_id": source_id,
             "data": json.loads(extracted_data.model_dump_json())
         }
         

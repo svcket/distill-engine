@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils"
 
 const Badge = React.forwardRef<
     HTMLDivElement,
-    React.HTMLAttributes<HTMLDivElement> & { variant?: "default" | "secondary" | "outline" | "destructive" | "success" }
+    React.HTMLAttributes<HTMLDivElement> & { variant?: "default" | "secondary" | "outline" | "destructive" | "success" | "warning" }
 >(({ className, variant = "default", ...props }, ref) => {
     const variants = {
         default: "bg-brand text-background hover:bg-brand/90",
@@ -11,6 +11,7 @@ const Badge = React.forwardRef<
         outline: "border border-border text-foreground",
         destructive: "bg-red-50 text-red-600 border border-red-200",
         success: "bg-green-50 text-green-700 border border-green-200",
+        warning: "bg-amber-50 text-amber-700 border border-amber-200",
     }
 
     return (

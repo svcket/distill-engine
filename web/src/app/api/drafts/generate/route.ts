@@ -22,6 +22,20 @@ export async function POST(request: Request) {
     const anglePath = path.join(EXECUTION_DIR, '.tmp', 'angles', `${sourceId}_angle.json`)
     const outlinePath = path.join(EXECUTION_DIR, '.tmp', 'outlines', `${sourceId}_outline.json`)
     const packetPath = path.join(EXECUTION_DIR, '.tmp', 'insight_packets', `${sourceId}_packet.json`)
+    const briefPath = path.join(EXECUTION_DIR, '.tmp', 'briefs', `${sourceId}_brief.json`)
+
+    // Step 0: Generate Content Brief (Intent-Aware Writing)
+    // For now we use defaults, soon this will come from user input in the UI
+    const briefResult = await runBatch('content_brief_builder.py', [
+        '--source-id', sourceId
+    ])
+
+    if (!briefResult.success) {
+        return NextResponse.json(
+            { error: 'Failed to generate Content Brief', details: briefResult.error },
+            { status: 500 }
+        )
+    }
 
     // Step 1: Generate outline (batch, fast)
     const architectResult = await runBatch('article_architect.py', [
@@ -45,6 +59,7 @@ export async function POST(request: Request) {
                     '--outline_input', outlinePath,
                     '--insights_input', insightsPath,
                     '--packet_input', packetPath,
+                    '--brief_input', briefPath,
                     '--stream'
                 ], {
                     cwd: EXECUTION_DIR,
@@ -52,13 +67,7 @@ export async function POST(request: Request) {
                 })
 
                 proc.stdout.on('data', (chunk: Buffer) => {
-                    const lines = chunk.toString().split('\n').filter(Boolean)
-                    for (const line of lines) {
-                        try {
-                            JSON.parse(line)
-                            controller.enqueue(new TextEncoder().encode(line + '\n'))
-                        } catch { /* skip non-JSON lines */ }
-                    }
+                    controller.enqueue(chunk)
                 })
 
                 proc.stderr.on('data', (err: Buffer) => {
@@ -101,6 +110,7 @@ export async function POST(request: Request) {
         '--outline_input', outlinePath,
         '--insights_input', insightsPath,
         '--packet_input', packetPath,
+        '--brief_input', briefPath,
     ])
 
     if (!success) {

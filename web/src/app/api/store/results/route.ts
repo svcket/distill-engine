@@ -22,6 +22,8 @@ export async function GET(request: Request) {
         packet: path.join(baseDir, 'insight_packets', `${sourceId}_packet.json`),
         transcript: path.join(baseDir, 'transcripts', sourceId, `${sourceId}_raw.json`),
         refine: path.join(baseDir, 'refined_transcripts', sourceId, `${sourceId}_refined.json`),
+        qa: path.join(baseDir, 'evaluations', `${sourceId}_eval.json`),
+        visual: path.join(baseDir, 'visual_plans', `${sourceId}_visual_plan.json`),
     }
 
     for (const [stageId, filePath] of Object.entries(stageFiles)) {

@@ -9,6 +9,8 @@ export interface SourceCandidate {
     published: string;
     status: Status;
     score: number;
+    source_type?: string;
+    thumbnail?: string;
     completedStages?: string[];
 }
 

@@ -49,7 +49,7 @@ def ingest_source(source_id: str):
 
     result = {
         "source_id": source_id,
-        "video_id": source_id,
+
         "source_type": metadata.get("source_type", "youtube"),
         "status": "success",
         "rationale": "Source metadata enriched. Ready for pipeline execution.",

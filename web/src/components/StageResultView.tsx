@@ -73,7 +73,7 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
                 <Badge variant="secondary">{segmentCount} segments retrieved</Badge>
             </div>
             {!compact && segments.length > 0 && (
-                <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 pb-6">
+                <div className="space-y-2 pr-2 pb-6">
                     {segments.map((seg, i) => {
                         const s = seg as Record<string, unknown>
                         return (
@@ -102,12 +102,12 @@ function RefineResult({ data, compact }: { data: Record<string, unknown>; compac
                 Noise artifacts, filler words, and system tags removed.
             </p>
             {!compact && segments.length > 0 && (
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {segments.slice(0, 3).map((seg, i) => {
+                <div className="space-y-3 pb-6">
+                    {segments.map((seg, i) => {
                         const s = seg as Record<string, unknown>
                         return (
-                            <div key={i} className="p-3 rounded-lg bg-muted/40 border border-border/40">
-                                <p className="text-xs text-foreground leading-relaxed">{getStr(s, "text").slice(0, 200)}...</p>
+                            <div key={i} className="p-4 rounded-lg bg-muted/40 border border-border/40">
+                                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{getStr(s, "text")}</p>
                             </div>
                         )
                     })}
@@ -118,12 +118,12 @@ function RefineResult({ data, compact }: { data: Record<string, unknown>; compac
 }
 
 function PacketResult({ data }: { data: Record<string, unknown> }) {
-    const videoId = getStr(data, "video_id", "unknown")
+    const sourceId = getStr(data, "source_id", "unknown")
 
     return (
         <div className="space-y-2">
             <p className="text-sm text-muted-foreground">
-                Insight packet assembled for <span className="font-medium text-foreground">{videoId}</span>.
+                Insight packet assembled for <span className="font-medium text-foreground">{sourceId}</span>.
                 Transcript segments and metadata packaged and ready for LLM extraction.
             </p>
             <Badge variant="secondary">Ready for analysis</Badge>
@@ -133,37 +133,67 @@ function PacketResult({ data }: { data: Record<string, unknown> }) {
 
 function InsightsResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
     const d = (data.data || data) as Record<string, unknown>
-    const thesis = getStr(d, "thesis")
-    const keyIdeas = getArr(d, "key_ideas")
+    const coreArgument = getStr(d, "core_argument")
+    const keyClaims = getArr(d, "key_claims")
+    const examples = getArr(d, "supporting_examples")
     const frameworks = getArr(d, "frameworks")
-    const quotes = getArr(d, "quotes")
-    const takeaways = getArr(d, "takeaways")
-    const tensions = getArr(d, "tensions")
-    const confidence = getStr(d, "confidence_notes")
+    const controversies = getArr(d, "controversies")
+    const contradictions = getArr(d, "contradictions")
+    const implications = getArr(d, "implications")
+    const quotes = getArr(d, "memorable_quotes")
+
+    if (compact) {
+        return (
+            <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                    <Badge variant="success">Insights Extracted</Badge>
+                </div>
+                <p className="text-sm font-medium text-foreground leading-snug">{coreArgument}</p>
+                <p className="text-xs text-muted-foreground">{keyClaims.length} Claims • {examples.length} Examples</p>
+            </div>
+        )
+    }
 
     return (
-        <div className="space-y-5">
-            {/* Thesis */}
-            {thesis && (
-                <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
-                        <Lightbulb className="w-3.5 h-3.5" /> Core Thesis
+        <div className="space-y-8 animate-in fade-in duration-300">
+            {/* Core Argument */}
+            {coreArgument && (
+                <div className="p-4 rounded-xl bg-brand/5 border border-brand/20">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-brand uppercase tracking-wider mb-2 font-serif">
+                        <Lightbulb className="w-3.5 h-3.5" /> Core Argument
                     </div>
-                    <p className="text-sm text-foreground leading-relaxed font-medium">{thesis}</p>
+                    <p className="text-sm text-foreground leading-relaxed font-medium">{coreArgument}</p>
                 </div>
             )}
 
-            {/* Key Ideas */}
-            {keyIdeas.length > 0 && (
+            {/* Key Claims */}
+            {keyClaims.length > 0 && (
                 <div className="space-y-2">
                     <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
-                        <Zap className="w-3.5 h-3.5" /> Key Ideas
+                        <Zap className="w-3.5 h-3.5" /> Key Claims
                     </div>
                     <ul className="space-y-1.5">
-                        {keyIdeas.map((idea, i) => (
+                        {keyClaims.map((claim, i) => (
                             <li key={i} className="text-sm text-muted-foreground flex gap-2 items-start">
                                 <span className="text-brand mt-0.5 shrink-0">•</span>
-                                <span>{String(idea)}</span>
+                                <span>{String(claim)}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {/* Supporting Examples */}
+            {examples.length > 0 && (
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
+                        <Target className="w-3.5 h-3.5" /> Supporting Examples
+                    </div>
+                    <ul className="space-y-1.5">
+                        {examples.map((ex, i) => (
+                            <li key={i} className="text-sm text-muted-foreground flex gap-2 items-start">
+                                <span className="text-emerald-500 mt-0.5 shrink-0">→</span>
+                                <span>{String(ex)}</span>
                             </li>
                         ))}
                     </ul>
@@ -204,40 +234,43 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
                 </div>
             )}
 
-            {/* Takeaways */}
-            {takeaways.length > 0 && (
+            {/* Controversies & Tensions */}
+            {!compact && controversies.length > 0 && (
                 <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
-                        <Target className="w-3.5 h-3.5" /> Builder Takeaways
-                    </div>
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Controversies & Tensions</div>
+                    <ul className="space-y-1">
+                        {controversies.map((c, i) => (
+                            <li key={i} className="text-sm text-muted-foreground">? {String(c)}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {/* Contradictions */}
+            {!compact && contradictions.length > 0 && (
+                <div className="space-y-2">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Contradictions</div>
+                    <ul className="space-y-1">
+                        {contradictions.map((c, i) => (
+                            <li key={i} className="text-sm text-red-500/70">! {String(c)}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {/* Implications */}
+            {!compact && implications.length > 0 && (
+                <div className="space-y-2">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Broader Implications</div>
                     <ul className="space-y-1.5">
-                        {takeaways.map((t, i) => (
+                        {implications.map((imp, i) => (
                             <li key={i} className="text-sm text-muted-foreground flex gap-2 items-start">
-                                <span className="text-emerald-500 mt-0.5 shrink-0">→</span>
-                                <span>{String(t)}</span>
+                                <span className="text-blue-500 mt-0.5 shrink-0">~</span>
+                                <span>{String(imp)}</span>
                             </li>
                         ))}
                     </ul>
                 </div>
-            )}
-
-            {/* Tensions */}
-            {!compact && tensions.length > 0 && (
-                <div className="space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Open Questions</div>
-                    <ul className="space-y-1">
-                        {tensions.map((t, i) => (
-                            <li key={i} className="text-sm text-muted-foreground">? {String(t)}</li>
-                        ))}
-                    </ul>
-                </div>
-            )}
-
-            {/* Confidence */}
-            {!compact && confidence && (
-                <p className="text-xs text-muted-foreground/70 italic border-t border-border/30 pt-3">
-                    {confidence}
-                </p>
             )}
         </div>
     )
@@ -356,18 +389,75 @@ function GenericResult({ data }: { data: Record<string, unknown> }) {
     )
 }
 
+function VisualResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
+    const suggestions = getArr(data, "visual_suggestions") || []
+    const note = getStr(data, "note")
+    
+    if (compact) {
+        return (
+            <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                    <Badge variant="secondary">{suggestions.length} Hooks Planned</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground italic">{note || "Visual automation pending."}</p>
+            </div>
+        )
+    }
+
+    return (
+        <div className="space-y-4">
+            <p className="text-sm text-muted-foreground mb-4">
+                The visual planner has scanned the draft and determined optimal breakpoints for visual hooks. 
+            </p>
+            <div className="space-y-3">
+                {suggestions.map((s, i) => {
+                    const sg = s as Record<string, unknown>
+                    const type = getStr(sg, "type").replace("_", " ").toUpperCase()
+                    const desc = getStr(sg, "description")
+                    return (
+                        <div key={i} className="p-3 rounded-xl border border-border/50 bg-muted/20 relative overflow-hidden group">
+                            <div className="absolute top-0 left-0 w-1 h-full bg-brand/30" />
+                            <div className="pl-2">
+                                <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground/60 mb-1">{type}</p>
+                                <p className="text-sm font-medium text-foreground">{String(desc)}</p>
+                                {sg.content && (
+                                    <p className="text-xs text-muted-foreground mt-2 italic border-l-2 border-border/50 pl-2">
+                                        &quot;{String(sg.content)}&quot;
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
+            {note && (
+                <p className="text-xs text-muted-foreground/60 italic pt-2">{note}</p>
+            )}
+        </div>
+    )
+}
+
 function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
     const d = (data.data || data) as Record<string, unknown>
     const totalScore = getNum(d, "total_score", 0)
     const decision = getStr(d, "decision", "Pending")
     const feedback = getStr(d, "feedback")
 
+    const getVerdictVariant = (decision: string): "default" | "secondary" | "outline" | "destructive" | "success" | "warning" => {
+        const d = decision.toLowerCase();
+        if (d.includes("publish ready") || d.includes("publishable") || d.includes("publish-ready")) return "success";
+        if (d.includes("minor improvements")) return "secondary";
+        if (d.includes("needs revision") || d.includes("revise")) return "warning";
+        if (d.includes("major rewrite")) return "destructive";
+        return "destructive"; // Handles "reject" inherently
+    };
+
     if (compact) {
         return (
             <div className="space-y-2">
                 <div className="flex items-center gap-3">
                     <span className="text-xl font-bold font-serif">{totalScore}/60</span>
-                    <Badge variant={decision === "Publishable" ? "success" : decision === "Revise" ? "secondary" : "destructive"}>
+                    <Badge variant={getVerdictVariant(decision)}>
                         {decision}
                     </Badge>
                 </div>
@@ -388,7 +478,7 @@ function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: 
         <div className="space-y-6">
             <div className="flex items-center gap-3">
                 <span className="text-3xl font-bold tabular-nums font-serif">{totalScore}/60</span>
-                <Badge variant={decision === "Publishable" ? "success" : decision === "Revise" ? "secondary" : "destructive"} className="text-sm">
+                <Badge variant={getVerdictVariant(decision)} className="text-sm">
                     {decision}
                 </Badge>
             </div>
@@ -437,6 +527,8 @@ export function StageResultView({ stageId, data, compact = false }: StageResultV
             return <AngleResult data={d} />
         case "draft":
             return <DraftResult data={d} compact={compact} />
+        case "visual":
+            return <VisualResult data={d} compact={compact} />
         case "qa":
             return <QaResult data={d} compact={compact} />
         default:
@@ -446,7 +538,7 @@ export function StageResultView({ stageId, data, compact = false }: StageResultV
 
 // Export for use in Inspect panel with full detail
 export function StageResultPanel({ stageId, data }: { stageId: StageId; data: Record<string, unknown> }) {
-    const wordCount = stageId === "draft" ? getNum(data.data || data, "word_count") : null;
+    const wordCount = stageId === "draft" ? getNum((data.data as Record<string, unknown>) || data, "word_count") : null;
 
     return (
         <div className="space-y-6">

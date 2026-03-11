@@ -17,13 +17,13 @@ export async function GET() {
             try {
                 const raw = fs.readFileSync(path.join(draftsDir, file), 'utf-8')
                 const data = JSON.parse(raw)
-                const sourceId = data.source_id || data.video_id || file.replace('_draft.json', '')
+                const sourceId = data.source_id || file.replace('_draft.json', '')
 
                 // Also try to load the angle data for format info
                 let angle = null
-                let anglePath = path.resolve(process.cwd(), `../execution/.tmp/angles/${sourceId}_angle.json`)
-                if (!fs.existsSync(anglePath) && data.video_id) {
-                    anglePath = path.resolve(process.cwd(), `../execution/.tmp/angles/${data.video_id}_angle.json`)
+                const anglePath = path.resolve(process.cwd(), `../execution/.tmp/angles/${sourceId}_angle.json`)
+                if (!fs.existsSync(anglePath)) {
+                    // Try without _angle suffix if it didn't exist, though it shouldn't be needed with source_id
                 }
 
                 if (fs.existsSync(anglePath)) {

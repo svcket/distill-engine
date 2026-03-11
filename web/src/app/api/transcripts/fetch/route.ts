@@ -5,7 +5,7 @@ import { adaptTranscriptResponse } from '@/lib/adapters'
 /**
  * Transcript fetch endpoint — multi-source aware.
  * Accepts sourceId + optional sourceType and url.
- * Delegates to the appropriate adapter in fetch_video_transcript.py.
+ * Delegates to the appropriate adapter in transcript_harvester.py.
  */
 export async function POST(request: Request) {
     try {
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
         if (sourceId) args.push('--source-id', sourceId)
         if (sourceType) args.push('--source-type', sourceType)
 
-        const { success, error, rawOutput } = await runPythonScript('fetch_video_transcript.py', args)
+        const { success, error, rawOutput } = await runPythonScript('transcript_harvester.py', args)
 
         if (!success) {
             return NextResponse.json({ error: 'Failed to fetch transcript', details: error }, { status: 500 })
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             result,
-            sourceId: raw.source_id || raw.video_id,
+            sourceId: raw.source_id,
             segmentCount: raw.segment_count || raw.chunk_count || 0,
             message: `Transcript fetched for: ${sourceId || url}`
         })

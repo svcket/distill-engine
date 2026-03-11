@@ -7,8 +7,9 @@ import { StageResultView, StageResultPanel } from "@/components/StageResultView"
 import { SourceCandidate } from "@/lib/mockData"
 import {
     ArrowLeft, ExternalLink, Calendar, Clock, BarChart3,
-    Loader2, FileText, Bot, Sparkles, Target, Edit3, CheckCircle,
-    ChevronDown, ChevronRight, X, ShieldCheck, Download, Play
+    Loader2, FileText, Bot, Sparkles, Target, Edit3,
+    CheckCircle, ChevronDown, ChevronRight, X, ShieldCheck,
+    Download, Play, Settings2
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -25,7 +26,7 @@ interface WorkflowStage {
     icon: React.ElementType
     stub?: boolean   // Not yet implemented — renders as locked
     apiEndpoint?: string
-    apiBody?: (id: string) => Record<string, string>
+    apiBody?: (id: string, params?: { type?: string, audience?: string, tone?: string }) => Record<string, string | undefined>
 }
 
 const STAGES: WorkflowStage[] = [
@@ -35,8 +36,8 @@ const STAGES: WorkflowStage[] = [
     { id: "packet", label: "Build Insight Packet", description: "Package top-density segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcriptId: id }) },
     { id: "insights", label: "Extract Insights", description: "LLM-powered thesis, frameworks, takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (id) => ({ transcriptId: id }) },
     { id: "angle", label: "Choose Angle", description: "Strategic angle and editorial framing", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "draft", label: "Generate Draft", description: "Full editorial output with streaming", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "visual", label: "Visual Planning", description: "Suggest visuals, diagrams, quote cards", icon: Sparkles, stub: true },
+    { id: "draft", label: "Generate Draft", description: "Full editorial output with streaming", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
+    { id: "visual", label: "Visual Planning", description: "Suggest visuals, diagrams, quote cards", icon: Sparkles, apiEndpoint: "/api/visual", apiBody: (id) => ({ sourceId: id }) },
     { id: "qa", label: "Evaluate Draft", description: "Grade final editorial output on density and value", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
     { id: "export", label: "Export Asset", description: "Package and deliver final outputs", icon: Download, apiEndpoint: "/api/assets/export", apiBody: (id) => ({ draftId: id }) },
 ]
@@ -47,10 +48,10 @@ export default function SourceMissionControl() {
 
     const [source, setSource] = useState<SourceCandidate>({
         id: id,
-        title: "Loading...",
-        channel: "YouTube",
-        url: `https://youtube.com/watch?v=${id}`,
-        published: "Recently",
+        title: "Loading Source...",
+        channel: "Loading...",
+        url: "#",
+        published: "—",
         duration: "—",
         status: "idle",
         score: 0
@@ -76,6 +77,11 @@ export default function SourceMissionControl() {
 
     // Side panel state
     const [panelContent, setPanelContent] = useState<{ title: string; stageId: StageId; data: unknown } | null>(null)
+
+    // Writing Intent states
+    const [intentType, setIntentType] = useState<string>("blog_article")
+    const [intentAudience, setIntentAudience] = useState<string>("general_reader")
+    const [intentTone, setIntentTone] = useState<string>("conversational_editorial")
 
     // Expanded accordion IDs
     const [expandedAccordions, setExpandedAccordions] = useState<Set<StageId>>(new Set())
@@ -151,10 +157,14 @@ export default function SourceMissionControl() {
         setError(null)
 
         try {
+            const bodyPayload = stage.id === "draft"
+                ? stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone })
+                : stage.apiBody(id)
+
             const res = await fetch(stage.apiEndpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(stage.apiBody(id))
+                body: JSON.stringify(bodyPayload)
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || "Execution failed")
@@ -209,7 +219,9 @@ export default function SourceMissionControl() {
         setIsRunningAll(true)
         setError(null)
 
-        for (let i = getActiveStageIndex(); i < STAGES.length; i++) {
+        const startIndex = getActiveStageIndex()
+
+        for (let i = startIndex; i < STAGES.length; i++) {
             const stage = STAGES[i]
             if (!stage.apiEndpoint || !stage.apiBody) {
                 // Skip stages without API endpoints (e.g., QA stub)
@@ -218,11 +230,18 @@ export default function SourceMissionControl() {
                 continue
             }
 
+            // Pause at draft to await intent configuration if we auto-ran into it
+            if (stage.id === "draft" && i !== startIndex) {
+                setLogs(prev => [{ event: `Pipeline paused. Please configure Writing Intent before continuing.`, time: "Just now", status: "info" }, ...prev])
+                setIsRunningAll(false)
+                return // Stop auto-execution
+            }
+
             setExecutingStage(stage.id)
 
             try {
                 const bodyPayload = stage.id === "draft"
-                    ? { ...stage.apiBody(id), stream: false }
+                    ? { ...stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone }), stream: false }
                     : stage.apiBody(id)
 
                 const res = await fetch(stage.apiEndpoint, {
@@ -314,12 +333,12 @@ export default function SourceMissionControl() {
                     <div className="space-y-2">
                         <div className="flex items-start justify-between gap-6">
                             <h1 className="text-[26px] font-serif font-semibold tracking-tight text-balance leading-[1.2]">{source.title}</h1>
-                            <a href={source.url} target="_blank" rel="noopener noreferrer" aria-label="View original on YouTube" className="shrink-0 mt-1 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all duration-200">
+                            <a href={source.url} target="_blank" rel="noopener noreferrer" aria-label="View original source" className="shrink-0 mt-1 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all duration-200">
                                 <ExternalLink className="w-4 h-4" />
                             </a>
                         </div>
                         <div className="flex items-center gap-2">
-                            <Badge variant="secondary">{source.channel}</Badge>
+                            <Badge variant="secondary">{source.channel || source.source_type || "Source"}</Badge>
                         </div>
                     </div>
 
@@ -456,9 +475,9 @@ export default function SourceMissionControl() {
                                                                     <button
                                                                         onClick={(e) => { e.stopPropagation(); executeStage(stage) }}
                                                                         disabled={isExecuting}
-                                                                        className="text-xs text-brand font-medium hover:underline transition-all"
+                                                                        className="text-xs flex items-center gap-1.5 text-brand font-medium hover:underline transition-all"
                                                                     >
-                                                                        {isExecuting ? "Executing..." : "Execute stage"}
+                                                                        {isExecuting ? <><Loader2 className="w-3 h-3 animate-spin" /><span>Executing...</span></> : <span>Execute stage</span>}
                                                                     </button>
                                                                 )}
                                                                 {isCompleted && hasResult && (
@@ -474,6 +493,83 @@ export default function SourceMissionControl() {
                                                                 )}
                                                             </div>
                                                         </div>
+
+                                                        {/* Writing Intent Setup for Draft Stage */}
+                                                        {stage.id === "draft" && !isCompleted && isActive && (
+                                                            <div className="mt-4 p-4 rounded-xl bg-background border border-border/60 shadow-sm animate-in fade-in slide-in-from-top-2 flex flex-col gap-3.5" onClick={e => e.stopPropagation()}>
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <Settings2 className="w-3.5 h-3.5 text-brand" />
+                                                                    <h4 className="text-[12px] font-semibold text-foreground uppercase tracking-wider font-serif">Writing Intent Setup</h4>
+                                                                </div>
+                                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                                                    {/* Content Type */}
+                                                                    <div className="space-y-1.5">
+                                                                        <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Content Type</label>
+                                                                        <select
+                                                                            value={intentType}
+                                                                            onChange={(e) => setIntentType(e.target.value)}
+                                                                            title="Select Content Type"
+                                                                            className="h-8 text-xs bg-muted/30 border border-border/50 rounded-md px-2 w-full appearance-none pr-8 focus:outline-none focus:ring-1 focus:ring-brand/50 text-foreground"
+                                                                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center', backgroundSize: '1em' }}
+                                                                        >
+                                                                            <option value="blog_article">Blog Article</option>
+                                                                            <option value="essay">Thematic Essay</option>
+                                                                            <option value="technical_breakdown">Technical Breakdown</option>
+                                                                            <option value="explainer">Explainer</option>
+                                                                            <option value="thought_leadership">Thought Leadership</option>
+                                                                        </select>
+                                                                    </div>
+                                                                    {/* Audience */}
+                                                                    <div className="space-y-1.5">
+                                                                        <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Target Audience</label>
+                                                                        <select
+                                                                            value={intentAudience}
+                                                                            onChange={(e) => setIntentAudience(e.target.value)}
+                                                                            title="Select Target Audience"
+                                                                            className="h-8 text-xs bg-muted/30 border border-border/50 rounded-md px-2 w-full appearance-none pr-8 focus:outline-none focus:ring-1 focus:ring-brand/50 text-foreground"
+                                                                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center', backgroundSize: '1em' }}
+                                                                        >
+                                                                            <option value="general_reader">General Reader</option>
+                                                                            <option value="beginner">Beginner</option>
+                                                                            <option value="professional">Professional / Peer</option>
+                                                                            <option value="founder">Founder / Operator</option>
+                                                                            <option value="technical">Technical Engineer</option>
+                                                                        </select>
+                                                                    </div>
+                                                                    {/* Tone */}
+                                                                    <div className="space-y-1.5">
+                                                                        <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Voice & Tone</label>
+                                                                        <select
+                                                                            value={intentTone}
+                                                                            onChange={(e) => setIntentTone(e.target.value)}
+                                                                            title="Select Tone"
+                                                                            className="h-8 text-xs bg-muted/30 border border-border/50 rounded-md px-2 w-full appearance-none pr-8 focus:outline-none focus:ring-1 focus:ring-brand/50 text-foreground"
+                                                                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center', backgroundSize: '1em' }}
+                                                                        >
+                                                                            <option value="conversational_editorial">Conversational</option>
+                                                                            <option value="formal_authoritative">Formal & Authoritative</option>
+                                                                            <option value="reflective_essay">Reflective & Fluid</option>
+                                                                            <option value="dense_information">Dense & Direct</option>
+                                                                        </select>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center justify-between mt-1 pt-3 border-t border-border/40">
+                                                                    <p className="text-[11px] text-muted-foreground/80 italic">
+                                                                        This brief explicitly modifies how the LLM drafts and how the Editorial QA evaluates the piece.
+                                                                    </p>
+                                                                    <Button 
+                                                                        size="sm" 
+                                                                        className="h-7 text-[11px] gap-1.5 shrink-0"
+                                                                        onClick={(e) => { e.stopPropagation(); runFullPipeline(); }}
+                                                                        disabled={isRunningAll || !!executingStage}
+                                                                        variant="default"
+                                                                    >
+                                                                        {isRunningAll || executingStage === "draft" ? <Loader2 className="w-3 h-3 animate-spin"/> : <Play className="w-3 h-3"/>}
+                                                                        Resume Pipeline
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        )}
 
                                                         {/* Accordion content for completed steps */}
                                                         {isCompleted && isExpanded && hasResult && (
@@ -520,9 +616,32 @@ export default function SourceMissionControl() {
                                         <Badge variant={source.score >= 8 ? "success" : source.score >= 6 ? "secondary" : "destructive"}>
                                             Score: {source.score}/10
                                         </Badge>
-                                        <p className="text-[12px] text-muted-foreground leading-relaxed">
-                                            {String(stageResults.qa_rationale || "Evaluated by Draft Quality Review system.")}
-                                        </p>
+                                        <div className="text-[12px] text-muted-foreground leading-relaxed">
+                                            {(() => {
+                                                const rationale = String(stageResults.qa_rationale || "Evaluated by Draft Quality Review system.");
+                                                const sentences = rationale.split('. ').filter(s => s.trim().length > 0);
+                                                const truncated = sentences.slice(0, 2).join('. ') + (sentences.length > 2 ? '.' : '');
+                                                const hasMore = rationale.length > truncated.length && sentences.length > 2;
+
+                                                return (
+                                                    <p>
+                                                        {truncated}
+                                                        {hasMore && (
+                                                            <button 
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const qaStage = STAGES.find(s => s.id === "qa");
+                                                                    if (qaStage) openPanel(qaStage);
+                                                                }}
+                                                                className="text-brand hover:underline font-medium ml-1.5"
+                                                            >
+                                                                Read more
+                                                            </button>
+                                                        )}
+                                                    </p>
+                                                )
+                                            })()}
+                                        </div>
                                     </div>
                                 ) : (
                                     <p className="text-[12px] text-muted-foreground italic">Run the pipeline through &apos;Evaluate Draft&apos; to generate a score.</p>
@@ -560,8 +679,8 @@ export default function SourceMissionControl() {
             {/* ═══ SIDE PANEL / DETAIL DRAWER ═══ */}
             {panelContent && (
                 <div className="w-[480px] shrink-0 border-l border-border/60 bg-background/95 backdrop-blur-xl flex flex-col animate-in slide-in-from-right-4 duration-300">
-                    <div className="h-14 flex items-center justify-between px-6 border-b border-border/60 shrink-0">
-                        <h3 className="text-[13px] font-semibold tracking-tight">{panelContent.title}</h3>
+                    <div className="h-16 flex items-center justify-between px-6 border-b border-border/60 shrink-0">
+                        <h3 className="text-[17px] font-semibold tracking-tight font-serif">{panelContent.title}</h3>
                         <button onClick={() => setPanelContent(null)} aria-label="Close panel" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all duration-200">
                             <X className="w-4 h-4" />
                         </button>

@@ -10,8 +10,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing 'query' parameter." }, { status: 400 })
         }
 
-        // Call execution/discover_youtube_sources.py
-        const { success, error, rawOutput } = await runPythonScript("discover_youtube_sources.py", ["--query", query, "--max", "3"])
+        // Call execution/source_scout.py
+        const { success, error, rawOutput } = await runPythonScript("source_scout.py", ["--query", query, "--max", "3"])
 
         if (!success) {
             return NextResponse.json({ error: "Failed to execute scout script", details: error }, { status: 500 })

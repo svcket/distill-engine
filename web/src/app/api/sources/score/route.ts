@@ -31,7 +31,7 @@ export async function POST(request: Request) {
                     const data = JSON.parse(fs.readFileSync(path.join(sourceDir, file), 'utf8'))
                     const items = Array.isArray(data) ? data : [data]
                     if (items.some((item: Record<string, unknown>) =>
-                        item.video_id === sourceId || item.source_id === sourceId
+                        item.source_id === sourceId
                     )) {
                         found = true
                         break
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
         if (!found) {
             const stub = [{
                 source_id: sourceId,
-                video_id: sourceId,
+
                 source_type: 'youtube',
                 title: `Source ${sourceId}`,
                 channel: 'Unknown',

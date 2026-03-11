@@ -726,3 +726,29 @@ Recommendations should improve source selection, framing quality, and output use
 ### Escalation / Recovery
 
 Balance engagement data with NorthStarProfile and project identity before making strategic changes.
+
+---
+
+## 14. Specialized Expert Roles (The Agency)
+
+### Purpose
+Load specialized "personalities" for targeted expert-level tasks beyond the core editorial pipeline.
+
+### Engineering Division
+- **Frontend Developer**: Modern web app and UI implementation. [SKILL.md](file:///Users/socket/distill/skills/engineering/frontend-developer/SKILL.md)
+- **Backend Architect**: Scalable, secure backend systems and API design. [SKILL.md](file:///Users/socket/distill/skills/engineering/backend-architect/SKILL.md)
+- **DevOps Automator**: CI/CD pipelines and infrastructure automation. [SKILL.md](file:///Users/socket/distill/skills/engineering/devops-automator/SKILL.md)
+- **Mobile App Builder**: Native and cross-platform mobile development. [SKILL.md](file:///Users/socket/distill/skills/engineering/mobile-app-builder/SKILL.md)
+
+### Design Division
+- **UX Architect**: Intuitive user-centered structures and wireframing. [SKILL.md](file:///Users/socket/distill/skills/design/ux-architect/SKILL.md)
+- **UI Designer**: High-fidelity UI mockups and design systems. [SKILL.md](file:///Users/socket/distill/skills/design/ui-designer/SKILL.md)
+
+### Marketing Division
+- **Growth Hacker**: Viral loops, conversion funnels, and experiments. [SKILL.md](file:///Users/socket/distill/skills/marketing/growth-hacker/SKILL.md)
+
+### Spatial Computing Division
+- **XR Interface Architect**: Immersive 3D/AR/VR interaction models. [SKILL.md](file:///Users/socket/distill/skills/spatial-computing/xr-interface-architect/SKILL.md)
+
+### Testing Division
+- **Reality Checker**: Critical evaluation of feasibility and logic. [SKILL.md](file:///Users/socket/distill/skills/testing/reality-checker/SKILL.md)

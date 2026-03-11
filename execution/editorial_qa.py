@@ -45,6 +45,23 @@ def evaluate_draft(source_id: str):
     elif "content" in draft_data:
         content = draft_data.get("content", "")
 
+    # Load Brief Data for intent-aware QA
+    brief_file = os.path.join(base, ".tmp", "briefs", f"{source_id}_brief.json")
+    brief_data = {}
+    if os.path.exists(brief_file):
+        try:
+            with open(brief_file, "r", encoding="utf-8") as f:
+                brief_bundle = json.load(f)
+                brief_data = brief_bundle.get("data", {})
+        except Exception:
+            pass
+
+    content_type = brief_data.get("content_type", "blog article")
+    audience = brief_data.get("audience", "general reader")
+    tone = brief_data.get("tone", "conversational")
+    goal = brief_data.get("goal", "explain clearly")
+    avoid_patterns = brief_data.get("avoid_patterns", [])
+
     if "OPENAI_API_KEY" not in os.environ or not os.environ["OPENAI_API_KEY"]:
         # Mock evaluation
         total_score = 52
@@ -60,7 +77,7 @@ def evaluate_draft(source_id: str):
                 "specificity": 8,
                 "feedback": "Mock feedback: The draft looks solid. Good source grounding.",
                 "total_score": total_score,
-                "decision": "Publishable"
+                "decision": "Publish Ready"
             }
         }
         _save_evaluation(source_id, mock_result)
@@ -69,18 +86,29 @@ def evaluate_draft(source_id: str):
 
     client = OpenAI()
     
-    system_prompt = """
-    You are the Senior Editorial Reviewer for Distill. Evaluate this article draft based on 6 standards.
-    Score each category from 1 to 10 strictly. Standard AI outputs usually score around 5-6. Only award 9-10 for exceptional quality.
-    
-    Categories:
-    1. Source Grounding: Does it explicitly cite the source? Does it feel anchored in a specific talk/article?
-    2. Clarity: Is the logic easy to follow?
-    3. Original Insight: Is the central thesis strong or vague/generic?
-    4. Human Tone: Short paragraphs? Confident? Free of jargon like 'pivotal transformation' or 'in conclusion'?
-    5. SEO Structure: Scannable? Strong subheadings?
-    6. Specificity: Does it use tangible examples and actual frameworks mentioned in the source?
-    """
+    system_prompt = f"""You are the Senior Editorial Reviewer for Distill. Evaluate this draft based on 6 standards.
+Score each category strictly from 1 to 10. AI outputs usually score 5-6. Only award 9-10 for exceptional human-grade quality.
+
+CRITICAL INTENT CONTEXT:
+This piece is intended to be a **{content_type}** for a **{audience}**.
+The tone should be **{tone}**.
+The primary goal is to **{goal}**.
+
+CONTEXTUAL EVALUATION CRITERIA:
+Because this is a {content_type}, you MUST apply the following contextual scoring lenses. Do NOT penalize a piece for lacking academic structure if it is not an academic piece.
+- If "Blog Article": Focus heavily on Clarity, narrative flow, accessibility, and SEO structure.
+- If "Essay" or "Thematic Essay": Focus heavily on Original Insight, argument strength, and reflection. Direct quotes are nice but not strictly required if synthesis is strong.
+- If "Technical Breakdown" or "Explainer": Focus heavily on Specificity, accuracy, and clear examples. Density matters.
+- If "Source Analysis": Focus heavily on Source Grounding.
+
+Evaluate these 6 Categories explicitly reflecting the context above:
+1. Source Grounding: Does it confidently anchor to the source?
+2. Clarity: Is the logic easy to follow according to the reading level of the {audience}?
+3. Original Insight: Is the central thesis strong or vague?
+4. Human Tone: Does it sound confident? Did it avoid robotic AI cliches like "In today's rapidly evolving landscape" or {', '.join(avoid_patterns)}?
+5. SEO Structure: Is it scannable with strong subheadings (if public-facing)?
+6. Specificity: Does it use tangible examples and real frameworks?
+"""
 
     user_prompt = f"""Review the following draft:
     
@@ -107,11 +135,16 @@ def evaluate_draft(source_id: str):
             extracted.specificity
         )
         
+        # New flexible editorial verdicts
         decision = "Reject"
-        if total_score >= 50:
-            decision = "Publishable"
+        if total_score >= 54:
+            decision = "Publish Ready"
+        elif total_score >= 48:
+            decision = "Minor Improvements Suggested"
         elif total_score >= 40:
-            decision = "Revise"
+            decision = "Needs Revision"
+        elif total_score >= 30:
+            decision = "Major Rewrite Required"
             
         bundle = {
             "status": "success",

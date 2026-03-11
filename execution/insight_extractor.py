@@ -11,14 +11,16 @@ class Framework(BaseModel):
     description: str = Field(description="Brief description of what the framework does.")
 
 class InsightExtraction(BaseModel):
-    thesis: str = Field(description="The overarching argument or point of the video.")
-    key_ideas: List[str] = Field(description="The supporting pillars of the thesis.")
-    frameworks: List[Framework] = Field(description="List of specific models or step-by-step systems mentioned.")
-    examples: List[str] = Field(description="Anecdotes or data points used to prove concepts.")
-    quotes: List[str] = Field(description="Exact, verbatim memorable lines.")
-    takeaways: List[str] = Field(description="What should a builder actually do with this info?")
-    tensions: List[str] = Field(description="Open questions or contradictions raised.")
-    confidence_notes: str = Field(description="Notes on whether the content was dense or superficial.")
+    core_argument: str = Field(description="The singular, overarching argument or point of the source.")
+    key_claims: List[str] = Field(description="The primary claims or assertions that support the core argument.")
+    supporting_examples: List[str] = Field(description="Concrete historical cases, data points, or anecdotes used as proof.")
+    frameworks: List[Framework] = Field(description="Specific models, metrics, or step-by-step systems mentioned.")
+    controversies: List[str] = Field(description="Debates, tensions, or controversial views raised by the source.")
+    contradictions: List[str] = Field(description="Any contradictions or counterintuitive points made.")
+    implications: List[str] = Field(description="The 'so what?'-the second-order effects of the claims.")
+    memorable_quotes: List[str] = Field(description="Exact, verbatim impactful lines.")
+    speaker_identity: str = Field(description="Who is speaking or who authored this source? (Name, role, or assumed identity if not explicitly stated).")
+    source_context: str = Field(description="The overarching theme, publication, or platform context of this knowledge.")
 
 def load_json(filepath: str):
     if os.path.exists(filepath):
@@ -34,24 +36,30 @@ def extract_insights(packet_path: str):
         sys.exit(1)
         
     packet = load_json(packet_path)
-    video_id = packet.get("video_id")
+    source_id = packet.get("source_id") or packet.get("video_id")
     
     if "OPENAI_API_KEY" not in os.environ or not os.environ["OPENAI_API_KEY"]:
         # Mock fallback for UI testing without keys
         mock_result = {
             "status": "success_mocked",
-            "video_id": video_id,
+            "source_id": source_id,
             "data": {
-                "thesis": "Mock Thesis: Agentic systems require decoupled intelligence routing.",
+                "core_argument": "Mock Argument: Agentic systems require decoupled intelligence routing.",
+                "key_claims": ["Monolithic agents fail at scale", "Routing determines system reliability"],
+                "supporting_examples": ["The 2024 AI agent crash", "Using decoupled orchestration layers"],
                 "frameworks": [{"title": "Agentic Loop", "description": "Observe, orient, decide, act."}],
-                "quotes": ["This is a mock quote from the extraction engine."],
-                "takeaways": ["Build generic wrappers before custom agents."]
+                "controversies": ["Are LLMs necessary for basic routing?"],
+                "contradictions": ["Faster models aren't always better orchestrators."],
+                "implications": ["End-user applications will become primarily declarative."],
+                "memorable_quotes": ["This is a mock quote from the extraction engine."],
+                "speaker_identity": "Senior System Architect / AI Researcher",
+                "source_context": "Technical presentation on modern AI infrastructure"
             }
         }
         
         out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "insights")
         os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, f"{video_id}_insights.json")
+        out_path = os.path.join(out_dir, f"{source_id}_insights.json")
         with open(out_path, 'w', encoding='utf-8') as f:
             json.dump(mock_result, f, indent=2)
             
@@ -66,16 +74,17 @@ def extract_insights(packet_path: str):
     )
     
     system_prompt = """
-    You are the Insight Extractor—a research journalist for a premium publication.
-    Your task is to extract dense, structured knowledge from this raw transcript.
+    You are the Insight Extractor—a research analyst for a premium editorial publication.
+    Your task is to extract dense, structured, and interpretive knowledge from this raw transcript.
     
     CRITICAL RULES:
-    1. Extract exactly one strong main thesis.
-    2. Extract 3-5 key actionable insights.
-    3. Identify and extract any frameworks, mental models, or step-by-step systems mentioned.
-    4. Extract verbatim quotes that are highly impactful.
-    5. Do NOT invent information. If the transcript is shallow, note it in confidence_notes.
-    6. Prioritize technical builders and makers.
+    1. Extract exactly one strong core argument (the thesis).
+    2. Extract the key claims that serve as the pillars of that argument.
+    3. Ground the extraction in SPECIFICITY. Identify concrete examples and data.
+    4. Interpret the text: pull out controversies, contradictions, and broader implications.
+    5. Do NOT invent information. If the transcript is shallow, output empty arrays for missing concepts.
+    6. Extract verbatim memorable quotes.
+    7. Capture the speaker identity and the broader context of the source material.
     """
     
     try:
@@ -92,11 +101,11 @@ def extract_insights(packet_path: str):
         
         out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "insights")
         os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, f"{video_id}_insights.json")
+        out_path = os.path.join(out_dir, f"{source_id}_insights.json")
         
         bundle = {
             "status": "success",
-            "video_id": video_id,
+            "source_id": source_id,
             "data": json.loads(extracted_data.model_dump_json())
         }
         

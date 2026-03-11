@@ -114,7 +114,7 @@ def build_packet(source_id: str):
 
     packet = {
         "source_id": source_id,
-        "video_id": source_id,   # backwards compat
+
         "source_type": metadata.get("source_type", "youtube"),
         "metadata": metadata,
         "judgment": judgment,
@@ -135,7 +135,7 @@ def build_packet(source_id: str):
     print(json.dumps({
         "status": "success",
         "source_id": source_id,
-        "video_id": source_id,
+
         "packet_path": out_path,
         "segment_count": len(selected_segments),
         "total_segments": len(transcript),

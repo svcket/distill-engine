@@ -22,13 +22,15 @@ from adapters.youtube_adapter import YouTubeAdapter
 from adapters.vimeo_adapter import VimeoAdapter
 from adapters.podcast_adapter import PodcastAdapter
 from adapters.upload_adapter import UploadAdapter
+from adapters.rss_adapter import RssAdapter
 
 
-# Registry — order matters; more specific patterns first
+# Registry — order matters; more specific platforms first
 ADAPTERS = [
+    PodcastAdapter(),
+    RssAdapter(),
     YouTubeAdapter(),
     VimeoAdapter(),
-    PodcastAdapter(),
     UploadAdapter(),
 ]
 
@@ -75,6 +77,7 @@ def ingest(url: str, base_dir: str) -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Route and normalize a source URL.")
     parser.add_argument("--url", required=True, help="Source URL to ingest.")
+    parser.add_argument("--source-type", dest="source_type", help="Optional source type hint")
     parser.add_argument("--base-dir", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         help="Base directory for .tmp file storage.")
     args = parser.parse_args()

@@ -13,7 +13,7 @@ from .base_adapter import BaseAdapter, NormalizedSource
 class VimeoAdapter(BaseAdapter):
 
     PATTERNS = [
-        r"(?:https?://)?(?:www\.)?vimeo\.com/(\d+)",
+        r"(?:https?://)?(?:[a-zA-Z0-9-]+\.)?vimeo\.com/(\d+)",
         r"(?:https?://)?player\.vimeo\.com/video/(\d+)",
     ]
 
@@ -34,6 +34,8 @@ class VimeoAdapter(BaseAdapter):
 
         clean_url = f"https://vimeo.com/{video_id}"
         source_id = f"vimeo_{video_id}"
+        
+        # We fetch metadata using the standard URL
         metadata = self._fetch_oembed(clean_url)
 
         return NormalizedSource(
@@ -47,6 +49,7 @@ class VimeoAdapter(BaseAdapter):
             transcript_status="manual",  # Vimeo transcripts need manual upload
             source_confidence=0.9,
             raw_metadata=metadata,
+            referer="https://vimeo.com/",
         )
 
     def _fetch_oembed(self, url: str) -> dict:

@@ -27,6 +27,7 @@ class NormalizedSource:
     language: str = "en"
     thumbnail: Optional[str] = None
     source_confidence: float = 1.0       # 0.0–1.0; lower for auto-detected stubs
+    referer: Optional[str] = None        # Optional referer for strict downloads (e.g. Vimeo)
     raw_metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -50,6 +51,7 @@ class NormalizedSource:
             "language": self.language,
             "thumbnail": self.thumbnail,
             "source_confidence": self.source_confidence,
+            "referer": self.referer,
         }
 
     def _seconds_to_iso(self, seconds: int) -> str:
