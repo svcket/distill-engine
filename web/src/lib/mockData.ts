@@ -12,6 +12,17 @@ export interface SourceCandidate {
     source_type?: string;
     thumbnail?: string;
     completedStages?: string[];
+    processedAt?: string;
+}
+
+export interface LibraryInsight {
+    id: string;
+    title: string;
+    description: string;
+    type: 'Framework' | 'Concept' | 'Insight' | 'Method';
+    sourceTitle: string;
+    archivedAt: string;
+    tags: string[];
 }
 
 export interface TranscriptChunk {
@@ -108,3 +119,42 @@ export const mockDrafts = {
     ],
     long: `# Resilience in Agentic Architecture\n\nWe are currently in a transition period for LLM applications. The era of brittle, optimistic prompt-chaining is ending, and the era of structured, resilient state machines is beginning.\n\n## The Core Problem\n\nAs discussed in the recent Stanford Seminar, we are building systems that act like nervous systems, but we manage them as if they were simple calculators.`
 };
+
+export const archivedInsights: LibraryInsight[] = [
+    {
+        id: 'li_1',
+        title: 'The "Fuzzy Core, Rigid Shell" Architecture',
+        description: 'When building AI applications, relying on LLMs for control flow is a mistake because they are inherently non-deterministic. Use the LLM solely as a reasoning engine (fuzzy core) and wrap it in type-safe classic engineering (rigid shell).',
+        type: 'Framework',
+        sourceTitle: 'Building Real Agents',
+        archivedAt: 'Oct 24, 2024',
+        tags: ['AI Agents', 'System Design']
+    },
+    {
+        id: 'li_2',
+        title: 'State-Machine Persistence',
+        description: 'Agents should run on state machines that can be paused, inspected, and serialized. This prevents cascading failure loops and allows human-in-the-loop correction.',
+        type: 'Concept',
+        sourceTitle: 'Building Real Agents',
+        archivedAt: 'Oct 24, 2024',
+        tags: ['AI Agents', 'System Design']
+    },
+    {
+        id: 'li_3',
+        title: 'Context Horizons',
+        description: 'Distinction between hard limits on token memory vs soft limits on semantic retrieval relevance. Mixing both creates stable long-term reasoning.',
+        type: 'Concept',
+        sourceTitle: 'Stanford Seminar Series',
+        archivedAt: 'Oct 22, 2024',
+        tags: ['AI Agents', 'Mental Models']
+    },
+    {
+        id: 'li_4',
+        title: 'Vibe Coding',
+        description: 'The shift from imperative writing to intentional steering. Developers in 2026 will focus more on defining the "vibe" and constraints than spelling out every line of code.',
+        type: 'Method',
+        sourceTitle: 'Designing for Vibe Coders',
+        archivedAt: 'Oct 27, 2024',
+        tags: ['Content Strategy', 'Bootstrapping']
+    }
+];

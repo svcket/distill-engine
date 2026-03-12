@@ -6,6 +6,8 @@ from datetime import datetime
 from googleapiclient.discovery import build
 from adapters.adapter_router import route_source
 
+api_key = os.getenv("YOUTUBE_API_KEY")
+
 def scout_sources(query: str, max_results: int = 5):
     """
     Search for candidate sources matching the query.
@@ -54,11 +56,11 @@ def scout_sources(query: str, max_results: int = 5):
             {
                 "source_id": f"mock_{i}",
                 "url": f"https://youtube.com/watch?v=mock_{i}",
-                "title": f"Mock Discovery Result {i} for '{query}'",
-                "creator": "API Key Missing Fallback Channel",
+                "title": f"Demo Result {i} for '{query}'",
+                "creator": "Demo Result (YouTube API Key Missing)",
                 "published_at": datetime.utcnow().isoformat() + "Z",
                 "duration": "PT12M34S",
-                "description": "Please add YOUTUBE_API_KEY to your .env to get real results.",
+                "description": "YouTube API Key is missing. Add YOUTUBE_API_KEY to your .env file to enable real-time search results.",
                 "topic_matches": [query],
                 "whitelist_match": False,
                 "discovery_context": "fallback_mock"

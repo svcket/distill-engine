@@ -1,11 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/Card"
 import { Button } from "@/components/ui/Button"
 import { Badge } from "@/components/ui/Badge"
 import { Download, FileText, Eye, Loader2, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/context/LanguageContext"
 
 interface Draft {
     id: string
@@ -18,9 +20,32 @@ interface Draft {
 }
 
 export default function ExportsPage() {
+    return (
+        <Suspense fallback={<div className="flex h-full items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>}>
+            <ExportsContent />
+        </Suspense>
+    )
+}
+
+function ExportsContent() {
+    const { t } = useLanguage()
     const [drafts, setDrafts] = useState<Draft[]>([])
     const [loading, setLoading] = useState(true)
     const [viewingDraft, setViewingDraft] = useState<Draft | null>(null)
+    const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
+    const [drawerDropdownOpen, setDrawerDropdownOpen] = useState(false)
+    const searchParams = useSearchParams()
+
+    // Handle auto-opening a draft from query params
+    useEffect(() => {
+        if (!loading && drafts.length > 0) {
+            const id = searchParams.get("id")
+            if (id) {
+                const draft = drafts.find(d => d.id === id)
+                if (draft) setViewingDraft(draft)
+            }
+        }
+    }, [loading, drafts, searchParams])
 
     useEffect(() => {
         async function loadDrafts() {
@@ -34,6 +59,20 @@ export default function ExportsPage() {
         }
         loadDrafts()
     }, [])
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (openDropdownId || drawerDropdownOpen) {
+                const target = e.target as HTMLElement
+                if (!target.closest('.dropdown-container')) {
+                    setOpenDropdownId(null)
+                    setDrawerDropdownOpen(false)
+                }
+            }
+        }
+        document.addEventListener("mousedown", handler)
+        return () => document.removeEventListener("mousedown", handler)
+    }, [openDropdownId, drawerDropdownOpen])
 
     const downloadDraft = (draft: Draft) => {
         const blob = new Blob(
@@ -66,11 +105,11 @@ export default function ExportsPage() {
 
                     <div className="flex items-end justify-between">
                         <div>
-                            <h1 className="text-3xl font-serif font-semibold tracking-tight">Export Center</h1>
-                            <p className="text-muted-foreground mt-1">Download and review finalized content assets.</p>
+                            <h1 className="text-3xl font-serif font-semibold tracking-tight">{t("exports")}</h1>
+                            <p className="text-muted-foreground mt-1">{t("readyDrafts")}</p>
                         </div>
                         {drafts.length > 0 && (
-                            <Badge variant="secondary" className="text-xs">{drafts.length} asset{drafts.length !== 1 ? "s" : ""} ready</Badge>
+                            <Badge variant="secondary" className="text-xs">{drafts.length} {t("library")} ready</Badge>
                         )}
                     </div>
 
@@ -83,9 +122,9 @@ export default function ExportsPage() {
                             <div className="w-16 h-16 rounded-2xl bg-muted/60 flex items-center justify-center mx-auto">
                                 <FileText className="w-7 h-7 text-muted-foreground/50" />
                             </div>
-                            <p className="text-lg font-medium text-muted-foreground">No exports yet</p>
+                            <p className="text-lg font-medium text-muted-foreground font-serif">No exports yet</p>
                             <p className="text-sm text-muted-foreground/70 max-w-md mx-auto">
-                                Import a YouTube source, run the full pipeline, and your completed drafts will appear here for download.
+                                {t("monitorSources")}
                             </p>
                         </div>
                     ) : (
@@ -94,35 +133,70 @@ export default function ExportsPage() {
                                 <Card key={draft.id} className="flex flex-col group hover:shadow-soft hover:border-gray-300 transition-all duration-200">
                                     <CardHeader>
                                         <div className="flex justify-between items-start mb-2">
-                                            <Badge variant="secondary" className="gap-1">
+                                            <Badge variant="secondary" className="gap-1 capitalize">
                                                 <FileText className="w-3 h-3" />
-                                                {draft.format}
+                                                {draft.format.replace(/_/g, " ")}
                                             </Badge>
                                             <span className="text-xs text-muted-foreground">{timeAgo(draft.createdAt)}</span>
                                         </div>
-                                        <CardTitle className="text-lg leading-tight">{draft.title}</CardTitle>
-                                        <CardDescription>{draft.wordCount} words • Source: {draft.id}</CardDescription>
+                                        <CardTitle className="text-lg leading-tight font-serif">{draft.title}</CardTitle>
+                                        <CardDescription className="text-[11px] uppercase tracking-wider font-medium opacity-70 mt-1">{draft.wordCount} words • ID: {draft.id.slice(0, 8)}</CardDescription>
                                     </CardHeader>
                                     <CardContent className="flex-1">
-                                        <p className="text-sm text-muted-foreground line-clamp-3">
+                                        <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
                                             {draft.content.replace(/[#*>\-]/g, "").trim().slice(0, 200)}...
                                         </p>
                                     </CardContent>
-                                    <CardFooter className="pt-0 flex gap-2">
+                                    <CardFooter className="pt-0 flex gap-2 relative">
                                         <Button
                                             className="flex-1 gap-2"
                                             onClick={() => setViewingDraft(draft)}
                                         >
                                             <Eye className="w-4 h-4" /> View Draft
                                         </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="icon"
-                                            onClick={() => downloadDraft(draft)}
-                                            title="Download as Markdown"
-                                        >
-                                            <Download className="w-4 h-4" />
-                                        </Button>
+                                        <div className="relative dropdown-container">
+                                            <Button
+                                                variant="outline"
+                                                size="icon"
+                                                title="Download options"
+                                                onClick={() => setOpenDropdownId(openDropdownId === draft.id ? null : draft.id)}
+                                            >
+                                                <Download className="w-4 h-4" />
+                                            </Button>
+                                            {openDropdownId === draft.id && (
+                                                <div className="absolute right-0 bottom-full mb-2 w-48 bg-background border border-border rounded-xl shadow-lg p-1 animate-in fade-in slide-in-from-bottom-2 duration-200 z-50">
+                                                    <button 
+                                                        onClick={() => {
+                                                            downloadDraft(draft);
+                                                            setOpenDropdownId(null);
+                                                        }} 
+                                                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
+                                                    >
+                                                        <FileText className="w-3.5 h-3.5" /> Markdown (.md)
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => {
+                                                            alert("PDF generation stub. Download .md and print to PDF for best results.");
+                                                            setOpenDropdownId(null);
+                                                        }}
+                                                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2 opacity-60"
+                                                    >
+                                                        <FileText className="w-3.5 h-3.5" /> PDF Document (.pdf)
+                                                    </button>
+                                                    <div className="h-px bg-border my-1" />
+                                                    <button 
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(`${window.location.origin}/exports/${draft.id}`);
+                                                            alert("Share link copied to clipboard");
+                                                            setOpenDropdownId(null);
+                                                        }}
+                                                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
+                                                    >
+                                                        <Download className="w-3.5 h-3.5" /> Copy Share Link
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </CardFooter>
                                 </Card>
                             ))}
@@ -137,15 +211,41 @@ export default function ExportsPage() {
                     <div className="h-14 flex items-center justify-between px-6 border-b border-border/60 shrink-0">
                         <h3 className="text-[13px] font-semibold tracking-tight truncate pr-4">{viewingDraft.title}</h3>
                         <div className="flex items-center gap-2 shrink-0">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1.5 h-7 text-[11px]"
-                                onClick={() => downloadDraft(viewingDraft)}
-                            >
-                                <Download className="w-3 h-3" /> Download .md
-                            </Button>
-                            <button onClick={() => setViewingDraft(null)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all duration-200">
+                            <div className="relative dropdown-container">
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => setDrawerDropdownOpen(!drawerDropdownOpen)}
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                </Button>
+                                {drawerDropdownOpen && (
+                                    <div className="absolute right-0 top-full mt-2 w-48 bg-background border border-border rounded-xl shadow-lg p-1 animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+                                        <button 
+                                            onClick={() => {
+                                                downloadDraft(viewingDraft);
+                                                setDrawerDropdownOpen(false);
+                                            }} 
+                                            className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
+                                        >
+                                            <FileText className="w-3.5 h-3.5" /> Markdown (.md)
+                                        </button>
+                                        <div className="h-px bg-border my-1" />
+                                        <button 
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(`${window.location.origin}/exports/${viewingDraft.id}`);
+                                                alert("Share link copied to clipboard");
+                                                setDrawerDropdownOpen(false);
+                                            }}
+                                            className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
+                                        >
+                                            <Download className="w-3.5 h-3.5" /> Copy Share Link
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            <button onClick={() => setViewingDraft(null)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all duration-200" title="Close preview">
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
@@ -173,3 +273,4 @@ export default function ExportsPage() {
         </div>
     )
 }
+

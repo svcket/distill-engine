@@ -11,6 +11,8 @@ export const metadata: Metadata = {
   description: "Internal dashboard for knowledge distillation",
 };
 
+import { LanguageProvider } from "@/context/LanguageContext";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -19,9 +21,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="antialiased">
       <body className={`${inter.variable} ${serif.variable} font-sans`}>
-        <AppShell>
-          {children}
-        </AppShell>
+        <LanguageProvider>
+          <AppShell>
+            {children}
+          </AppShell>
+        </LanguageProvider>
       </body>
     </html>
   );

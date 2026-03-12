@@ -28,10 +28,10 @@ from adapters.rss_adapter import RssAdapter
 # Registry — order matters; more specific platforms first
 ADAPTERS = [
     PodcastAdapter(),
-    RssAdapter(),
     YouTubeAdapter(),
     VimeoAdapter(),
     UploadAdapter(),
+    RssAdapter(), # Generic fallback
 ]
 
 
@@ -42,9 +42,14 @@ def route_source(url: str) -> NormalizedSource:
     """
     url = url.strip()
 
-    for adapter in ADAPTERS:
+    # Try specific adapters first
+    for adapter in ADAPTERS[:-1]:
         if adapter.detect(url):
             return adapter.normalize(url)
+
+    # Fallback to RSS/Generic Web if it looks like a URL
+    if url.startswith("http") and ADAPTERS[-1].detect(url):
+        return ADAPTERS[-1].normalize(url)
 
     raise ValueError(
         f"No adapter found for source: {url}\n"

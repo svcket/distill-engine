@@ -5,8 +5,9 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/Ca
 import { StatusIndicator } from "@/components/ui/StatusIndicator"
 import { Button } from "@/components/ui/Button"
 import { SourceCandidate } from "@/lib/mockData"
-import { ArrowRight, FileText, UploadCloud, BrainCircuit, CheckCircle } from "lucide-react"
 import Link from "next/link"
+import { useLanguage } from "@/context/LanguageContext"
+import { ArrowRight, FileText, Plus, BrainCircuit, CheckCircle } from "lucide-react"
 
 interface DraftItem {
   id: string
@@ -17,6 +18,7 @@ interface DraftItem {
 }
 
 export default function Home() {
+  const { t } = useLanguage()
   const [sources, setSources] = useState<SourceCandidate[]>([])
   const [drafts, setDrafts] = useState<DraftItem[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
@@ -48,24 +50,36 @@ export default function Home() {
   const acceptedSources = sources.filter(s => s.score >= 6)
   const processingSources = sources.filter(s => s.status === "processing")
 
-  // Derive recent activity from persisted sources
-  const recentActivity = sources
-    .filter(s => s.completedStages && (s as SourceCandidate & { completedStages?: string[] }).completedStages?.length)
-    .slice(0, 5)
 
   return (
     <div className="p-8 max-w-[1200px] mx-auto space-y-8 animate-in fade-in duration-500">
 
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-3xl font-serif font-semibold tracking-tight">Overview</h1>
-          <p className="text-muted-foreground mt-1">Monitor sources, pipeline progress, and ready drafts.</p>
+          <h1 className="text-3xl font-serif font-semibold tracking-tight">{t("overview")}</h1>
+          <p className="text-muted-foreground mt-1">{t("monitorSources")}</p>
         </div>
-        <Link href="/sources">
-          <Button className="gap-2">
-            <UploadCloud className="w-4 h-4" /> Import Source
+        <div className="flex items-center gap-3">
+          <Button 
+            className="gap-2 h-10 shadow-micro bg-black hover:bg-black/90 text-white font-serif font-medium"
+            onClick={() => {
+              const input = document.createElement("input");
+              input.type = "file";
+              input.onchange = (e) => {
+                const file = (e.target as HTMLInputElement).files?.[0];
+                if (file) alert(`Importing ${file.name}...`);
+              };
+              input.click();
+            }}
+          >
+            <Plus className="w-4 h-4" /> {t("importSource")}
           </Button>
-        </Link>
+          <Link href="/sources">
+            <Button variant="outline" className="h-10 font-serif font-medium">
+              {t("viewSources")}
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Stats — driven by real data */}
@@ -74,7 +88,7 @@ export default function Home() {
           <Card className="hover:shadow-soft hover:border-gray-300 transition-all cursor-pointer">
             <CardHeader className="pb-4">
               <CardDescription className="flex items-center gap-2">
-                <BrainCircuit className="w-4 h-4" /> Total Sources
+                <BrainCircuit className="w-4 h-4" /> {t("totalSources")}
               </CardDescription>
               <CardTitle className="text-4xl font-light">
                 {isLoaded ? sources.length : "—"}
@@ -86,7 +100,7 @@ export default function Home() {
           <Card className="hover:shadow-soft hover:border-gray-300 transition-all cursor-pointer">
             <CardHeader className="pb-4">
               <CardDescription className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4" /> Accepted Sources
+                <CheckCircle className="w-4 h-4" /> {t("acceptedSources")}
               </CardDescription>
               <CardTitle className="text-4xl font-light text-emerald-600">
                 {isLoaded ? acceptedSources.length : "—"}
@@ -98,7 +112,7 @@ export default function Home() {
           <Card className="hover:shadow-soft hover:border-gray-300 transition-all cursor-pointer">
             <CardHeader className="pb-4">
               <CardDescription className="flex items-center gap-2">
-                <FileText className="w-4 h-4" /> Drafts Ready
+                <FileText className="w-4 h-4" /> {t("draftsReady")}
               </CardDescription>
               <CardTitle className="text-4xl font-light text-brand">
                 {isLoaded ? drafts.length : "—"}
@@ -113,9 +127,9 @@ export default function Home() {
         {/* Recent Sources */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium">Recent Sources</h2>
+            <h2 className="text-lg font-medium">{t("recentSources")}</h2>
             <Link href="/sources" className="text-sm font-medium text-muted-foreground hover:text-brand flex items-center gap-1 transition-colors">
-              View all <ArrowRight className="w-4 h-4" />
+              {t("viewAll")} <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
           {sources.length === 0 && isLoaded ? (
@@ -137,10 +151,10 @@ export default function Home() {
                         <h3 className="font-medium text-base text-balance leading-snug">{source.title}</h3>
                         <p className="text-sm text-muted-foreground">
                           {source.channel}
-                          {source.score > 0 && <> · <span className={source.score >= 6 ? "text-emerald-600 font-medium" : "text-red-500"}>{source.score}/10</span></>}
+                          {source.score > 0 && <> · <span className={source.score >= 6 ? "text-emerald-600 font-medium" : "text-red-500"}>{t("qualScore")}: {source.score}/10</span></>}
                         </p>
                       </div>
-                      <StatusIndicator status={source.status} className="shrink-0" />
+                      {source.status !== 'idle' && <StatusIndicator status={source.status} className="shrink-0" />}
                     </div>
                   </Link>
                 </Card>
@@ -152,9 +166,9 @@ export default function Home() {
         {/* Ready Drafts */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium">Ready Drafts</h2>
+            <h2 className="text-lg font-medium">{t("readyDrafts")}</h2>
             <Link href="/exports" className="text-sm font-medium text-muted-foreground hover:text-brand flex items-center gap-1 transition-colors">
-              Export Center <ArrowRight className="w-4 h-4" />
+              {t("exports")} <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
           {drafts.length === 0 && isLoaded ? (
@@ -168,7 +182,7 @@ export default function Home() {
             <Card>
               <div className="divide-y divide-border">
                 {drafts.slice(0, 5).map(draft => (
-                  <Link key={draft.id} href="/exports" className="block p-4 hover:bg-muted/30 transition-colors">
+                  <Link key={draft.id} href={`/exports?id=${draft.id}`} className="block p-4 hover:bg-muted/30 transition-colors">
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
                         <p className="text-sm font-medium line-clamp-1">{draft.title}</p>
@@ -186,7 +200,7 @@ export default function Home() {
         {/* Processing Queue — only show if there are processing items */}
         {processingSources.length > 0 && (
           <div className="space-y-4 md:col-span-2">
-            <h2 className="text-lg font-medium">Currently Processing</h2>
+            <h2 className="text-lg font-medium">{t("processingQueue")}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {processingSources.map(source => (
                 <Link key={source.id} href={`/sources/${source.id}`}>

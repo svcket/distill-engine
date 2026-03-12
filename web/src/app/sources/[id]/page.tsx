@@ -14,6 +14,7 @@ import {
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/context/LanguageContext"
 
 // ─── Workflow Stage Definitions ────────────────────────────────────────
 type StageId = "judge" | "transcript" | "refine" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "export"
@@ -43,6 +44,7 @@ const STAGES: WorkflowStage[] = [
 ]
 
 export default function SourceMissionControl() {
+    const { t } = useLanguage()
     const params = useParams()
     const id = params?.id as string
 
@@ -86,6 +88,9 @@ export default function SourceMissionControl() {
     // Expanded accordion IDs
     const [expandedAccordions, setExpandedAccordions] = useState<Set<StageId>>(new Set())
 
+    // Dropdown state
+    const [isExportOpen, setIsExportOpen] = useState(false)
+
     // Processing logs
     const [logs, setLogs] = useState<{ event: string; time: string; status: "success" | "info" | "error" }[]>([
         { event: "Discovered via Scouter Agent", time: "Today", status: "info" }
@@ -106,6 +111,7 @@ export default function SourceMissionControl() {
                             ...s,
                             title: stored.title || s.title,
                             channel: stored.channel || s.channel,
+                            url: stored.url || s.url,
                             score: stored.score || s.score,
                             published: stored.published || s.published,
                             duration: stored.duration || s.duration,
@@ -133,6 +139,18 @@ export default function SourceMissionControl() {
         }
         loadPersistedState()
     }, [id])
+
+    // Close dropdowns on outside click
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (isExportOpen && !target.closest('.export-dropdown-container')) {
+                setIsExportOpen(false)
+            }
+        }
+        document.addEventListener("mousedown", handler)
+        return () => document.removeEventListener("mousedown", handler)
+    }, [isExportOpen])
 
     // Determine current active stage
     const getActiveStageIndex = (): number => {
@@ -185,11 +203,12 @@ export default function SourceMissionControl() {
                 setStageResults(prev => ({ ...prev, qa_rationale: data.result.rationale }))
             }
             if (stage.id === "judge") {
-                // If judge updates title/channel
+                // If judge updates title/channel/url
                 setSource(s => ({
                     ...s,
                     title: data.result?.title || s.title,
                     channel: data.result?.channel || s.channel,
+                    url: data.result?.url || s.url,
                 }))
             }
 
@@ -268,6 +287,7 @@ export default function SourceMissionControl() {
                         ...s,
                         title: data.result?.title || s.title,
                         channel: data.result?.channel || s.channel,
+                        url: data.result?.url || s.url,
                     }))
                 }
 
@@ -312,6 +332,20 @@ export default function SourceMissionControl() {
         if (data) setPanelContent({ title: stage.label, stageId: stage.id, data })
     }
 
+    const downloadAsset = (format: 'md' | 'json') => {
+        const draft = stageResults.draft as { long?: string } | string;
+        const text = typeof draft === 'string' ? draft : draft?.long || "No draft available";
+        
+        const content = format === 'json' ? JSON.stringify(stageResults, null, 2) : text;
+        const blob = new Blob([content], { type: format === 'json' ? 'application/json' : 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${source.title.replace(/\s+/g, '_').toLowerCase()}.${format}`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
     return (
         <div className="flex h-full">
             {/* Main Content Area */}
@@ -320,7 +354,7 @@ export default function SourceMissionControl() {
 
                     {/* Back Link */}
                     <Link href="/sources" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground hover:text-foreground transition-all duration-200 group">
-                        <ArrowLeft className="w-3.5 h-3.5 transition-transform duration-200 group-hover:-translate-x-0.5" /> Back to Sources
+                        <ArrowLeft className="w-3.5 h-3.5 transition-transform duration-200 group-hover:-translate-x-0.5" /> {t("viewAll")} {t("sources")}
                     </Link>
 
                     {error && (
@@ -329,13 +363,65 @@ export default function SourceMissionControl() {
                         </div>
                     )}
 
-                    {/* ═══ IDENTITY BLOCK — Full Width Above Grid ═══ */}
                     <div className="space-y-2">
                         <div className="flex items-start justify-between gap-6">
                             <h1 className="text-[26px] font-serif font-semibold tracking-tight text-balance leading-[1.2]">{source.title}</h1>
-                            <a href={source.url} target="_blank" rel="noopener noreferrer" aria-label="View original source" className="shrink-0 mt-1 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all duration-200">
-                                <ExternalLink className="w-4 h-4" />
-                            </a>
+                            <div className="flex items-center gap-2 mt-1 shrink-0">
+                                <div className="relative export-dropdown-container">
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        className="gap-2"
+                                        onClick={() => setIsExportOpen(!isExportOpen)}
+                                    >
+                                        <Download className="w-3.5 h-3.5" />
+                                        {t("export")}
+                                        <ChevronDown className={cn("w-3.5 h-3.5 opacity-50 transition-transform duration-200", isExportOpen && "rotate-180")} />
+                                    </Button>
+                                    {isExportOpen && (
+                                        <div className="absolute right-0 top-full mt-1 w-40 bg-background border border-border rounded-xl shadow-lg p-1 animate-in fade-in slide-in-from-top-1 duration-200 z-50">
+                                            <button 
+                                                onClick={() => { downloadAsset('md'); setIsExportOpen(false); }} 
+                                                className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
+                                                title="Download as Markdown"
+                                            >
+                                                <FileText className="w-3.5 h-3.5" /> Markdown (.md)
+                                            </button>
+                                            <button 
+                                                onClick={() => { downloadAsset('json'); setIsExportOpen(false); }} 
+                                                className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
+                                                title="Download as JSON"
+                                            >
+                                                <Bot className="w-3.5 h-3.5" /> Metadata (.json)
+                                            </button>
+                                            <div className="h-px bg-border my-1" />
+                                            <button 
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(window.location.href);
+                                                    setIsExportOpen(false);
+                                                    alert("Link copied to clipboard");
+                                                }}
+                                                className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
+                                                title="Copy link to clipboard"
+                                            >
+                                                <ExternalLink className="w-3.5 h-3.5" /> Copy Share Link
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                                <a 
+                                    href={source.url === "#" ? undefined : source.url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    aria-label="View original source" 
+                                    className={cn(
+                                        "p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all duration-200",
+                                        source.url === "#" && "opacity-30 cursor-not-allowed pointer-events-none"
+                                    )}
+                                >
+                                    <ExternalLink className="w-4 h-4" />
+                                </a>
+                            </div>
                         </div>
                         <div className="flex items-center gap-2">
                             <Badge variant="secondary">{source.channel || source.source_type || "Source"}</Badge>
@@ -353,21 +439,21 @@ export default function SourceMissionControl() {
                                 <div className="flex items-center gap-4 py-3 px-4 rounded-xl bg-muted/30 border border-border/60 flex-wrap">
                                     <div className="flex items-center gap-2 text-sm">
                                         <Calendar className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                        <span className="text-muted-foreground">Published</span>
+                                        <span className="text-muted-foreground">{t("dateAdded")}</span>
                                         <span className="font-medium">{source.published}</span>
                                     </div>
                                     <div className="w-px h-4 bg-border/60 hidden sm:block" />
                                     <div className="flex items-center gap-2 text-sm">
                                         <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                        <span className="text-muted-foreground">Duration</span>
+                                        <span className="text-muted-foreground">{t("duration")}</span>
                                         <span className="font-medium">{source.duration}</span>
                                     </div>
                                     <div className="w-px h-4 bg-border/60 hidden sm:block" />
                                     <div className="flex items-center gap-2 text-sm">
                                         <BarChart3 className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                        <span className="text-muted-foreground">Draft Score</span>
+                                        <span className="text-muted-foreground">{t("qualScore")}</span>
                                         <span className={cn("font-semibold tabular-nums", source.score >= 8 ? "text-emerald-600" : source.score >= 6 ? "text-amber-600" : source.score > 0 ? "text-red-500" : "text-muted-foreground")}>
-                                            {source.score > 0 ? `${source.score}/10` : <span className="opacity-70 font-normal italic">Pending...</span>}
+                                            {source.score > 0 ? `${source.score}/10` : <span className="opacity-70 font-normal italic">{t("pending")}...</span>}
                                         </span>
                                         {source.score > 0 && (
                                             <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", source.score >= 6 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600")}>
@@ -381,19 +467,19 @@ export default function SourceMissionControl() {
                             {/* ═══ PROGRESSIVE WORKFLOW ACTION STACK ═══ */}
                             <div>
                                 <div className="flex items-center justify-between mb-4">
-                                    <h2 className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-widest font-serif">Pipeline Stages</h2>
+                                    <h2 className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-widest font-serif">{t("pipelineStages")}</h2>
                                     {activeIndex < STAGES.length && (
                                         <Button
                                             variant="outline"
                                             size="sm"
-                                            className="gap-1.5 h-7 text-[11px] rounded-lg"
+                                            className="gap-1.5 h-7 text-[11px] rounded-lg font-normal"
                                             onClick={runFullPipeline}
                                             disabled={isRunningAll || !!executingStage}
                                         >
                                             {isRunningAll ? (
-                                                <><Loader2 className="w-3 h-3 animate-spin" /> Running...</>
+                                                <><Loader2 className="w-3 h-3 animate-spin" /> {t("processing")}...</>
                                             ) : (
-                                                <><Play className="w-3 h-3" /> Run All</>
+                                                <><Play className="w-3 h-3" /> {t("run")} {t("all")}</>
                                             )}
                                         </Button>
                                     )}
@@ -555,7 +641,7 @@ export default function SourceMissionControl() {
                                                                 </div>
                                                                 <div className="flex items-center justify-between mt-1 pt-3 border-t border-border/40">
                                                                     <p className="text-[11px] text-muted-foreground/80 italic">
-                                                                        This brief explicitly modifies how the LLM drafts and how the Editorial QA evaluates the piece.
+                                                                        {t("briefExplanation")}
                                                                     </p>
                                                                     <Button 
                                                                         size="sm" 
@@ -565,7 +651,7 @@ export default function SourceMissionControl() {
                                                                         variant="default"
                                                                     >
                                                                         {isRunningAll || executingStage === "draft" ? <Loader2 className="w-3 h-3 animate-spin"/> : <Play className="w-3 h-3"/>}
-                                                                        Resume Pipeline
+                                                                        {t("resumePipeline")}
                                                                     </Button>
                                                                 </div>
                                                             </div>
@@ -594,8 +680,8 @@ export default function SourceMissionControl() {
 
                                 {activeIndex >= STAGES.length && (
                                     <div className="mt-6 p-5 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center backdrop-blur-sm">
-                                        <p className="text-sm font-medium text-emerald-700">All pipeline stages complete.</p>
-                                        <p className="text-xs text-emerald-600/80 mt-1">This source has been fully processed and exported.</p>
+                                        <p className="text-sm font-medium text-emerald-700">{t("allStagesComplete")}</p>
+                                        <p className="text-xs text-emerald-600/80 mt-1">{t("sourceProcessed")}</p>
                                     </div>
                                 )}
                             </div>
@@ -607,14 +693,14 @@ export default function SourceMissionControl() {
                             {/* Decision Rationale */}
                             <div className="rounded-xl border border-border/60 bg-background p-5 space-y-4">
                                 <div>
-                                    <h3 className="text-[13px] font-semibold tracking-tight font-serif text-muted-foreground/80">Decision Rationale</h3>
-                                    <h3 className="text-[13px] font-semibold tracking-tight font-serif mt-1">Generate Draft to Evaluate</h3>
-                                    <p className="text-[11px] text-muted-foreground/70 mt-0.5">Pipeline converts source to final draft, which is then scored blindly for insight density.</p>
+                                    <h3 className="text-[13px] font-semibold tracking-tight font-serif text-muted-foreground/80">{t("decisionRationale")}</h3>
+                                    <h3 className="text-[13px] font-semibold tracking-tight font-serif mt-1">{t("generateEvaluate")}</h3>
+                                    <p className="text-[11px] text-muted-foreground/70 mt-0.5">{t("pipelineExplanation")}</p>
                                 </div>
                                 {source.score > 0 ? (
                                     <div className="space-y-2.5">
                                         <Badge variant={source.score >= 8 ? "success" : source.score >= 6 ? "secondary" : "destructive"}>
-                                            Score: {source.score}/10
+                                            QUAL SCORE: {source.score}/10
                                         </Badge>
                                         <div className="text-[12px] text-muted-foreground leading-relaxed">
                                             {(() => {
@@ -644,13 +730,13 @@ export default function SourceMissionControl() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <p className="text-[12px] text-muted-foreground italic">Run the pipeline through &apos;Evaluate Draft&apos; to generate a score.</p>
+                                    <p className="text-[12px] text-muted-foreground italic">{t("runPipelineToEvaluate")}</p>
                                 )}
                             </div>
 
                             {/* Processing Logs */}
                             <div className="rounded-xl border border-border/60 bg-background p-5 space-y-4">
-                                <h3 className="text-[13px] font-semibold tracking-tight font-serif">Processing Log</h3>
+                                <h3 className="text-[13px] font-semibold tracking-tight font-serif">{t("processingLog")}</h3>
                                 <div className="space-y-0">
                                     {logs.map((log, i) => (
                                         <div key={i} className={cn(

@@ -45,6 +45,7 @@ export function adaptScoutResponse(rawOutput: string, query: string): SourceCand
                 duration: formattedDuration || "Unknown",
                 status: "idle",
                 score: 0,
+                source_type: item.source_type || (item.url?.includes('youtube.com') ? 'YouTube' : item.url?.includes('vimeo.com') ? 'Vimeo' : 'Platform')
             } as SourceCandidate;
         });
     } catch (e) {

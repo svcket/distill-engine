@@ -1,44 +1,166 @@
+"use client"
+
+import { useState, useMemo, useRef, useEffect } from "react"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card"
-import { Input } from "@/components/ui/Input"
 import { Badge } from "@/components/ui/Badge"
-import { Search, Library as LibraryIcon, Hash, Tag } from "lucide-react"
+import { 
+    Search, 
+    Library as LibraryIcon, 
+    Hash, 
+    Tag, 
+    Sparkles, 
+    ChevronRight,
+    ArrowRight
+} from "lucide-react"
+import { useLanguage } from "@/context/LanguageContext"
+import { cn } from "@/lib/utils"
+import { archivedInsights } from "@/lib/mockData"
 
 export default function LibraryPage() {
+    const { t } = useLanguage()
+    const [searchQuery, setSearchQuery] = useState("")
+    const [isSearching, setIsSearching] = useState(false)
+    const [showSuggestions, setShowSuggestions] = useState(false)
+    const suggestionRef = useRef<HTMLDivElement>(null)
+
+    // Handle clicks outside suggestions
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (suggestionRef.current && !suggestionRef.current.contains(event.target as Node)) {
+                setShowSuggestions(false)
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside)
+        return () => document.removeEventListener("mousedown", handleClickOutside)
+    }, [])
+
+    const filteredInsights = useMemo(() => {
+        if (!searchQuery.trim()) return archivedInsights
+        const query = searchQuery.toLowerCase()
+        return archivedInsights.filter(insight => 
+            insight.title.toLowerCase().includes(query) || 
+            insight.description.toLowerCase().includes(query) ||
+            insight.tags.some(tag => tag.toLowerCase().includes(query))
+        )
+    }, [searchQuery])
+
+    const suggestions = useMemo(() => {
+        if (!searchQuery.trim()) return []
+        const query = searchQuery.toLowerCase()
+        
+        const matches = archivedInsights.filter(insight => 
+            insight.title.toLowerCase().includes(query) ||
+            insight.tags.some(tag => tag.toLowerCase().includes(query))
+        )
+
+        return matches.slice(0, 5)
+    }, [searchQuery])
+
+    const handleSearch = (val: string) => {
+        setSearchQuery(val)
+        if (val.length > 1) {
+            setIsSearching(true)
+            setShowSuggestions(true)
+            setTimeout(() => setIsSearching(false), 300)
+        } else {
+            setShowSuggestions(false)
+        }
+    }
 
     return (
-        <div className="p-8 max-w-[1200px] mx-auto space-y-8 animate-in fade-in duration-500">
+        <div className="p-8 max-w-[1400px] mx-auto space-y-8 animate-in fade-in duration-500">
 
             <div className="flex flex-col gap-6 items-center text-center max-w-2xl mx-auto py-12">
-                <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mb-2">
-                    <LibraryIcon className="w-8 h-8 text-muted-foreground" />
+                <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center mb-2 shadow-soft">
+                    <LibraryIcon className="w-8 h-8 text-white" />
                 </div>
-                <h1 className="text-4xl font-serif font-semibold tracking-tight">Knowledge Library</h1>
-                <p className="text-muted-foreground text-lg">
-                    A searchable archive of deeply understood concepts, frameworks, and insights extracted from all processed sources.
-                </p>
+                <div className="space-y-2">
+                    <h1 className="text-4xl font-serif font-semibold tracking-tight">{t("library")}</h1>
+                    <p className="text-muted-foreground text-lg">
+                        A searchable archive of deeply understood concepts, frameworks, and insights extracted from your research.
+                    </p>
+                </div>
 
-                <div className="relative w-full max-w-xl mt-4">
+                <div className="relative w-full max-w-xl mt-4" ref={suggestionRef}>
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input
-                        placeholder="Search concepts, frameworks, or quotes..."
-                        className="pl-12 h-14 text-base rounded-full shadow-sm bg-background/50 backdrop-blur"
+                    <input
+                        type="text"
+                        placeholder={t("searchPlaceholder")}
+                        className="w-full pl-12 pr-4 h-14 text-base rounded-full shadow-soft border-border bg-background/80 backdrop-blur-md focus:ring-2 focus:ring-brand/20 outline-none transition-all placeholder:text-muted-foreground/50"
+                        value={searchQuery}
+                        onChange={(e) => handleSearch(e.target.value)}
+                        onFocus={() => searchQuery.length > 1 && setShowSuggestions(true)}
                     />
+                    
+                    {/* Library Smart Suggestions */}
+                    {showSuggestions && (searchQuery.length > 1) && (
+                        <div className="absolute top-full left-0 right-0 mt-3 bg-white border border-border shadow-soft rounded-2xl p-2 z-50 animate-in fade-in slide-in-from-top-2 overflow-hidden">
+                            {isSearching ? (
+                                <div className="p-8 text-center text-sm text-muted-foreground flex items-center justify-center gap-3">
+                                    <div className="w-5 h-5 rounded-full border-2 border-brand/30 border-t-brand animate-spin" />
+                                    <span>Scanning library archives...</span>
+                                </div>
+                            ) : suggestions.length > 0 ? (
+                                <div className="space-y-1">
+                                    <div className="px-3 py-2 flex items-center justify-between">
+                                        <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest flex items-center gap-1.5">
+                                            <Sparkles className="w-3 h-3 text-brand" /> Library Matches
+                                        </p>
+                                    </div>
+                                    {suggestions.map((item) => (
+                                        <button
+                                            key={item.id}
+                                            className="w-full text-left p-3 rounded-xl hover:bg-muted/50 transition-all group/item flex items-center justify-between"
+                                            onClick={() => {
+                                                setSearchQuery(item.title)
+                                                setShowSuggestions(false)
+                                            }}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center group-hover/item:bg-white transition-colors">
+                                                    <Hash className="w-4 h-4 text-muted-foreground" />
+                                                </div>
+                                                <div className="space-y-0.5">
+                                                    <p className="text-sm font-medium leading-none group-hover/item:text-brand">{item.title}</p>
+                                                    <p className="text-[11px] text-muted-foreground">{item.type} · from {item.sourceTitle}</p>
+                                                </div>
+                                            </div>
+                                            <ChevronRight className="w-4 h-4 text-muted-foreground/30 opacity-0 -translate-x-2 transition-all group-hover/item:opacity-100 group-hover/item:translate-x-0" />
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="p-8 text-center text-sm text-muted-foreground">
+                                    No direct matches found in your archived insights.
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 
             <div className="grid md:grid-cols-4 gap-8">
 
+                {/* Sidebar Filter/Navigation */}
                 <div className="space-y-6">
                     <div className="space-y-3">
                         <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                             <Hash className="w-4 h-4" /> Core Themes
                         </h3>
                         <div className="flex flex-wrap gap-2">
-                            <Badge variant="outline" className="bg-white">AI Agents</Badge>
-                            <Badge variant="outline" className="bg-white">System Design</Badge>
-                            <Badge variant="outline" className="bg-white">Content Strategy</Badge>
-                            <Badge variant="outline" className="bg-white">Mental Models</Badge>
-                            <Badge variant="outline" className="bg-white">Bootstrapping</Badge>
+                            {["AI Agents", "System Design", "Content Strategy", "Mental Models", "Bootstrapping"].map(pillar => (
+                                <Badge 
+                                    key={pillar} 
+                                    variant="outline" 
+                                    className={cn(
+                                        "bg-white hover:bg-muted cursor-pointer transition-colors",
+                                        searchQuery === pillar && "border-brand text-brand bg-brand/5"
+                                    )}
+                                    onClick={() => setSearchQuery(pillar)}
+                                >
+                                    {pillar}
+                                </Badge>
+                            ))}
                         </div>
                     </div>
 
@@ -48,50 +170,86 @@ export default function LibraryPage() {
                         </h3>
                         <div className="space-y-2">
                             {["Linus Lee", "Shawn Wang", "Cursor", "Next.js", "GPT-4"].map(tag => (
-                                <div key={tag} className="text-sm text-foreground hover:text-brand cursor-pointer">
+                                <div 
+                                    key={tag} 
+                                    className={cn(
+                                        "text-sm text-foreground hover:text-brand cursor-pointer transition-colors flex items-center justify-between group",
+                                        searchQuery === tag && "text-brand font-medium"
+                                    )}
+                                    onClick={() => setSearchQuery(tag)}
+                                >
                                     {tag}
+                                    <ArrowRight className="w-3 h-3 opacity-0 -translate-x-2 transition-all group-hover:opacity-100 group-hover:translate-x-0" />
                                 </div>
                             ))}
                         </div>
                     </div>
                 </div>
 
+                {/* Main Insight Feed */}
                 <div className="md:col-span-3 space-y-4">
-                    <h2 className="text-xl font-serif font-medium mb-6">Recently Archived Insights</h2>
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-xl font-serif font-medium">
+                            {searchQuery ? `Insights matching "${searchQuery}"` : "Recently Archived Insights"}
+                        </h2>
+                        {searchQuery && (
+                            <button 
+                                onClick={() => setSearchQuery("")}
+                                className="text-xs text-muted-foreground hover:text-brand underline underline-offset-4"
+                            >
+                                Clear filters
+                            </button>
+                        )}
+                    </div>
 
-                    <Card className="hover:border-brand/50 transition-colors">
-                        <CardHeader className="pb-3">
-                            <Badge className="w-fit mb-3" variant="secondary">Framework</Badge>
-                            <CardTitle className="text-lg">The "Fuzzy Core, Rigid Shell" Architecture</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-                                When building AI applications, relying on LLMs for control flow is a mistake because they are inherently non-deterministic. The correct approach is to use the LLM solely as a reasoning engine (the fuzzy core) and wrap it in extremely rigid, type-safe, classic software engineering layers (the rigid shell).
-                            </p>
-                            <div className="text-xs text-muted-foreground flex gap-4">
-                                <span>Source: Building Real Agents</span>
-                                <span>•</span>
-                                <span>Archived: Oct 24, 2024</span>
+                    {filteredInsights.length > 0 ? (
+                        <div className="space-y-4">
+                            {filteredInsights.map(insight => (
+                                <Card key={insight.id} className="group hover:border-brand/40 hover:shadow-soft transition-all duration-300">
+                                    <CardHeader className="pb-3">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <Badge variant="secondary" className="bg-muted text-foreground/70 font-medium">
+                                                {insight.type}
+                                            </Badge>
+                                            <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">{insight.archivedAt}</span>
+                                        </div>
+                                        <CardTitle className="text-lg group-hover:text-brand transition-colors">{insight.title}</CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+                                            {insight.description}
+                                        </p>
+                                        <div className="flex items-center justify-between pt-4 border-t border-border/50">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-[11px] text-muted-foreground font-medium italic">Source: {insight.sourceTitle}</span>
+                                            </div>
+                                            <div className="flex gap-1.5">
+                                                {insight.tags.slice(0, 2).map(tag => (
+                                                    <span key={tag} className="text-[10px] text-brand/70 bg-brand/5 px-2 py-0.5 rounded-full font-medium">#{tag.replace(/\s/g, '').toLowerCase()}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="py-20 text-center space-y-3">
+                            <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mx-auto mb-4 opacity-50">
+                                <Search className="w-6 h-6 text-muted-foreground" />
                             </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="hover:border-brand/50 transition-colors">
-                        <CardHeader className="pb-3">
-                            <Badge className="w-fit mb-3" variant="secondary">Concept</Badge>
-                            <CardTitle className="text-lg">State-Machine Persistence</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-                                Agents should run on state machines that can be paused, inspected, and serialized at any node transition. This prevents cascading failure loops and allows humans-in-the-loop to correct bad inferences mid-flight rather than starting over.
+                            <h3 className="font-medium">No archived insights found</h3>
+                            <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                                We couldn't find any insights matching your search query. Try different keywords or themes.
                             </p>
-                            <div className="text-xs text-muted-foreground flex gap-4">
-                                <span>Source: Building Real Agents</span>
-                                <span>•</span>
-                                <span>Archived: Oct 24, 2024</span>
-                            </div>
-                        </CardContent>
-                    </Card>
+                            <button 
+                                onClick={() => setSearchQuery("")}
+                                className="text-brand text-sm font-medium hover:underline mt-4"
+                            >
+                                View all insights
+                            </button>
+                        </div>
+                    )}
 
                 </div>
 

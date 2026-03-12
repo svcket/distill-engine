@@ -105,11 +105,16 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, r
     from openai import OpenAI
     
     # 1. Download audio via yt-dlp
-    if "spotify.com" in source_url:
-        # More descriptive error will satisfy 'recoverable' check in main catch-all
+    is_platform_url = ("spotify.com" in source_url and "spotify.com" in source_id) or \
+                      ("podcasts.apple.com" in source_url and "podcasts.apple.com" in source_id)
+                      
+    if is_platform_url:
+        # We only block if the URL being passed to yt-dlp is STILL a platform-guarded URL.
+        # If it was resolved to a direct MP3/CDN link by the adapter, we should proceed.
         raise Exception(
-            "Spotify isolates podcasts using DRM protection. Please resolve to an RSS Feed link first. "
-            "Distill cannot download the audio stream directly from Spotify URLs."
+            "This platform isolates audio using DRM protection or proprietary players. "
+            "Distill could not automatically resolve the public RSS feed for this episode. "
+            "Please provide the direct RSS Feed link or an MP3 URL to fetch this transcript."
         )
 
     temp_audio = os.path.join(output_dir, f"{source_id}_audio")

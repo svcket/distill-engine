@@ -11,7 +11,7 @@ const PYTHON = process.env.PYTHON_PATH || 'python3'
  * Falls back to batch mode if streaming is not requested.
  */
 export async function POST(request: Request) {
-    const { transcriptId, stream = true } = await request.json()
+    const { transcriptId, stream = true, type, audience, tone } = await request.json()
 
     if (!transcriptId) {
         return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
@@ -25,10 +25,12 @@ export async function POST(request: Request) {
     const briefPath = path.join(EXECUTION_DIR, '.tmp', 'briefs', `${sourceId}_brief.json`)
 
     // Step 0: Generate Content Brief (Intent-Aware Writing)
-    // For now we use defaults, soon this will come from user input in the UI
-    const briefResult = await runBatch('content_brief_builder.py', [
-        '--source-id', sourceId
-    ])
+    const briefArgs = ['--source-id', sourceId]
+    if (type) briefArgs.push('--type', type)
+    if (audience) briefArgs.push('--audience', audience)
+    if (tone) briefArgs.push('--tone', tone)
+
+    const briefResult = await runBatch('content_brief_builder.py', briefArgs)
 
     if (!briefResult.success) {
         return NextResponse.json(

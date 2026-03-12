@@ -32,12 +32,23 @@ export async function GET() {
                     } catch { /* skip */ }
                 }
 
+                const formatMap: Record<string, string> = {
+                    "blog_article": "Blog Article",
+                    "essay": "Thematic Essay",
+                    "technical_breakdown": "Technical Breakdown",
+                    "explainer": "Explainer",
+                    "thought_leadership": "Thought Leadership"
+                }
+
+                const rawFormat = data.content_type || angle?.data?.recommended_format || 'Article'
+                const displayFormat = formatMap[rawFormat] || rawFormat.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase())
+
                 drafts.push({
                     id: sourceId,
                     title: data.data?.title || 'Untitled Draft',
                     content: data.data?.content || '',
                     wordCount: data.data?.word_count || 0,
-                    format: angle?.data?.recommended_format || 'Article',
+                    format: displayFormat,
                     status: data.status || 'unknown',
                     createdAt: fs.statSync(path.join(draftsDir, file)).mtime.toISOString(),
                 })

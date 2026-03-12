@@ -24,7 +24,12 @@ class RssAdapter(BaseAdapter):
     ]
 
     def detect(self, url: str) -> bool:
-        return any(re.search(p, url.strip().lower()) for p in self.PATTERNS)
+        clean_url = url.strip().lower()
+        # Direct matches for RSS/Feeds
+        if any(re.search(p, clean_url) for p in self.PATTERNS):
+            return True
+        # Catch-all for any web URL
+        return clean_url.startswith("http")
 
     def normalize(self, url: str) -> NormalizedSource:
         url = url.strip()

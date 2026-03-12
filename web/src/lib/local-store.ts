@@ -15,6 +15,7 @@ export interface StoredSource {
     completedStages: string[]
     createdAt: string
     updatedAt: string
+    processedAt?: string
 }
 
 export interface StoreData {
@@ -84,6 +85,21 @@ export function addCompletedStage(sourceId: string, stageId: string): void {
     if (source && !source.completedStages.includes(stageId)) {
         source.completedStages.push(stageId)
         source.updatedAt = new Date().toISOString()
+        
+        // If we reach the end of the pipeline, mark the processed date
+        if (stageId === 'export' || stageId === 'evaluate') {
+            source.processedAt = new Date().toISOString()
+        }
+        
+        saveStore(store)
+    }
+}
+
+export function deleteSource(id: string): void {
+    const store = loadStore()
+    const index = store.sources.findIndex(s => s.id === id)
+    if (index !== -1) {
+        store.sources.splice(index, 1)
         saveStore(store)
     }
 }

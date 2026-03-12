@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -8,33 +9,50 @@ import {
     Search,
     Download,
     Library,
-    Settings
+    Settings,
+    ChevronDown
 } from "lucide-react"
+import { useLanguage, Language } from "@/context/LanguageContext"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname()
+    const { lang, setLang, t } = useLanguage()
+    const [isLangOpen, setIsLangOpen] = useState(false)
+    const langRef = useRef<HTMLDivElement>(null)
+
+    // Close on outside click
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (langRef.current && !langRef.current.contains(e.target as Node)) {
+                setIsLangOpen(false)
+            }
+        }
+        document.addEventListener("mousedown", handler)
+        return () => document.removeEventListener("mousedown", handler)
+    }, [])
 
     const navItems = [
-        { name: "Overview", href: "/", icon: LayoutDashboard },
-        { name: "Sources", href: "/sources", icon: Search },
-        { name: "Export Center", href: "/exports", icon: Download },
-        { name: "Knowledge Library", href: "/library", icon: Library },
+        { name: t("overview"), href: "/", icon: LayoutDashboard },
+        { name: t("sources"), href: "/sources", icon: Search },
+        { name: t("exports"), href: "/exports", icon: Download },
+        { name: t("library"), href: "/library", icon: Library },
     ]
 
     const secondaryItems = [
-        { name: "Settings", href: "/settings", icon: Settings },
+        { name: t("settings"), href: "/settings", icon: Settings },
     ]
 
     // Derive breadcrumb from pathname
     const breadcrumb = (() => {
         const segs = pathname.split('/').filter(Boolean)
-        if (segs.length === 0) return 'Overview'
+        if (segs.length === 0) return t("overview")
         if (segs[0] === 'sources' && segs.length > 1) return 'Source Detail'
-        return segs[0].charAt(0).toUpperCase() + segs[0].slice(1)
+        const key = segs[0].toLowerCase()
+        return t(key) || segs[0].charAt(0).toUpperCase() + segs[0].slice(1)
     })()
 
     return (
-        <div className="flex h-screen w-full bg-background overflow-hidden">
+        <div className="flex h-screen w-full bg-background overflow-hidden font-sans">
             {/* Sidebar */}
             <aside className="w-60 flex-shrink-0 border-r border-border bg-accent/30 flex flex-col">
                 <div className="h-14 flex items-center px-6 border-b border-border">
@@ -111,12 +129,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <main className="flex-1 flex flex-col min-w-0">
                 <header className="h-14 flex items-center justify-between px-8 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        Distill Engine <span className="text-border">/</span> <span className="text-foreground font-medium">{breadcrumb}</span>
+                        Distill Engine <span className="text-border">/</span> <span className="text-foreground font-serif font-medium">{breadcrumb}</span>
                     </div>
                     <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200">
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            Engine Online
+                        <div className="relative" ref={langRef}>
+                            <button 
+                                onClick={() => setIsLangOpen(!isLangOpen)}
+                                className={cn(
+                                    "flex items-center gap-2 text-xs font-serif font-medium px-3 py-1.5 rounded-full border transition-all",
+                                    "border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                                    isLangOpen && "ring-2 ring-brand/10 border-brand/50"
+                                )}
+                            >
+                                <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
+                                <span>{lang}</span>
+                                <ChevronDown className={cn("w-3 h-3 transition-transform", isLangOpen && "rotate-180")} />
+                            </button>
+                            
+                            {isLangOpen && (
+                                <div className="absolute top-full right-0 mt-2 w-32 bg-white border border-border shadow-soft rounded-xl p-1 z-50 animate-in fade-in slide-in-from-top-2">
+                                    {[
+                                        { code: 'EN', label: 'English' },
+                                        { code: 'ES', label: 'Español' },
+                                        { code: 'FR', label: 'Français' },
+                                        { code: 'DE', label: 'Deutsch' },
+                                        { code: 'YO', label: 'Yorùbá' }
+                                    ].map((l) => (
+                                        <button
+                                            key={l.code}
+                                            onClick={() => {
+                                                setLang(l.code as Language)
+                                                setIsLangOpen(false)
+                                            }}
+                                            className={cn(
+                                                "w-full text-left px-3 py-2 text-xs rounded-lg transition-colors flex items-center justify-between",
+                                                lang === l.code ? "bg-muted/50 text-brand font-medium" : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                                            )}
+                                        >
+                                            {l.label}
+                                            {lang === l.code && <div className="w-1.5 h-1.5 rounded-full bg-brand" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </header>

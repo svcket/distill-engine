@@ -4,14 +4,14 @@ import { adaptScoutResponse } from '@/lib/adapters'
 
 export async function POST(request: Request) {
     try {
-        const { query } = await request.json()
+        const { query, max = 5 } = await request.json()
 
         if (!query) {
             return NextResponse.json({ error: "Missing 'query' parameter." }, { status: 400 })
         }
 
         // Call execution/source_scout.py
-        const { success, error, rawOutput } = await runPythonScript("source_scout.py", ["--query", query, "--max", "3"])
+        const { success, error, rawOutput } = await runPythonScript("source_scout.py", ["--query", query, "--max", max.toString()])
 
         if (!success) {
             return NextResponse.json({ error: "Failed to execute scout script", details: error }, { status: 500 })

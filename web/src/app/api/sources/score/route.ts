@@ -68,7 +68,19 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Failed to execute judge script', details: error }, { status: 500 })
         }
 
-        const result = data || {}
+        const result = (data || {}) as any
+        
+        // Update the stored source with score and basic metadata
+        const { upsertSource } = await import('@/lib/local-store')
+        upsertSource({
+            id: sourceId,
+            title: result.title,
+            channel: result.channel,
+            score: result.score || 0,
+            status: result.score >= 6 ? 'done' : 'failed',
+            updatedAt: new Date().toISOString()
+        } as any)
+
         return NextResponse.json({ result, message: `Judged source: ${sourceId}` })
 
     } catch (err: unknown) {

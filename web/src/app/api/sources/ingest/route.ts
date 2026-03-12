@@ -26,6 +26,22 @@ export async function POST(request: Request) {
         }
 
         const result = JSON.parse(rawOutput || '{}')
+        
+        // Persist the source to the store immediately so it's accessible by ID
+        const { upsertSource } = await import('@/lib/local-store')
+        upsertSource({
+            id: result.source_id,
+            title: result.title || 'Unknown Source',
+            channel: result.creator || 'Unknown',
+            url: result.url || url,
+            source_type: result.source_type || 'youtube',
+            status: 'idle',
+            published: 'Recently',
+            duration: result.duration_seconds ? `${Math.floor(result.duration_seconds / 60)}m` : '—',
+            score: 0,
+            completedStages: []
+        } as any)
+
         return NextResponse.json({ result })
 
     } catch (err: unknown) {

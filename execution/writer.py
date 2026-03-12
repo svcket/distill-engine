@@ -40,7 +40,8 @@ def generate_draft(outline_path: str, insights_path: str, packet_path: str, brie
     if brief_path and os.path.exists(brief_path):
         with open(brief_path, "r", encoding="utf-8") as f:
             brief_bundle = json.load(f)
-            brief_data = brief_bundle.get("data", {})
+            # Handle both direct models and wrapped { "data": ... } bundles
+            brief_data = brief_bundle.get("data", brief_bundle) if isinstance(brief_bundle, dict) else {}
 
     source_id = outline_bundle.get("source_id") or outline_bundle.get("video_id")
     outline_data = outline_bundle.get("data", {})
@@ -172,7 +173,7 @@ Generate a strict structural plan that establishes:
             bundle = {
                 "status": "success",
                 "source_id": source_id,
-
+                "content_type": content_type,
                 "data": {"title": title, "content": full_content, "word_count": word_count}
             }
             _save_draft(source_id, bundle)
@@ -192,7 +193,7 @@ Generate a strict structural plan that establishes:
             bundle = {
                 "status": "success",
                 "source_id": source_id,
-
+                "content_type": content_type,
                 "data": json.loads(extracted.model_dump_json())
             }
             _save_draft(source_id, bundle)
