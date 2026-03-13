@@ -482,7 +482,7 @@ export default function SourceMissionControl() {
                                                 className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group"
                                             >
                                                 <FileText className="w-3.5 h-3.5 text-muted-foreground group-hover:text-brand" /> 
-                                                {t("goToExportCenter") || "Go to Export Center"}
+                                                {t("goToExportCenter") || "Go to Draft Studio"}
                                             </Link>
                                             <div className="h-px bg-border my-1" />
                                             <a 

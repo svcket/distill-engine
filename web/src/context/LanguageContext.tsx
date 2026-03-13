@@ -13,8 +13,8 @@ interface LanguageContextType {
 const translations: Record<Language, Record<string, string>> = {
     EN: {
         workspace: "Workspace",
-        sources: "Sources",
-        exports: "Export Center",
+        sources: "Directory",
+        exports: "Draft Studio",
         library: "Knowledge Library",
         settings: "Settings",
         importSource: "Import Source",
@@ -65,7 +65,7 @@ const translations: Record<Language, Record<string, string>> = {
         yesterday: "Yesterday",
         last7Days: "Last 7 Days",
         qualScore: "QUAL SCORE",
-        goToExportCenter: "Go to Export Center",
+        goToExportCenter: "Go to Draft Studio",
         visitOriginalSource: "Visit Original Source",
         landingHeadline: "Turn any source into structured insight.",
         composerPlaceholder: "Paste a link, upload a file or record...",
@@ -74,8 +74,8 @@ const translations: Record<Language, Record<string, string>> = {
     },
     ES: {
         workspace: "Espacio de trabajo",
-        sources: "Fuentes",
-        exports: "Centro de Exportación",
+        sources: "Directorio",
+        exports: "Studio de Borradores",
         library: "Biblioteca",
         settings: "Ajustes",
         importSource: "Importar Fuente",
@@ -135,8 +135,8 @@ const translations: Record<Language, Record<string, string>> = {
     },
     FR: {
         workspace: "Espace de travail",
-        sources: "Sources",
-        exports: "Centre d'Exportation",
+        sources: "Répertoire",
+        exports: "Studio de Brouillons",
         library: "Bibliothèque",
         settings: "Paramètres",
         importSource: "Importer Source",
@@ -196,8 +196,8 @@ const translations: Record<Language, Record<string, string>> = {
     },
     DE: {
         workspace: "Arbeitsbereich",
-        sources: "Quellen",
-        exports: "Exportzentrum",
+        sources: "Verzeichnis",
+        exports: "Entwurfsstudio",
         library: "Bibliothek",
         settings: "Einstellungen",
         importSource: "Quelle Importieren",
@@ -257,8 +257,8 @@ const translations: Record<Language, Record<string, string>> = {
     },
     YO: {
         workspace: "Ààyè Iṣẹ́",
-        sources: "Àwọn Orísun",
-        exports: "Ilé Ìjájáde",
+        sources: "Àkọsílẹ̀ Orísun",
+        exports: "Àká Ìpilẹ̀ṣẹ̀",
         library: "Àká Ìmọ̀",
         settings: "Ètò",
         importSource: "Kó Orísun Wọlé",

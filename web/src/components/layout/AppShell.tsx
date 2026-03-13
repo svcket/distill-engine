@@ -6,12 +6,11 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
     Sparkles,
-    Search,
-    Download,
     Library,
     Settings,
     ChevronDown,
-    SquarePen
+    SquarePen,
+    LayoutGrid
 } from "lucide-react"
 import { useLanguage, Language } from "@/context/LanguageContext"
 
@@ -34,8 +33,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     const navItems = [
         { name: t("workspace"), href: "/", icon: Sparkles },
-        { name: t("sources"), href: "/sources", icon: Search },
-        { name: t("exports"), href: "/exports", icon: Download },
+        { name: t("sources"), href: "/sources", icon: LayoutGrid },
+        { name: t("exports"), href: "/exports", icon: SquarePen },
         { name: t("library"), href: "/library", icon: Library },
     ]
 
@@ -47,7 +46,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const breadcrumb = (() => {
         const segs = pathname.split('/').filter(Boolean)
         if (segs.length === 0) return t("workspace")
-        if (segs[0] === 'sources' && segs.length > 1) return 'Source Detail'
+        if (segs[0] === 'sources' && segs.length > 1) return 'Directory Detail'
         const key = segs[0].toLowerCase()
         return t(key) || segs[0].charAt(0).toUpperCase() + segs[0].slice(1)
     })()
