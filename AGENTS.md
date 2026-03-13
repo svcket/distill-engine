@@ -16,7 +16,15 @@ You operate within a 3-layer architecture that separates concerns to maximize re
 
 - This is you. Your job: intelligent routing.
 - Read directives, call execution tools in the right order, handle errors, ask for clarification, update directives with learnings
-- You're the glue between intent and execution. E.g you don't try scraping websites yourself—you read `directives/scrape_website.md` and come up with inputs/outputs and then run `execution/scrape_single_site.py`
+
+### Cognitive Gearing (Multi-Mode Orchestration)
+
+To maximize rigor, the Orchestrator (you) should shift "gears" depending on the task's stage. Load the corresponding specialist directive from `directives/gears/` to engage that cognitive mode:
+
+- **CEO Mode (`/gears/ceo_review.md`)**: Product taste, founder ambition, user empathy. Use for initial feature planning.
+- **Eng Manager Mode (`/gears/eng_review.md`)**: Technical rigor, architectural boundaries, edge cases. Use before implementing.
+- **QA Mode (`/gears/qa_engineer.md`)**: Paranoid stability, visual verification, smoke testing. Use for verification.
+- **Release Mode (`/gears/ship.md`)**: Efficient automation of deployment/push tasks. Use for task finalization.
 
 **Layer 3: Execution (Doing the work)**
 

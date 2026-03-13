@@ -43,6 +43,7 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
                 type="file" 
                 ref={fileInputRef} 
                 className="hidden" 
+                aria-label="Upload source file"
                 onChange={(e) => console.log("File selected:", e.target.files?.[0])}
             />
             
@@ -53,6 +54,9 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
                     : "border-[#E5E5E5] focus-within:border-black focus-within:border-[1.5px] focus-within:shadow-[0_4px_24px_rgba(0,0,0,0.06)]"
             )}>
                 {/* Textarea with auto-expand */}
+                <label htmlFor="workspace-composer-textarea" className="sr-only">
+                    {t('composerPlaceholder')}
+                </label>
                 <textarea
                     id="workspace-composer-textarea"
                     value={value}
@@ -69,6 +73,7 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
                         target.style.height = `${target.scrollHeight}px`
                     }}
                     placeholder={t('composerPlaceholder')}
+                    title={t('composerPlaceholder')}
                     className="w-full bg-transparent border-none focus:outline-none focus:ring-0 text-[16px] py-4 px-3 placeholder:text-neutral-400/80 resize-none min-h-[48px] max-h-[400px] leading-relaxed text-neutral-900 scrollbar-none"
                     rows={1}
                 />
