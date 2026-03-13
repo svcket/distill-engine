@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
+import { format as formatDate, parseISO } from "date-fns"
 import { Badge } from "@/components/ui/Badge"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -31,6 +32,25 @@ function scoreColor(s: number) {
 }
 function scoreBorder(s: number) {
     return s >= 8 ? "border-emerald-200/80" : s >= 6 ? "border-amber-200/60" : "border-red-200/50"
+}
+
+function getPlatformBadge(platform: string) {
+    const p = platform.toLowerCase()
+    if (p.includes("youtube")) return "bg-red-50 text-red-700 border-red-100"
+    if (p.includes("twitter") || p.includes("x.com")) return "bg-sky-50 text-sky-700 border-sky-100"
+    if (p.includes("web") || p.includes("article")) return "bg-emerald-50 text-emerald-700 border-emerald-100"
+    if (p.includes("podcast")) return "bg-purple-50 text-purple-700 border-purple-100"
+    return "bg-slate-50 text-slate-700 border-slate-100"
+}
+
+function formatDisplayDate(dateStr: string) {
+    if (!dateStr || dateStr === "—" || dateStr === "Recently" || dateStr === "Today") return dateStr
+    try {
+        const date = parseISO(dateStr)
+        return formatDate(date, "MMM dd, yyyy")
+    } catch {
+        return dateStr
+    }
 }
 
 async function deleteSource(id: string) {
@@ -282,9 +302,40 @@ export default function SourcesPage() {
                         onClick={() => {
                             const input = document.createElement("input");
                             input.type = "file";
+                            input.accept = "video/*,audio/*";
                             input.onchange = (e) => {
                                 const file = (e.target as HTMLInputElement).files?.[0];
-                                if (file) alert(`Importing ${file.name}...`);
+                                if (file) {
+                                    const isAudio = file.type.startsWith('audio');
+                                    const typeLabel = isAudio ? "Audio" : "Video";
+                                    
+                                    setIngestStatus({
+                                        type: 'success',
+                                        message: `Importing local ${typeLabel.toLowerCase()} file: ${file.name}...`
+                                    });
+                                    
+                                    // Simulate adding to list
+                                    const newId = `local-${Date.now()}`;
+                                    const mockSource: SourceCandidate = {
+                                        id: newId,
+                                        title: file.name.split('.')[0],
+                                        channel: "Local Device",
+                                        url: "file://local-import",
+                                        published: formatDate(new Date(), "MMM dd, yyyy"),
+                                        duration: "Processing...",
+                                        status: "processing",
+                                        score: 0,
+                                        completedStages: ["judge"]
+                                    };
+                                    
+                                    setSources(prev => [mockSource, ...prev]);
+                                    
+                                    // Auto-clear status
+                                    setTimeout(() => setIngestStatus(null), 3000);
+                                    
+                                    // Navigate to detail after a short delay
+                                    setTimeout(() => router.push(`/sources/${newId}`), 1000);
+                                }
                             };
                             input.click();
                         }}
@@ -445,17 +496,13 @@ export default function SourcesPage() {
                                 <div className="px-5 pb-5 mt-auto pt-4 border-t border-border/50 flex flex-col gap-2">
                                     <div className="flex items-center justify-between">
                                         <div className={cn("px-2 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider", scoreBorder(source.score), scoreColor(source.score))}>
-                                            {t("qualScore")}: {source.score}/10
+                                            QUAL SCORE: {source.score > 0 ? `${source.score}/10` : "--"}
                                         </div>
                                     </div>
                                     <div className="flex flex-col gap-1">
                                         <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-serif font-medium uppercase tracking-tight">
-                                            <span className="opacity-60">{t("published")}:</span>
-                                            <span className="text-foreground/70">{source.published || "Recently"}</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-serif font-medium uppercase tracking-tight">
-                                            <span className="opacity-60">{t("ingested")}:</span>
-                                            <span className="text-foreground/70">{source.processedAt || source.published || "Today"}</span>
+                                            <span className="opacity-60">{t("dateAdded")}:</span>
+                                            <span className="text-foreground/70">{formatDisplayDate(source.processedAt || source.published) || "Today"}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -478,7 +525,7 @@ export default function SourcesPage() {
                                     <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest">Source</th>
                                     <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest text-center">Platform</th>
                                     <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest text-center">QUAL SCORE</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest text-center">{t("dates")}</th>
+                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest text-center">{t("dateAdded")}</th>
                                     <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest text-right">{t("actions")}</th>
                                 </tr>
                             </thead>
@@ -503,22 +550,20 @@ export default function SourcesPage() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-center">
-                                            <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-wider h-5 bg-white shadow-micro">
+                                            <Badge variant="outline" className={cn("text-[10px] font-bold uppercase tracking-wider h-5 shadow-micro", getPlatformBadge(source.source_type || "YouTube"))}>
                                                 {source.source_type || "YouTube"}
                                             </Badge>
                                         </td>
                                         <td className="px-6 py-4 text-center">
-                                            <span className={cn("text-sm font-serif font-bold italic", scoreColor(source.score))}>{source.score}/10</span>
+                                            <span className={cn("text-sm font-serif font-bold italic", scoreColor(source.score))}>
+                                                {source.score > 0 ? `${source.score}/10` : "--"}
+                                            </span>
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col items-center gap-1">
                                                 <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                                    <span className="opacity-60">{t("published")}:</span>
-                                                    <span className="font-medium text-foreground/70">{source.published || "Recently"}</span>
-                                                </div>
-                                                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                                    <span className="opacity-60">{t("ingested")}:</span>
-                                                    <span className="font-medium text-foreground/70">{source.processedAt || source.published || "Today"}</span>
+                                                    <span className="opacity-60">{t("dateAdded")}:</span>
+                                                    <span className="font-medium text-foreground/70">{formatDisplayDate(source.processedAt || source.published) || "Today"}</span>
                                                 </div>
                                             </div>
                                         </td>

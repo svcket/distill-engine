@@ -12,7 +12,7 @@ interface LanguageContextType {
 
 const translations: Record<Language, Record<string, string>> = {
     EN: {
-        overview: "Overview",
+        workspace: "Workspace",
         sources: "Sources",
         exports: "Export Center",
         library: "Knowledge Library",
@@ -64,10 +64,16 @@ const translations: Record<Language, Record<string, string>> = {
         today: "Today",
         yesterday: "Yesterday",
         last7Days: "Last 7 Days",
-        qualScore: "QUAL SCORE"
+        qualScore: "QUAL SCORE",
+        goToExportCenter: "Go to Export Center",
+        visitOriginalSource: "Visit Original Source",
+        landingHeadline: "Turn any source into structured insight.",
+        composerPlaceholder: "Paste a link, upload a file or record...",
+        continue: "Continue",
+        operationalIntelligence: "Operational intelligence active"
     },
     ES: {
-        overview: "Resumen",
+        workspace: "Espacio de trabajo",
         sources: "Fuentes",
         exports: "Centro de Exportación",
         library: "Biblioteca",
@@ -119,10 +125,16 @@ const translations: Record<Language, Record<string, string>> = {
         today: "Hoy",
         yesterday: "Ayer",
         last7Days: "Últimos 7 días",
-        qualScore: "QUAL SCORE"
+        qualScore: "QUAL SCORE",
+        goToExportCenter: "Ir al Centro de Exportación",
+        visitOriginalSource: "Visitar Fuente Original",
+        landingHeadline: "Convierte cualquier fuente en conocimientos estructurados.",
+        composerPlaceholder: "Pega un enlace, sube un archivo o graba...",
+        continue: "Continuar",
+        operationalIntelligence: "Inteligencia operativa activa"
     },
     FR: {
-        overview: "Aperçu",
+        workspace: "Espace de travail",
         sources: "Sources",
         exports: "Centre d'Exportation",
         library: "Bibliothèque",
@@ -142,7 +154,7 @@ const translations: Record<Language, Record<string, string>> = {
         platform: "Plateforme",
         advanced: "Avancé",
         dateAdded: "Date d'ajout",
-        category: "Catégorie",
+        category: "Categorée",
         duration: "Durée",
         all: "Tout",
         processed: "Traité",
@@ -174,10 +186,16 @@ const translations: Record<Language, Record<string, string>> = {
         today: "Aujourd'hui",
         yesterday: "Hier",
         last7Days: "Les 7 derniers jours",
-        qualScore: "QUAL SCORE"
+        qualScore: "QUAL SCORE",
+        goToExportCenter: "Aller au Centre d'Exportation",
+        visitOriginalSource: "Visiter la Source Originale",
+        landingHeadline: "Transformez n'importe quelle source en informations structurées.",
+        composerPlaceholder: "Collez un lien, téléchargez un fichier ou enregistrez...",
+        continue: "Continuer",
+        operationalIntelligence: "Intelligence opérationnelle active"
     },
     DE: {
-        overview: "Übersicht",
+        workspace: "Arbeitsbereich",
         sources: "Quellen",
         exports: "Exportzentrum",
         library: "Bibliothek",
@@ -229,10 +247,16 @@ const translations: Record<Language, Record<string, string>> = {
         today: "Heute",
         yesterday: "Gestern",
         last7Days: "Letzte 7 Tage",
-        qualScore: "QUAL SCORE"
+        qualScore: "QUAL SCORE",
+        goToExportCenter: "Zum Exportzentrum gehen",
+        visitOriginalSource: "Originalquelle besuchen",
+        landingHeadline: "Verwandeln Sie jede Quelle in strukturierte Erkenntnisse.",
+        composerPlaceholder: "Link einfügen, Datei hochladen oder aufnehmen...",
+        continue: "Weiter",
+        operationalIntelligence: "Operative Intelligenz aktiv"
     },
     YO: {
-        overview: "Ìgbéyẹ̀wò",
+        workspace: "Ààyè Iṣẹ́",
         sources: "Àwọn Orísun",
         exports: "Ilé Ìjájáde",
         library: "Àká Ìmọ̀",
@@ -284,7 +308,13 @@ const translations: Record<Language, Record<string, string>> = {
         today: "Lónìí",
         yesterday: "Àná",
         last7Days: "Ọjọ́ 7 Tí Ó Kojá",
-        qualScore: "QUAL SCORE"
+        qualScore: "QUAL SCORE",
+        goToExportCenter: "Lọ sí Ilé Ìjájáde",
+        visitOriginalSource: "Ṣàbẹ̀wò sí Orísun Atilẹ̀wa",
+        landingHeadline: "Sọ orísun èyíkéyìí di òye tí a ṣètò.",
+        composerPlaceholder: "Lẹ mọ́ ìsopọ̀ kan, gbé fáìlì kan sókè tàbí gba ohùn sílẹ̀...",
+        continue: "Tẹ̀síwájú",
+        operationalIntelligence: "Imọ̀ iṣẹ́ nṣiṣẹ́ lọ́wọ́"
     }
 }
 

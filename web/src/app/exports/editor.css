@@ -1,0 +1,111 @@
+.wysiwyg-editor h1 {
+  font-size: 32px;
+  line-height: 1.25;
+  font-weight: 700;
+  margin-top: 32px;
+  margin-bottom: 16px;
+  letter-spacing: -0.022em;
+}
+
+.wysiwyg-editor h2 {
+  font-size: 24px;
+  line-height: 1.3;
+  font-weight: 700;
+  margin-top: 32px;
+  margin-bottom: 12px;
+  letter-spacing: -0.015em;
+}
+
+.wysiwyg-editor h3 {
+  font-size: 20px;
+  line-height: 1.4;
+  font-weight: 700;
+  margin-top: 24px;
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+
+.wysiwyg-editor p {
+  font-size: 17px;
+  line-height: 1.65;
+  margin-top: 0;
+  margin-bottom: 18px;
+  letter-spacing: -0.003em;
+  color: rgba(41, 41, 41, 1);
+}
+
+.wysiwyg-editor blockquote {
+  font-style: italic;
+  font-size: 18px;
+  line-height: 1.58;
+  border-left: 3px solid rgba(41, 41, 41, 1);
+  padding-left: 20px;
+  margin-left: 0;
+  margin-top: 24px;
+  margin-bottom: 24px;
+}
+
+.wysiwyg-editor ul, .wysiwyg-editor ol {
+  font-size: 17px;
+  line-height: 1.65;
+  margin-top: 0;
+  margin-bottom: 18px;
+  padding-left: 30px;
+}
+
+.wysiwyg-editor li {
+  margin-bottom: 8px;
+}
+
+/* Editorial Adjustments */
+.editorial-title {
+  margin-top: 0 !important;
+  margin-bottom: 40px !important;
+}
+
+/* Blog Article: Scannable, clear section heads */
+.editorial-blog-article p {
+  margin-bottom: 20px;
+}
+
+/* Long-Form Essay: Flowing, elegant, continuous */
+.editorial-long-form-essay {
+  line-height: 1.7;
+}
+.editorial-long-form-essay p {
+  margin-bottom: 24px;
+}
+.editorial-long-form-essay h2 {
+  margin-top: 48px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  padding-bottom: 12px;
+}
+
+/* Explainer: Clear chunking, instructional */
+.editorial-explainer h2 {
+  color: #0f172a;
+  background: rgba(0,0,0,0.02);
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-left: -12px;
+}
+
+/* Technical Breakdown: Tight hierarchy, technical feel */
+.editorial-technical-breakdown h2 {
+  font-family: inherit;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  font-size: 18px;
+  color: #475569;
+}
+.editorial-technical-breakdown p {
+  font-size: 16px;
+  margin-bottom: 16px;
+}
+
+/* Thought Leadership: Authoritative, serious */
+.editorial-thought-leadership-article p {
+  font-size: 18px;
+  line-height: 1.7;
+}

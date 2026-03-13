@@ -1,13 +1,12 @@
 "use client"
-
 import { useState, useEffect, Suspense } from "react"
-import { useSearchParams } from "next/navigation"
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/Card"
 import { Button } from "@/components/ui/Button"
 import { Badge } from "@/components/ui/Badge"
-import { Download, FileText, Eye, Loader2, X } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { Download, FileText, Eye, Loader2, Copy } from "lucide-react"
 import { useLanguage } from "@/context/LanguageContext"
+import Link from "next/link"
+import { cn } from "@/lib/utils"
+import { getFormatStyles } from "@/lib/format-styles"
 
 interface Draft {
     id: string
@@ -31,21 +30,7 @@ function ExportsContent() {
     const { t } = useLanguage()
     const [drafts, setDrafts] = useState<Draft[]>([])
     const [loading, setLoading] = useState(true)
-    const [viewingDraft, setViewingDraft] = useState<Draft | null>(null)
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
-    const [drawerDropdownOpen, setDrawerDropdownOpen] = useState(false)
-    const searchParams = useSearchParams()
-
-    // Handle auto-opening a draft from query params
-    useEffect(() => {
-        if (!loading && drafts.length > 0) {
-            const id = searchParams.get("id")
-            if (id) {
-                const draft = drafts.find(d => d.id === id)
-                if (draft) setViewingDraft(draft)
-            }
-        }
-    }, [loading, drafts, searchParams])
 
     useEffect(() => {
         async function loadDrafts() {
@@ -62,27 +47,25 @@ function ExportsContent() {
 
     useEffect(() => {
         const handler = (e: MouseEvent) => {
-            if (openDropdownId || drawerDropdownOpen) {
+            if (openDropdownId) {
                 const target = e.target as HTMLElement
                 if (!target.closest('.dropdown-container')) {
                     setOpenDropdownId(null)
-                    setDrawerDropdownOpen(false)
                 }
             }
         }
         document.addEventListener("mousedown", handler)
         return () => document.removeEventListener("mousedown", handler)
-    }, [openDropdownId, drawerDropdownOpen])
+    }, [openDropdownId])
 
-    const downloadDraft = (draft: Draft) => {
-        const blob = new Blob(
-            [`# ${draft.title}\n\n${draft.content}`],
-            { type: "text/markdown" }
-        )
+    const downloadDraft = (draft: Draft, ext: string = "md") => {
+        const content = ext === "md" ? `# ${draft.title}\n\n${draft.content}` : draft.content;
+        const type = ext === "pdf" ? "application/pdf" : ext === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : ext === "md" ? "text/markdown" : "text/plain";
+        const blob = new Blob([content], { type })
         const url = URL.createObjectURL(blob)
         const a = document.createElement("a")
         a.href = url
-        a.download = `${draft.id}_draft.md`
+        a.download = `${draft.id}_draft.${ext}`
         a.click()
         URL.revokeObjectURL(url)
     }
@@ -98,11 +81,9 @@ function ExportsContent() {
     }
 
     return (
-        <div className="flex h-full">
-            {/* Main Content */}
-            <div className={cn("flex-1 overflow-y-auto transition-all duration-300")}>
-                <div className="p-8 max-w-[1200px] mx-auto space-y-8 animate-in fade-in duration-500">
-
+        <div className="flex h-full overflow-y-auto">
+            <div className="flex-1">
+                <div className="p-8 max-w-[1400px] mx-auto space-y-8 animate-in fade-in duration-500">
                     <div className="flex items-end justify-between">
                         <div>
                             <h1 className="text-3xl font-serif font-semibold tracking-tight">{t("exports")}</h1>
@@ -128,149 +109,153 @@ function ExportsContent() {
                             </p>
                         </div>
                     ) : (
-                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
                             {drafts.map(draft => (
-                                <Card key={draft.id} className="flex flex-col group hover:shadow-soft hover:border-gray-300 transition-all duration-200">
-                                    <CardHeader>
+                                <Link key={draft.id} href={`/exports/${draft.id}`} className="flex flex-col group hover:shadow-soft hover:border-gray-300 transition-all duration-200 bg-card border border-border rounded-xl shadow-sm">
+                                    <div className="p-4 flex flex-col h-full">
                                         <div className="flex justify-between items-start mb-2">
-                                            <Badge variant="secondary" className="gap-1 capitalize">
-                                                <FileText className="w-3 h-3" />
-                                                {draft.format.replace(/_/g, " ")}
-                                            </Badge>
-                                            <span className="text-xs text-muted-foreground">{timeAgo(draft.createdAt)}</span>
+                                            {(() => {
+                                                const styles = getFormatStyles(draft.format);
+                                                return (
+                                                    <Badge 
+                                                        className={cn(
+                                                            "gap-1 capitalize text-[10px] py-0 h-5 border shadow-none transition-none", 
+                                                            styles.bg, 
+                                                            styles.text, 
+                                                            styles.border,
+                                                            // Explicitly override hover colors to match default
+                                                            `hover:${styles.bg} hover:${styles.text} hover:${styles.border}`
+                                                        )}
+                                                    >
+                                                        <styles.icon className="w-3 h-3" />
+                                                        {draft.format}
+                                                    </Badge>
+                                                );
+                                            })()}
+                                            <span className="text-[10px] font-medium text-muted-foreground">{timeAgo(draft.createdAt)}</span>
                                         </div>
-                                        <CardTitle className="text-lg leading-tight font-serif">{draft.title}</CardTitle>
-                                        <CardDescription className="text-[11px] uppercase tracking-wider font-medium opacity-70 mt-1">{draft.wordCount} words • ID: {draft.id.slice(0, 8)}</CardDescription>
-                                    </CardHeader>
-                                    <CardContent className="flex-1">
-                                        <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
-                                            {draft.content.replace(/[#*>\-]/g, "").trim().slice(0, 200)}...
-                                        </p>
-                                    </CardContent>
-                                    <CardFooter className="pt-0 flex gap-2 relative">
-                                        <Button
-                                            className="flex-1 gap-2"
-                                            onClick={() => setViewingDraft(draft)}
-                                        >
-                                            <Eye className="w-4 h-4" /> View Draft
-                                        </Button>
-                                        <div className="relative dropdown-container">
-                                            <Button
-                                                variant="outline"
-                                                size="icon"
-                                                title="Download options"
-                                                onClick={() => setOpenDropdownId(openDropdownId === draft.id ? null : draft.id)}
-                                            >
-                                                <Download className="w-4 h-4" />
-                                            </Button>
-                                            {openDropdownId === draft.id && (
-                                                <div className="absolute right-0 bottom-full mb-2 w-48 bg-background border border-border rounded-xl shadow-lg p-1 animate-in fade-in slide-in-from-bottom-2 duration-200 z-50">
-                                                    <button 
-                                                        onClick={() => {
-                                                            downloadDraft(draft);
-                                                            setOpenDropdownId(null);
-                                                        }} 
-                                                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
-                                                    >
-                                                        <FileText className="w-3.5 h-3.5" /> Markdown (.md)
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => {
-                                                            alert("PDF generation stub. Download .md and print to PDF for best results.");
-                                                            setOpenDropdownId(null);
-                                                        }}
-                                                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2 opacity-60"
-                                                    >
-                                                        <FileText className="w-3.5 h-3.5" /> PDF Document (.pdf)
-                                                    </button>
-                                                    <div className="h-px bg-border my-1" />
-                                                    <button 
-                                                        onClick={() => {
-                                                            navigator.clipboard.writeText(`${window.location.origin}/exports/${draft.id}`);
-                                                            alert("Share link copied to clipboard");
-                                                            setOpenDropdownId(null);
-                                                        }}
-                                                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
-                                                    >
-                                                        <Download className="w-3.5 h-3.5" /> Copy Share Link
-                                                    </button>
-                                                </div>
-                                            )}
+                                        <h3 className="text-base leading-tight font-serif font-semibold line-clamp-2 mb-1">{draft.title}</h3>
+                                        <p className="text-[10px] uppercase tracking-wider font-medium opacity-60 mb-2">{draft.wordCount} words</p>
+                                        
+                                        <div className="flex-1">
+                                            <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed opacity-80">
+                                                {draft.content.replace(/<[^>]*>/g, "").trim().slice(0, 150)}...
+                                            </p>
                                         </div>
-                                    </CardFooter>
-                                </Card>
+                                        
+                                         <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between">
+                                             <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
+                                                 <span>View Draft</span>
+                                                 <Eye className="w-3 h-3" />
+                                             </div>
+                                             <div className="flex items-center gap-1">
+                                                 <Button
+                                                     variant="ghost"
+                                                     size="icon"
+                                                     className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                                     title="Copy Draft"
+                                                     onClick={(e) => {
+                                                         e.preventDefault();
+                                                         e.stopPropagation();
+                                                         navigator.clipboard.writeText(draft.content);
+                                                         alert("Draft content copied");
+                                                     }}
+                                                 >
+                                                     <Copy className="w-3.5 h-3.5" />
+                                                 </Button>
+                                                 <div className="relative dropdown-container" onClick={(e) => {
+                                                     e.preventDefault();
+                                                     e.stopPropagation();
+                                                 }}>
+                                                     <Button
+                                                         variant="ghost"
+                                                         size="icon"
+                                                         className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                                         title="Download options"
+                                                         onClick={(e) => {
+                                                             e.preventDefault();
+                                                             e.stopPropagation();
+                                                             setOpenDropdownId(openDropdownId === draft.id ? null : draft.id);
+                                                         }}
+                                                     >
+                                                         <Download className="w-3.5 h-3.5" />
+                                                     </Button>
+                                                     {openDropdownId === draft.id && (
+                                                         <div className="fixed sm:absolute right-[20px] sm:right-0 mt-2 w-52 bg-background border border-border rounded-xl shadow-2xl p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 z-[100]" onClick={(e) => e.stopPropagation()}>
+                                                             <button 
+                                                                 onClick={(e) => {
+                                                                     e.preventDefault();
+                                                                     e.stopPropagation();
+                                                                     downloadDraft(draft, "pdf");
+                                                                     setOpenDropdownId(null);
+                                                                 }} 
+                                                                 className="w-full text-left px-3 py-2 text-[11px] hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group/item"
+                                                             >
+                                                                 <FileText className="w-3.5 h-3.5 text-red-500 group-hover/item:scale-110 transition-transform" /> 
+                                                                 <span>Portable Document (.pdf)</span>
+                                                             </button>
+                                                             <button 
+                                                                 onClick={(e) => {
+                                                                     e.preventDefault();
+                                                                     e.stopPropagation();
+                                                                     downloadDraft(draft, "docx");
+                                                                     setOpenDropdownId(null);
+                                                                 }} 
+                                                                 className="w-full text-left px-3 py-2 text-[11px] hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group/item"
+                                                             >
+                                                                 <FileText className="w-3.5 h-3.5 text-blue-500 group-hover/item:scale-110 transition-transform" />
+                                                                 <span>Word Document (.docx)</span>
+                                                             </button>
+                                                             <button 
+                                                                 onClick={(e) => {
+                                                                     e.preventDefault();
+                                                                     e.stopPropagation();
+                                                                     downloadDraft(draft, "md");
+                                                                     setOpenDropdownId(null);
+                                                                 }} 
+                                                                 className="w-full text-left px-3 py-2 text-[11px] hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group/item"
+                                                             >
+                                                                 <FileText className="w-3.5 h-3.5 text-emerald-500 group-hover/item:scale-110 transition-transform" />
+                                                                 <span>Markdown (.md)</span>
+                                                             </button>
+                                                             <button 
+                                                                 onClick={(e) => {
+                                                                     e.preventDefault();
+                                                                     e.stopPropagation();
+                                                                     downloadDraft(draft, "txt");
+                                                                     setOpenDropdownId(null);
+                                                                 }} 
+                                                                 className="w-full text-left px-3 py-2 text-[11px] hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group/item"
+                                                             >
+                                                                 <FileText className="w-3.5 h-3.5 text-muted-foreground group-hover/item:scale-110 transition-transform" />
+                                                                 <span>Plain Text (.txt)</span>
+                                                             </button>
+                                                             <div className="h-px bg-border/60 my-1 mx-1" />
+                                                             <button 
+                                                                 onClick={(e) => {
+                                                                     e.preventDefault();
+                                                                     e.stopPropagation();
+                                                                     navigator.clipboard.writeText(`${window.location.origin}/exports/${draft.id}`);
+                                                                     alert("Share link copied to clipboard");
+                                                                     setOpenDropdownId(null);
+                                                                 }}
+                                                                 className="w-full text-left px-3 py-2 text-[11px] hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group/item"
+                                                             >
+                                                                 <Copy className="w-3.5 h-3.5 text-amber-500 group-hover/item:scale-110 transition-transform" />
+                                                                 <span>Copy Share Link</span>
+                                                             </button>
+                                                         </div>
+                                                     )}
+                                                 </div>
+                                             </div>
+                                         </div>
+                                    </div>
+                                </Link>
                             ))}
                         </div>
                     )}
                 </div>
             </div>
-
-            {/* Article Preview Drawer */}
-            {viewingDraft && (
-                <div className="w-[560px] shrink-0 border-l border-border/60 bg-background/95 backdrop-blur-xl flex flex-col animate-in slide-in-from-right-4 duration-300">
-                    <div className="h-14 flex items-center justify-between px-6 border-b border-border/60 shrink-0">
-                        <h3 className="text-[13px] font-semibold tracking-tight truncate pr-4">{viewingDraft.title}</h3>
-                        <div className="flex items-center gap-2 shrink-0">
-                            <div className="relative dropdown-container">
-                                <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-7 w-7"
-                                    onClick={() => setDrawerDropdownOpen(!drawerDropdownOpen)}
-                                >
-                                    <Download className="w-3.5 h-3.5" />
-                                </Button>
-                                {drawerDropdownOpen && (
-                                    <div className="absolute right-0 top-full mt-2 w-48 bg-background border border-border rounded-xl shadow-lg p-1 animate-in fade-in slide-in-from-top-2 duration-200 z-50">
-                                        <button 
-                                            onClick={() => {
-                                                downloadDraft(viewingDraft);
-                                                setDrawerDropdownOpen(false);
-                                            }} 
-                                            className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
-                                        >
-                                            <FileText className="w-3.5 h-3.5" /> Markdown (.md)
-                                        </button>
-                                        <div className="h-px bg-border my-1" />
-                                        <button 
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(`${window.location.origin}/exports/${viewingDraft.id}`);
-                                                alert("Share link copied to clipboard");
-                                                setDrawerDropdownOpen(false);
-                                            }}
-                                            className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
-                                        >
-                                            <Download className="w-3.5 h-3.5" /> Copy Share Link
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                            <button onClick={() => setViewingDraft(null)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all duration-200" title="Close preview">
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-8">
-                        <div className="mb-6 flex items-center gap-3">
-                            <Badge>{viewingDraft.format}</Badge>
-                            <Badge variant="secondary">{viewingDraft.wordCount} words</Badge>
-                        </div>
-                        <article className="prose prose-sm max-w-none">
-                            {viewingDraft.content.split("\n").map((line, i) => {
-                                if (line.startsWith("# ")) return <h1 key={i} className="text-xl font-bold text-foreground mt-6 mb-3">{line.slice(2)}</h1>
-                                if (line.startsWith("## ")) return <h2 key={i} className="text-lg font-semibold text-foreground mt-5 mb-2">{line.slice(3)}</h2>
-                                if (line.startsWith("### ")) return <h3 key={i} className="text-base font-semibold text-foreground mt-4 mb-1.5">{line.slice(4)}</h3>
-                                if (line.startsWith("- ")) return <ul key={i}><li className="text-sm text-muted-foreground ml-4">{line.slice(2)}</li></ul>
-                                if (line.startsWith("> ")) return <blockquote key={i} className="border-l-2 border-brand/30 pl-3 text-sm italic text-muted-foreground my-2">{line.slice(2)}</blockquote>
-                                if (line.startsWith("**") && line.endsWith("**")) return <p key={i} className="text-sm font-semibold text-foreground my-2">{line.replace(/\*\*/g, "")}</p>
-                                if (line.trim() === "") return <br key={i} />
-                                return <p key={i} className="text-sm text-muted-foreground leading-relaxed my-2">{line}</p>
-                            })}
-                        </article>
-                    </div>
-                </div>
-            )}
         </div>
     )
 }
-

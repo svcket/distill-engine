@@ -3,18 +3,20 @@
 import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/Badge"
 import { Button } from "@/components/ui/Button"
-import { StageResultView, StageResultPanel } from "@/components/StageResultView"
+import { StageResultPanel } from "@/components/StageResultView"
 import { SourceCandidate } from "@/lib/mockData"
 import {
     ArrowLeft, ExternalLink, Calendar, Clock, BarChart3,
     Loader2, FileText, Bot, Sparkles, Target, Edit3,
-    CheckCircle, ChevronDown, ChevronRight, X, ShieldCheck,
-    Download, Play, Settings2
+    ShieldCheck,
+    X,
+    Download, Play, MoreHorizontal
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
+import DQMCard, { DQMData } from "@/components/DQMCard"
 
 // ─── Workflow Stage Definitions ────────────────────────────────────────
 type StageId = "judge" | "transcript" | "refine" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "export"
@@ -39,7 +41,7 @@ const STAGES: WorkflowStage[] = [
     { id: "angle", label: "Choose Angle", description: "Strategic angle and editorial framing", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id) => ({ transcriptId: id }) },
     { id: "draft", label: "Generate Draft", description: "Full editorial output with streaming", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "visual", label: "Visual Planning", description: "Suggest visuals, diagrams, quote cards", icon: Sparkles, apiEndpoint: "/api/visual", apiBody: (id) => ({ sourceId: id }) },
-    { id: "qa", label: "Evaluate Draft", description: "Grade final editorial output on density and value", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
+    { id: "qa", label: "Analyze Matrix", description: "Strategic matrix evaluation and editorial grading", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
     { id: "export", label: "Export Asset", description: "Package and deliver final outputs", icon: Download, apiEndpoint: "/api/assets/export", apiBody: (id) => ({ draftId: id }) },
 ]
 
@@ -86,7 +88,6 @@ export default function SourceMissionControl() {
     const [intentTone, setIntentTone] = useState<string>("conversational_editorial")
 
     // Expanded accordion IDs
-    const [expandedAccordions, setExpandedAccordions] = useState<Set<StageId>>(new Set())
 
     // Dropdown state
     const [isExportOpen, setIsExportOpen] = useState(false)
@@ -99,6 +100,30 @@ export default function SourceMissionControl() {
     // Load persisted state on mount
     useEffect(() => {
         async function loadPersistedState() {
+            // ═══ LOCAL MOCK BYPASS ═══
+            if (id.startsWith("local-")) {
+                setSource(s => ({
+                    ...s,
+                    title: "Local Import",
+                    channel: "Device",
+                    published: "Today",
+                    status: "processing",
+                    score: 0
+                }))
+                setLogs([{ event: "Local import session started", time: "Just now", status: "success" }])
+                
+                // Load from localStorage for local imports
+                const localKey = `distill_results_${id}`;
+                const storedResults = localStorage.getItem(localKey);
+                if (storedResults) {
+                    const parsed = JSON.parse(storedResults);
+                    setStageResults(parsed);
+                    setCompletedStages(new Set(Object.keys(parsed) as StageId[]));
+                    setLogs(prev => [{ event: `${Object.keys(parsed).length} local stages restored`, time: "Just now", status: "success" }, ...prev]);
+                }
+                return
+            }
+
             try {
                 // Load source metadata and completed stages
                 const storeRes = await fetch("/api/store")
@@ -134,6 +159,15 @@ export default function SourceMissionControl() {
                     if (results && Object.keys(results).length > 0) {
                         setStageResults(results)
                     }
+                }
+
+                // Caching enhancement: try loading from localStorage first for immediate UI
+                const cachedDqm = localStorage.getItem(`dqm_${id}`)
+                if (cachedDqm) {
+                    try {
+                        const parsed = JSON.parse(cachedDqm)
+                        setStageResults(prev => ({ ...prev, qa: parsed }))
+                    } catch { /* fail */ }
                 }
             } catch { /* silently fail */ }
         }
@@ -179,6 +213,46 @@ export default function SourceMissionControl() {
                 ? stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone })
                 : stage.apiBody(id)
 
+            // ═══ LOCAL MOCK BYPASS ═══
+            // If the source is a local import, don't hit the real API
+            if (id.startsWith("local-")) {
+                await new Promise(r => setTimeout(r, 1500)) // Simulate network latency
+                
+                let mockData: any = { status: "success", message: `${stage.label} completed for local file` }
+                
+                if (stage.id === "judge") mockData = { result: { title: source.title, channel: "Local File", url: "file://local", score: 8 } }
+                if (stage.id === "transcript") mockData = { result: { segments: [{ start: 0, text: "This is a mock transcript for your local file import. It contains the key arguments and discussions from the meeting." }] } }
+                if (stage.id === "refine") mockData = { result: { segments: [{ text: "Refined and structured transcript data for the local file." }] } }
+                if (stage.id === "insights") mockData = { result: { core_argument: "Local data is critical for strategic decision making.", key_claims: ["High security", "Fast processing"], memorable_quotes: ["Data is the new oil."] } }
+                if (stage.id === "angle") mockData = { result: { recommended_format: "Podcast", framing_angle: "The future of local computing", working_titles: ["Local First Strategy"] } }
+                if (stage.id === "draft") mockData = { result: { title: "Local Impact Analysis", content: "# Local Impact Analysis\n\nThis is a generated draft based on your local import.\n\n## Key Findings\n- Local files are processed faster.\n- Privacy is maintained." } }
+                if (stage.id === "visual") mockData = { result: { visual_suggestions: [{ type: "chart", description: "Storage usage over time" }] } }
+                
+                const data = mockData
+                // Store result
+                setStageResults(prev => ({ ...prev, [stage.id]: data.result || data }))
+                setCompletedStages(prev => new Set([...prev, stage.id]))
+                
+                // Persist to localStorage for local imports
+                const localKey = `distill_results_${id}`;
+                const existing = JSON.parse(localStorage.getItem(localKey) || "{}");
+                localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: data.result || data }));
+                
+                if (stage.id === "qa" && data.result?.total_score !== undefined) {
+                    setSource(s => ({
+                        ...s,
+                        score: data.result.total_score,
+                        status: "done",
+                    }))
+                    // Save DQM to specific cache for cross-module persistence
+                    localStorage.setItem(`dqm_${id}`, JSON.stringify(data.result))
+                }
+                
+                setLogs(prev => [{ event: `${stage.label} (Local Mode) completed`, time: "Just now", status: "success" }, ...prev])
+                setExecutingStage(null)
+                return
+            }
+
             const res = await fetch(stage.apiEndpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -201,6 +275,8 @@ export default function SourceMissionControl() {
                     status: data.result.score >= 6 ? "done" : "failed",
                 }))
                 setStageResults(prev => ({ ...prev, qa_rationale: data.result.rationale }))
+                // Save DQM to specific cache for cross-module persistence
+                localStorage.setItem(`dqm_${id}`, JSON.stringify(data.result))
             }
             if (stage.id === "judge") {
                 // If judge updates title/channel/url
@@ -242,6 +318,47 @@ export default function SourceMissionControl() {
 
         for (let i = startIndex; i < STAGES.length; i++) {
             const stage = STAGES[i]
+            
+            // ═══ LOCAL MOCK BYPASS ═══
+            if (id.startsWith("local-")) {
+                await new Promise(r => setTimeout(r, 800))
+                
+                const isAudio = id.toLowerCase().includes("mp3") || id.toLowerCase().includes("wav") || id.toLowerCase().includes("m4a") || id.toLowerCase().includes("audio");
+                
+                let mockData: any = { status: "success" }
+                if (stage.id === "judge") mockData = { result: { title: source.title, channel: isAudio ? "Local Audio" : "Local Video", url: "file://local", score: 8 } }
+                if (stage.id === "transcript") mockData = { result: { segments: [{ start: 0, text: isAudio ? "Mock transcript for audio meeting..." : "Transcript for local media..." }] } }
+                if (stage.id === "refine") mockData = { result: { segments: [{ text: "Refined local transcript..." }] } }
+                if (stage.id === "insights") mockData = { result: { core_argument: "Local data insights.", key_claims: ["Analysis ready"], memorable_quotes: ["Direct from source."] } }
+                if (stage.id === "angle") mockData = { result: { recommended_format: "Article", framing_angle: "Local focus", working_titles: ["The Local Edge"] } }
+                if (stage.id === "draft") mockData = { result: { title: "Draft from Local", content: "# Local Draft\n\nGenerated for local media." } }
+                if (stage.id === "visual") mockData = { result: { visual_suggestions: [] } }
+                if (stage.id === "qa") mockData = { 
+                    result: { 
+                        total_score: 82, 
+                        decision: "Publish Ready", 
+                        scores: { publishability: 82, seo: 85, aeo: 75 },
+                        dimensions: { density: 8, depth: 8, utility: 8 },
+                        rationale: "Good local baseline." 
+                    } 
+                }
+
+                setStageResults(prev => ({ ...prev, [stage.id]: mockData.result || mockData }))
+                setCompletedStages(prev => new Set([...prev, stage.id]))
+                
+                // Persist to localStorage
+                const localKey = `distill_results_${id}`;
+                const existing = JSON.parse(localStorage.getItem(localKey) || "{}");
+                localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: mockData.result || mockData }));
+                
+                if (stage.id === "qa") {
+                     localStorage.setItem(`dqm_${id}`, JSON.stringify(mockData.result))
+                }
+
+                setLogs(prev => [{ event: `${stage.label} (Local Mode) completed`, time: "Just now", status: "success" }, ...prev])
+                continue
+            }
+
             if (!stage.apiEndpoint || !stage.apiBody) {
                 // Skip stages without API endpoints (e.g., QA stub)
                 setCompletedStages(prev => new Set([...prev, stage.id]))
@@ -281,6 +398,8 @@ export default function SourceMissionControl() {
                         status: data.result.score >= 6 ? "done" : "failed",
                     }))
                     setStageResults(prev => ({ ...prev, qa_rationale: data.result.rationale }))
+                    // Save DQM to specific cache for cross-module persistence
+                    localStorage.setItem(`dqm_${id}`, JSON.stringify(data.result))
                 }
                 if (stage.id === "judge") {
                     setSource(s => ({
@@ -318,33 +437,12 @@ export default function SourceMissionControl() {
         setLogs(prev => [{ event: "Full pipeline completed successfully", time: "Just now", status: "success" }, ...prev])
     }
 
-    const toggleAccordion = (id: StageId) => {
-        setExpandedAccordions(prev => {
-            const next = new Set(prev)
-            if (next.has(id)) next.delete(id)
-            else next.add(id)
-            return next
-        })
-    }
 
     const openPanel = (stage: WorkflowStage) => {
         const data = stageResults[stage.id]
         if (data) setPanelContent({ title: stage.label, stageId: stage.id, data })
     }
 
-    const downloadAsset = (format: 'md' | 'json') => {
-        const draft = stageResults.draft as { long?: string } | string;
-        const text = typeof draft === 'string' ? draft : draft?.long || "No draft available";
-        
-        const content = format === 'json' ? JSON.stringify(stageResults, null, 2) : text;
-        const blob = new Blob([content], { type: format === 'json' ? 'application/json' : 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${source.title.replace(/\s+/g, '_').toLowerCase()}.${format}`;
-        a.click();
-        URL.revokeObjectURL(url);
-    }
 
     return (
         <div className="flex h-full">
@@ -371,56 +469,37 @@ export default function SourceMissionControl() {
                                     <Button 
                                         variant="outline" 
                                         size="sm" 
-                                        className="gap-2"
+                                        className="w-10 h-10 p-0 rounded-full flex items-center justify-center"
                                         onClick={() => setIsExportOpen(!isExportOpen)}
+                                        title="More options"
                                     >
-                                        <Download className="w-3.5 h-3.5" />
-                                        {t("export")}
-                                        <ChevronDown className={cn("w-3.5 h-3.5 opacity-50 transition-transform duration-200", isExportOpen && "rotate-180")} />
+                                        <MoreHorizontal className="w-4 h-4" />
                                     </Button>
                                     {isExportOpen && (
-                                        <div className="absolute right-0 top-full mt-1 w-40 bg-background border border-border rounded-xl shadow-lg p-1 animate-in fade-in slide-in-from-top-1 duration-200 z-50">
-                                            <button 
-                                                onClick={() => { downloadAsset('md'); setIsExportOpen(false); }} 
-                                                className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
-                                                title="Download as Markdown"
+                                        <div className="absolute right-0 top-full mt-2 w-52 bg-background border border-border rounded-xl shadow-lg p-1 animate-in fade-in slide-in-from-top-1 duration-200 z-50">
+                                            <Link 
+                                                href="/exports" 
+                                                className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group"
                                             >
-                                                <FileText className="w-3.5 h-3.5" /> Markdown (.md)
-                                            </button>
-                                            <button 
-                                                onClick={() => { downloadAsset('json'); setIsExportOpen(false); }} 
-                                                className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
-                                                title="Download as JSON"
-                                            >
-                                                <Bot className="w-3.5 h-3.5" /> Metadata (.json)
-                                            </button>
+                                                <FileText className="w-3.5 h-3.5 text-muted-foreground group-hover:text-brand" /> 
+                                                {t("goToExportCenter") || "Go to Export Center"}
+                                            </Link>
                                             <div className="h-px bg-border my-1" />
-                                            <button 
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(window.location.href);
-                                                    setIsExportOpen(false);
-                                                    alert("Link copied to clipboard");
-                                                }}
-                                                className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
-                                                title="Copy link to clipboard"
+                                            <a 
+                                                href={source.url === "#" ? undefined : source.url} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer" 
+                                                className={cn(
+                                                    "w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group",
+                                                    source.url === "#" && "opacity-30 cursor-not-allowed pointer-events-none"
+                                                )}
                                             >
-                                                <ExternalLink className="w-3.5 h-3.5" /> Copy Share Link
-                                            </button>
+                                                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-brand" /> 
+                                                {t("visitOriginalSource") || "Visit Original Source"}
+                                            </a>
                                         </div>
                                     )}
                                 </div>
-                                <a 
-                                    href={source.url === "#" ? undefined : source.url} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    aria-label="View original source" 
-                                    className={cn(
-                                        "p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all duration-200",
-                                        source.url === "#" && "opacity-30 cursor-not-allowed pointer-events-none"
-                                    )}
-                                >
-                                    <ExternalLink className="w-4 h-4" />
-                                </a>
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -485,7 +564,7 @@ export default function SourceMissionControl() {
                                     )}
                                 </div>
 
-                                <div className="space-y-1 relative">
+                                <div className="space-y-0 relative">
                                     {STAGES.map((stage, i) => {
                                         const status = getStageStatus(i)
                                         const isExecuting = executingStage === stage.id
@@ -493,185 +572,151 @@ export default function SourceMissionControl() {
                                         const isActive = status === "active"
                                         const isLocked = status === "locked"
                                         const hasResult = !!stageResults[stage.id]
-                                        const isExpanded = expandedAccordions.has(stage.id)
 
                                         return (
-                                            <div key={stage.id} className="relative">
-                                                {/* Connector Line */}
-                                                {i < STAGES.length - 1 && (
+                                            <div key={stage.id} className="group/stage relative flex">
+                                                {/* Left Side: Timeline Column */}
+                                                <div className="flex flex-col items-center w-10 shrink-0 relative">
+                                                    {/* Vertical Connector Lines */}
                                                     <div className={cn(
-                                                        "absolute left-[15px] top-[40px] w-0.5 h-[calc(100%-20px)] z-0 transition-colors duration-300",
-                                                        isCompleted ? "bg-emerald-200" : "bg-border/40"
+                                                        "absolute w-0.5 transition-colors duration-500",
+                                                        i === 0 ? "top-[13px] h-full" : i === STAGES.length - 1 ? "top-0 h-[13px]" : "top-0 h-full",
+                                                        isCompleted ? "bg-emerald-500" : "bg-border/30"
                                                     )} />
-                                                )}
-
-                                                <div className={cn(
-                                                    "relative z-10 flex items-start gap-3.5 py-3.5 px-4 rounded-xl transition-all duration-200",
-                                                    isActive && "bg-brand/[0.04] border border-brand/15 shadow-sm",
-                                                    isCompleted && "hover:bg-muted/30 cursor-pointer",
-                                                    stage.stub && !isCompleted && "opacity-40 cursor-not-allowed",
-                                                    !stage.stub && isLocked && "opacity-35"
-                                                )}
-                                                    onClick={() => {
-                                                        if (isCompleted && hasResult) {
-                                                            toggleAccordion(stage.id)
-                                                        }
-                                                    }}
-                                                >
-                                                    {/* Status Indicator */}
+                                                    
+                                                    {/* Stage Node (Circle Indicator) */}
                                                     <div className={cn(
-                                                        "w-[26px] h-[26px] rounded-full flex items-center justify-center shrink-0 transition-all duration-300",
-                                                        isCompleted && "bg-emerald-500 text-white shadow-sm shadow-emerald-200",
-                                                        isActive && "bg-brand/10 ring-1 ring-brand/30 text-brand",
-                                                        isLocked && "bg-muted/60 text-muted-foreground/50",
+                                                        "relative z-10 w-[26px] h-[26px] rounded-full flex items-center justify-center transition-all duration-300 bg-white border-2 mt-3",
+                                                        isCompleted && "bg-emerald-500 border-emerald-500 text-white shadow-sm shadow-emerald-200",
+                                                        isActive && "bg-white border-emerald-500 text-emerald-500 ring-4 ring-emerald-50 ring-offset-0",
+                                                        isLocked && "bg-white border-border/60 text-muted-foreground/30",
                                                         isExecuting && "animate-pulse"
                                                     )}>
                                                         {isCompleted ? (
-                                                            <CheckCircle className="w-3.5 h-3.5" />
+                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                                <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                                            </svg>
                                                         ) : isExecuting ? (
-                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                            <Loader2 className="w-3 h-3 animate-spin" />
                                                         ) : (
-                                                            <stage.icon className="w-3.5 h-3.5" />
+                                                            <div className={cn("w-1.5 h-1.5 rounded-full", isLocked ? "bg-muted-foreground/20" : "bg-emerald-500")} />
                                                         )}
                                                     </div>
+                                                </div>
 
-                                                    {/* Label and CTA */}
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <div>
-                                                                <p className={cn(
-                                                                    "text-sm font-medium",
-                                                                    isCompleted && "text-foreground",
-                                                                    isActive && "text-brand font-semibold",
-                                                                    isLocked && "text-muted-foreground"
-                                                                )}>
-                                                                    {stage.label}
-                                                                </p>
-                                                                <p className={cn(
-                                                                    "text-xs mt-0.5",
-                                                                    isActive ? "text-brand/70" : "text-muted-foreground"
-                                                                )}>
-                                                                    {stage.description}
-                                                                </p>
-                                                            </div>
-
-                                                            {/* Action Buttons */}
-                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                {isActive && stage.apiEndpoint && (
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); executeStage(stage) }}
-                                                                        disabled={isExecuting}
-                                                                        className="text-xs flex items-center gap-1.5 text-brand font-medium hover:underline transition-all"
-                                                                    >
-                                                                        {isExecuting ? <><Loader2 className="w-3 h-3 animate-spin" /><span>Executing...</span></> : <span>Execute stage</span>}
-                                                                    </button>
-                                                                )}
-                                                                {isCompleted && hasResult && (
-                                                                    <div className="flex items-center gap-2">
-                                                                        <button
-                                                                            onClick={(e) => { e.stopPropagation(); openPanel(stage) }}
-                                                                            className="text-xs text-muted-foreground hover:text-brand transition-colors px-2 py-1 rounded-md hover:bg-muted"
-                                                                        >
-                                                                            Inspect
-                                                                        </button>
-                                                                        {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
-                                                                    </div>
-                                                                )}
-                                                            </div>
+                                                {/* Right Side: Stage Content */}
+                                                <div className={cn(
+                                                    "flex-1 pb-10 transition-all duration-300 ml-2",
+                                                    isLocked && "opacity-50"
+                                                )}>
+                                                    <div className="flex items-start justify-between group/row">
+                                                        <div className="space-y-1 pt-3.5">
+                                                            <h3 className={cn(
+                                                                "text-[15px] font-medium transition-colors",
+                                                                isCompleted || isActive ? "text-foreground" : "text-muted-foreground"
+                                                            )}>
+                                                                {stage.label}
+                                                            </h3>
+                                                            <p className="text-[13px] text-muted-foreground/70 leading-relaxed max-w-md">
+                                                                {stage.description}
+                                                            </p>
                                                         </div>
 
-                                                        {/* Writing Intent Setup for Draft Stage */}
-                                                        {stage.id === "draft" && !isCompleted && isActive && (
-                                                            <div className="mt-4 p-4 rounded-xl bg-background border border-border/60 shadow-sm animate-in fade-in slide-in-from-top-2 flex flex-col gap-3.5" onClick={e => e.stopPropagation()}>
-                                                                <div className="flex items-center gap-2 mb-1">
-                                                                    <Settings2 className="w-3.5 h-3.5 text-brand" />
-                                                                    <h4 className="text-[12px] font-semibold text-foreground uppercase tracking-wider font-serif">Writing Intent Setup</h4>
-                                                                </div>
-                                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                                                    {/* Content Type */}
-                                                                    <div className="space-y-1.5">
-                                                                        <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Content Type</label>
-                                                                        <select
-                                                                            value={intentType}
-                                                                            onChange={(e) => setIntentType(e.target.value)}
-                                                                            title="Select Content Type"
-                                                                            className="h-8 text-xs bg-muted/30 border border-border/50 rounded-md px-2 w-full appearance-none pr-8 focus:outline-none focus:ring-1 focus:ring-brand/50 text-foreground"
-                                                                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center', backgroundSize: '1em' }}
-                                                                        >
-                                                                            <option value="blog_article">Blog Article</option>
-                                                                            <option value="essay">Thematic Essay</option>
-                                                                            <option value="technical_breakdown">Technical Breakdown</option>
-                                                                            <option value="explainer">Explainer</option>
-                                                                            <option value="thought_leadership">Thought Leadership</option>
-                                                                        </select>
-                                                                    </div>
-                                                                    {/* Audience */}
-                                                                    <div className="space-y-1.5">
-                                                                        <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Target Audience</label>
-                                                                        <select
-                                                                            value={intentAudience}
-                                                                            onChange={(e) => setIntentAudience(e.target.value)}
-                                                                            title="Select Target Audience"
-                                                                            className="h-8 text-xs bg-muted/30 border border-border/50 rounded-md px-2 w-full appearance-none pr-8 focus:outline-none focus:ring-1 focus:ring-brand/50 text-foreground"
-                                                                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center', backgroundSize: '1em' }}
-                                                                        >
-                                                                            <option value="general_reader">General Reader</option>
-                                                                            <option value="beginner">Beginner</option>
-                                                                            <option value="professional">Professional / Peer</option>
-                                                                            <option value="founder">Founder / Operator</option>
-                                                                            <option value="technical">Technical Engineer</option>
-                                                                        </select>
-                                                                    </div>
-                                                                    {/* Tone */}
-                                                                    <div className="space-y-1.5">
-                                                                        <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Voice & Tone</label>
-                                                                        <select
-                                                                            value={intentTone}
-                                                                            onChange={(e) => setIntentTone(e.target.value)}
-                                                                            title="Select Tone"
-                                                                            className="h-8 text-xs bg-muted/30 border border-border/50 rounded-md px-2 w-full appearance-none pr-8 focus:outline-none focus:ring-1 focus:ring-brand/50 text-foreground"
-                                                                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center', backgroundSize: '1em' }}
-                                                                        >
-                                                                            <option value="conversational_editorial">Conversational</option>
-                                                                            <option value="formal_authoritative">Formal & Authoritative</option>
-                                                                            <option value="reflective_essay">Reflective & Fluid</option>
-                                                                            <option value="dense_information">Dense & Direct</option>
-                                                                        </select>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex items-center justify-between mt-1 pt-3 border-t border-border/40">
-                                                                    <p className="text-[11px] text-muted-foreground/80 italic">
-                                                                        {t("briefExplanation")}
-                                                                    </p>
-                                                                    <Button 
-                                                                        size="sm" 
-                                                                        className="h-7 text-[11px] gap-1.5 shrink-0"
-                                                                        onClick={(e) => { e.stopPropagation(); runFullPipeline(); }}
-                                                                        disabled={isRunningAll || !!executingStage}
-                                                                        variant="default"
-                                                                    >
-                                                                        {isRunningAll || executingStage === "draft" ? <Loader2 className="w-3 h-3 animate-spin"/> : <Play className="w-3 h-3"/>}
-                                                                        {t("resumePipeline")}
-                                                                    </Button>
-                                                                </div>
-                                                            </div>
-                                                        )}
-
-                                                        {/* Accordion content for completed steps */}
-                                                        {isCompleted && isExpanded && hasResult && (
-                                                            <div className="mt-3 p-4 rounded-xl bg-muted/30 border border-border/50 text-xs text-muted-foreground animate-in fade-in slide-in-from-top-1 duration-200 backdrop-blur-sm">
-                                                                <div className="max-h-48 overflow-y-auto">
-                                                                    <StageResultView stageId={stage.id} data={stageResults[stage.id] as Record<string, unknown>} compact />
-                                                                </div>
+                                                        <div className="flex items-center gap-4 pt-3.5">
+                                                            {isActive && stage.apiEndpoint && (
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); executeStage(stage) }}
+                                                                    disabled={isExecuting}
+                                                                    className="text-[13px] flex items-center gap-1.5 text-brand font-medium hover:underline transition-all"
+                                                                >
+                                                                    {isExecuting ? <><Loader2 className="w-3 h-3 animate-spin" /><span>Executing...</span></> : <span>Execute stage</span>}
+                                                                </button>
+                                                            )}
+                                                            
+                                                            {(isCompleted || (isActive && hasResult)) && (
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); openPanel(stage) }}
-                                                                    className="mt-3 text-brand hover:underline text-xs font-medium"
+                                                                    title="View stage results"
+                                                                    className="px-4 py-1.5 rounded-full border border-border/60 bg-white text-[13px] font-medium text-foreground hover:bg-muted/30 transition-all group-hover/row:opacity-100"
                                                                 >
-                                                                    Open full view →
+                                                                    View
                                                                 </button>
-                                                            </div>
-                                                        )}
+                                                            )}
+
+                                                        </div>
                                                     </div>
+
+                                                    {/* Writing Intent Setup for Draft Stage */}
+                                                    {stage.id === "draft" && !isCompleted && isActive && (
+                                                        <div className="mt-4 p-5 rounded-2xl bg-white border border-border/80 shadow-soft animate-in fade-in slide-in-from-top-2 flex flex-col gap-4 max-w-2xl" onClick={e => e.stopPropagation()}>
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <Bot className="w-4 h-4 text-brand" />
+                                                                <h4 className="text-[12px] font-bold text-foreground uppercase tracking-wider font-serif">Writing Intent Strategy</h4>
+                                                            </div>
+                                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                                                {/* Content Type */}
+                                                                <div className="space-y-1.5">
+                                                                    <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Format</label>
+                                                                    <select
+                                                                        value={intentType}
+                                                                        onChange={(e) => setIntentType(e.target.value)}
+                                                                        title="Select content format"
+                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-2 w-full focus:ring-1 focus:ring-brand shadow-micro"
+                                                                    >
+                                                                        <option value="blog_article">Blog Article</option>
+                                                                        <option value="essay">Thematic Essay</option>
+                                                                        <option value="technical_breakdown">Technical Breakdown</option>
+                                                                        <option value="explainer">Explainer</option>
+                                                                        <option value="thought_leadership">Thought Leadership</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="space-y-1.5">
+                                                                    <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Audience</label>
+                                                                    <select
+                                                                        value={intentAudience}
+                                                                        onChange={(e) => setIntentAudience(e.target.value)}
+                                                                        title="Select target audience"
+                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-2 w-full focus:ring-1 focus:ring-brand shadow-micro"
+                                                                    >
+                                                                        <option value="general_reader">General Reader</option>
+                                                                        <option value="beginner">Beginner</option>
+                                                                        <option value="professional">Professional / Peer</option>
+                                                                        <option value="founder">Founder / Operator</option>
+                                                                        <option value="technical">Technical Engineer</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="space-y-1.5">
+                                                                    <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Tone</label>
+                                                                    <select
+                                                                        value={intentTone}
+                                                                        onChange={(e) => setIntentTone(e.target.value)}
+                                                                        title="Select voice and tone"
+                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-2 w-full focus:ring-1 focus:ring-brand shadow-micro"
+                                                                    >
+                                                                        <option value="conversational_editorial">Conversational</option>
+                                                                        <option value="formal_authoritative">Formal</option>
+                                                                        <option value="reflective_essay">Reflective</option>
+                                                                        <option value="dense_information">Direct</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center justify-between mt-1 pt-4 border-t border-border/50">
+                                                                <p className="text-[11px] text-muted-foreground italic flex items-center gap-1.5">
+                                                                    <Sparkles className="w-3 h-3" />
+                                                                    Draft generation takes 30-45 seconds
+                                                                </p>
+                                                                <Button 
+                                                                    size="sm" 
+                                                                    className="h-8 px-4 rounded-xl gap-2 font-semibold shadow-brand/20 shadow-lg"
+                                                                    onClick={(e) => { e.stopPropagation(); runFullPipeline(); }}
+                                                                    disabled={isRunningAll || !!executingStage}
+                                                                >
+                                                                    {isRunningAll || executingStage === "draft" ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Play className="w-3.5 h-3.5 fill-current"/>}
+                                                                    Start Generation
+                                                                </Button>
+                                                             </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         )
@@ -690,71 +735,37 @@ export default function SourceMissionControl() {
                         {/* ═══ RIGHT COLUMN ═══ */}
                         <div className="space-y-5">
 
-                            {/* Decision Rationale */}
-                            <div className="rounded-xl border border-border/60 bg-background p-5 space-y-4">
-                                <div>
-                                    <h3 className="text-[13px] font-semibold tracking-tight font-serif text-muted-foreground/80">{t("decisionRationale")}</h3>
-                                    <h3 className="text-[13px] font-semibold tracking-tight font-serif mt-1">{t("generateEvaluate")}</h3>
-                                    <p className="text-[11px] text-muted-foreground/70 mt-0.5">{t("pipelineExplanation")}</p>
-                                </div>
-                                {source.score > 0 ? (
-                                    <div className="space-y-2.5">
-                                        <Badge variant={source.score >= 8 ? "success" : source.score >= 6 ? "secondary" : "destructive"}>
-                                            QUAL SCORE: {source.score}/10
-                                        </Badge>
-                                        <div className="text-[12px] text-muted-foreground leading-relaxed">
-                                            {(() => {
-                                                const rationale = String(stageResults.qa_rationale || "Evaluated by Draft Quality Review system.");
-                                                const sentences = rationale.split('. ').filter(s => s.trim().length > 0);
-                                                const truncated = sentences.slice(0, 2).join('. ') + (sentences.length > 2 ? '.' : '');
-                                                const hasMore = rationale.length > truncated.length && sentences.length > 2;
+                            {/* Distill Quality Matrix */}
+                            <DQMCard 
+                                dqm={stageResults.qa as DQMData}
+                            />
 
-                                                return (
-                                                    <p>
-                                                        {truncated}
-                                                        {hasMore && (
-                                                            <button 
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    const qaStage = STAGES.find(s => s.id === "qa");
-                                                                    if (qaStage) openPanel(qaStage);
-                                                                }}
-                                                                className="text-brand hover:underline font-medium ml-1.5"
-                                                            >
-                                                                Read more
-                                                            </button>
-                                                        )}
-                                                    </p>
-                                                )
-                                            })()}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <p className="text-[12px] text-muted-foreground italic">{t("runPipelineToEvaluate")}</p>
-                                )}
-                            </div>
-
-                            {/* Processing Logs */}
-                            <div className="rounded-xl border border-border/60 bg-background p-5 space-y-4">
-                                <h3 className="text-[13px] font-semibold tracking-tight font-serif">{t("processingLog")}</h3>
-                                <div className="space-y-0">
-                                    {logs.map((log, i) => (
-                                        <div key={i} className={cn(
-                                            "flex items-start gap-3 py-3",
-                                            i < logs.length - 1 && "border-b border-border/30"
-                                        )}>
-                                            <div className={cn(
-                                                "w-[6px] h-[6px] rounded-full mt-1 shrink-0",
-                                                log.status === "success" && "bg-emerald-500",
-                                                log.status === "info" && "bg-blue-400",
-                                                log.status === "error" && "bg-red-500"
-                                            )} />
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-[12px] font-medium text-foreground leading-snug">{log.event}</p>
-                                                <p className="text-[11px] text-muted-foreground/60 mt-0.5">{log.time}</p>
+                            {/* Processing Logs — Static List */}
+                            <div className="space-y-4">
+                                <h3 className="text-[11px] font-bold text-muted-foreground/60 uppercase tracking-widest ml-1">
+                                    {t("processingLog")}
+                                </h3>
+                                
+                                <div className="rounded-xl border border-border/60 bg-background p-5 space-y-4 shadow-sm animate-in fade-in duration-500">
+                                    <div className="space-y-0 text-left">
+                                        {logs.map((log, i) => (
+                                            <div key={i} className={cn(
+                                                "flex items-start gap-3 py-3",
+                                                i < logs.length - 1 && "border-b border-border/30"
+                                            )}>
+                                                <div className={cn(
+                                                    "w-[6px] h-[6px] rounded-full mt-1.5 shrink-0",
+                                                    log.status === "success" && "bg-emerald-500",
+                                                    log.status === "info" && "bg-blue-400",
+                                                    log.status === "error" && "bg-red-500"
+                                                )} />
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-[13px] font-medium text-foreground leading-snug">{log.event}</p>
+                                                    <p className="text-[11px] text-muted-foreground/60 mt-0.5">{log.time}</p>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                         </div>

@@ -1,17 +1,18 @@
 @import "tailwindcss";
+@plugin "../../node_modules/@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --color-background: #FCFCFC;
-  --color-foreground: #111111;
-  --color-border: #E5E5E5;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-border: var(--border);
 
-  --color-muted: #F3F4F6;
-  --color-muted-foreground: #6B7280;
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
 
-  --color-accent: #F9FAFB;
-  --color-accent-foreground: #111827;
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
 
   --color-brand: #111111;
 
@@ -27,7 +28,24 @@
 }
 
 :root {
+  --background: #F9F9F9;
+  --foreground: #111111;
+  --border: #E5E5E5;
+  --muted: #F3F4F6;
+  --muted-foreground: #6B7280;
+  --accent: #F9FAFB;
+  --accent-foreground: #111827;
   --radius: 0.5rem;
+}
+
+.dark {
+  --background: #0D1117; /* GitHub Dark */
+  --foreground: #C9D1D9;
+  --border: #30363D;
+  --muted: #161B22;
+  --muted-foreground: #8B949E;
+  --accent: #1F2937;
+  --accent-foreground: #F9FAFB;
 }
 
 @layer base {
@@ -43,6 +61,7 @@
     color: var(--color-foreground);
     letter-spacing: -0.015em;
     font-feature-settings: "rlig" 1, "calt" 1;
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
 
   h1,
@@ -60,4 +79,46 @@
   .text-balance {
     text-wrap: balance;
   }
+}
+
+.wysiwyg-editor {
+    outline: none;
+    line-height: 1.55;
+}
+
+.wysiwyg-editor h1 {
+    @apply text-[38px] font-bold leading-tight mb-2 font-serif;
+    letter-spacing: -0.02em;
+}
+
+.wysiwyg-editor h2 {
+    @apply text-[24px] font-semibold mt-4 mb-1 font-serif;
+}
+
+.wysiwyg-editor p {
+    @apply text-[18px] mb-2 leading-relaxed font-serif;
+}
+
+.wysiwyg-editor blockquote {
+    @apply border-l-3 border-black dark:border-white pl-6 italic my-6 text-xl text-muted-foreground font-serif;
+}
+
+.wysiwyg-editor li {
+    @apply mb-1 list-disc ml-6;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/10 rounded-full;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/20;
 }

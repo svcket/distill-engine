@@ -5,12 +5,13 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
-    LayoutDashboard,
+    Sparkles,
     Search,
     Download,
     Library,
     Settings,
-    ChevronDown
+    ChevronDown,
+    SquarePen
 } from "lucide-react"
 import { useLanguage, Language } from "@/context/LanguageContext"
 
@@ -32,7 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }, [])
 
     const navItems = [
-        { name: t("overview"), href: "/", icon: LayoutDashboard },
+        { name: t("workspace"), href: "/", icon: Sparkles },
         { name: t("sources"), href: "/sources", icon: Search },
         { name: t("exports"), href: "/exports", icon: Download },
         { name: t("library"), href: "/library", icon: Library },
@@ -45,7 +46,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // Derive breadcrumb from pathname
     const breadcrumb = (() => {
         const segs = pathname.split('/').filter(Boolean)
-        if (segs.length === 0) return t("overview")
+        if (segs.length === 0) return t("workspace")
         if (segs[0] === 'sources' && segs.length > 1) return 'Source Detail'
         const key = segs[0].toLowerCase()
         return t(key) || segs[0].charAt(0).toUpperCase() + segs[0].slice(1)
@@ -127,7 +128,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Main Content Area */}
             <main className="flex-1 flex flex-col min-w-0">
-                <header className="h-14 flex items-center justify-between px-8 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                <header className="h-14 flex items-center justify-between px-8 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-40">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         Distill Engine <span className="text-border">/</span> <span className="text-foreground font-serif font-medium">{breadcrumb}</span>
                     </div>

@@ -62,14 +62,23 @@ def load_source_metadata(source_id: str) -> dict:
 
 
 def fetch_youtube_transcript(source_id: str, output_dir: str) -> dict:
-    """Fetch YouTube transcript via youtube_transcript_api."""
+    """Fetch YouTube transcript via youtube_transcript_api with simple fallback."""
     from youtube_transcript_api import YouTubeTranscriptApi
-
+    
     api = YouTubeTranscriptApi()
-    transcript = api.fetch(source_id, languages=("en",))
+    
+    # fetch is an instance method in this version
+    try:
+        transcript = api.fetch(source_id, languages=['en', 'en-US', 'en-GB'])
+    except Exception as e:
+        try:
+            # Final fallback: any language
+            transcript = api.fetch(source_id)
+        except:
+            raise Exception(f"Failed to fetch any transcript for {source_id}: {str(e)}")
 
     transcript_list = []
-    for chunk in getattr(transcript, "snippets", transcript):
+    for chunk in transcript:
         transcript_list.append({
             "text": getattr(chunk, "text", ""),
             "start": getattr(chunk, "start", 0),
@@ -87,7 +96,6 @@ def fetch_youtube_transcript(source_id: str, output_dir: str) -> dict:
 
     return {
         "source_id": source_id,
-
         "status": "success",
         "json_path": json_path,
         "text_path": txt_path,
@@ -105,6 +113,13 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, r
     from openai import OpenAI
     
     # 1. Download audio via yt-dlp
+    ffmpeg_exe = None
+    try:
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+
     is_platform_url = ("spotify.com" in source_url and "spotify.com" in source_id) or \
                       ("podcasts.apple.com" in source_url and "podcasts.apple.com" in source_id)
                       
@@ -121,9 +136,15 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, r
     cmd = [
         "python3", "-m", "yt_dlp",
         "--force-overwrites",
-        "-f", "wa/m4a/ba/worst", # worst/smallest audio is fine for transcriptions
+        "--extract-audio",
+        "--audio-format", "mp3",
+        "--audio-quality", "6", # Speed over quality: 0 (best) - 9 (worst). 6 is a good balance for transcription size.
+        "-f", "bestaudio/worst", 
         "-o", f"{temp_audio}.%(ext)s"
     ]
+    if ffmpeg_exe:
+        cmd.extend(["--ffmpeg-location", ffmpeg_exe])
+
     if referer:
         cmd.extend(["--referer", referer])
     cmd.append(source_url)
@@ -223,7 +244,8 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, r
                 })
             return chunk_segments
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        # Increase workers for better parallelism on larger files
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             # Map retains the original order
             results = list(executor.map(transcribe_chunk, chunk_paths))
             
@@ -287,9 +309,36 @@ def make_mock_transcript(source_id: str, output_dir: str, reason: str = "") -> d
     }
 
 
+def fetch_rss_transcript_if_available(url: str) -> str:
+    """Check RSS/URL for a pre-existing transcript link to avoid Whisper."""
+    import urllib.request
+    import re
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            content = resp.read().decode("utf-8", errors="replace")
+            
+        # Look for transcript links in common RSS tags
+        # <podcast:transcript url="..." /> or similar patterns
+        patterns = [
+            r'<podcast:transcript[^>]*url=["\'](.*?)["\']',
+            r'<transcript[^>]*url=["\'](.*?)["\']',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                return match.group(1)
+                
+        return None
+    except:
+        return None
+
+
 def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict:
     """
-    Fetch text content for a non-podcast RSS/Blog source.
+    Fetch text content for a non-podcast RSS/Blog source, 
+    or a pre-existing transcript link discovered in RSS.
     """
     import urllib.request
     try:
@@ -375,9 +424,13 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
             print(json.dumps(result))
 
         elif source_type == "rss":
-            # Check if RSS is actually a podcast (via adapter logic or URL)
-            # but usually RssAdapter is for blog text. 
-            result = fetch_rss_text_transcript(source_id, source_url, output_dir)
+            # 1. Check if it's a podcast RSS with an embedded transcript link
+            transcript_url = fetch_rss_transcript_if_available(source_url)
+            if transcript_url:
+                result = fetch_rss_text_transcript(source_id, transcript_url, output_dir)
+            else:
+                # 2. Treat as blog text
+                result = fetch_rss_text_transcript(source_id, source_url, output_dir)
             print(json.dumps(result))
 
         else:

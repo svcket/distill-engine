@@ -18,7 +18,7 @@ export async function POST(request: Request) {
         // Build args — prefer sourceId if available, fall back to URL-derived ID
         const args: string[] = []
         if (url) args.push('--url', url)
-        if (sourceId) args.push('--source-id', sourceId)
+        if (sourceId) args.push(`--source-id=${sourceId}`)
         if (sourceType) args.push('--source-type', sourceType)
 
         const { success, error, rawOutput } = await runPythonScript('transcript_harvester.py', args)

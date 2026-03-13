@@ -116,14 +116,35 @@ class PodcastAdapter(BaseAdapter):
         # Handle Spotify (Scrape title, search iTunes)
         if "spotify.com" in url:
             try:
-                # Use a specific known bot UA that often gets through
-                req = urllib.request.Request(url, headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
-                })
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    html = resp.read().decode("utf-8", errors="ignore")
+                # 1. Try different User-Agents
+                user_agents = [
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+                ]
+                
+                html = ""
+                for ua in user_agents:
+                    try:
+                        req = urllib.request.Request(url, headers={"User-Agent": ua})
+                        with urllib.request.urlopen(req, timeout=5) as resp:
+                            html = resp.read().decode("utf-8", errors="ignore")
+                            if "og:title" in html: break
+                    except Exception: continue
+                
+                # 2. Try Embed URL if main URL failed
+                if "og:title" not in html:
+                    try:
+                        embed_url = url.replace("open.spotify.com/episode/", "open.spotify.com/embed/episode/")
+                        req = urllib.request.Request(embed_url, headers={"User-Agent": user_agents[0]})
+                        with urllib.request.urlopen(req, timeout=5) as resp:
+                            html = resp.read().decode("utf-8", errors="ignore")
+                    except Exception: pass
                 
                 og_title = re.search(r'<meta property="og:title" content="(.*?)"', html)
+                if not og_title:
+                    # Fallback to <title> or other meta tags
+                    og_title = re.search(r'<title>(.*?)</title>', html)
+
                 if og_title:
                     raw_title = og_title.group(1)
                     clean_title = raw_title.split("|")[0].strip()
@@ -133,17 +154,26 @@ class PodcastAdapter(BaseAdapter):
                     show_name = parts[-1].strip() if len(parts) > 1 else clean_title
                     episode_name = parts[0].strip() if len(parts) > 1 else ""
 
+                    # Also try to find the creator/show name directly in meta
+                    show_m = re.search(r'property="music:musician" content="(.*?)"', html)
+                    if not show_m:
+                        show_m = re.search(r'property="og:description" content="(.*?)"', html)
+                    
                     search_queries = [clean_title]
+                    if show_m:
+                        search_queries.append(show_m.group(1).split(" · ")[0])
                     if len(parts) > 1:
                         search_queries.append(show_name)
                     
                     for query in search_queries:
                         search_url = f"https://itunes.apple.com/search?term={urllib.parse.quote(query)}&entity=podcast"
                         req2 = urllib.request.Request(search_url)
-                        with urllib.request.urlopen(req2, timeout=5) as resp2:
-                            data = json.loads(resp2.read().decode())
-                            if data.get("results"):
-                                return data["results"][0].get("feedUrl", url), target_title, target_guid
+                        try:
+                            with urllib.request.urlopen(req2, timeout=5) as resp2:
+                                data = json.loads(resp2.read().decode())
+                                if data.get("results"):
+                                    return data["results"][0].get("feedUrl", url), target_title, target_guid
+                        except Exception: continue
             except Exception:
                 pass
 

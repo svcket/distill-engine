@@ -61,7 +61,7 @@ export async function POST(request: Request) {
 
         const { success, data, error, rawOutput } = await runPythonScript(
             'ingest_source.py',
-            ['--source-id', sourceId]
+            [`--source-id=${sourceId}`]
         )
 
         if (!success) {

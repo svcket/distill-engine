@@ -17,10 +17,12 @@ class WrittenDraft(BaseModel):
     word_count: int = Field(description="The total word count of the generated content.")
 
 class ContentPlan(BaseModel):
-    central_thesis: str = Field(description="The overarching argument of the article.")
-    section_structure: list[str] = Field(description="The logical flow of sections.")
-    supporting_insights: list[str] = Field(description="Key insights assigned to each section.")
-    reinforcing_examples: list[str] = Field(description="Concrete examples to use as proof.")
+    thesis_frame: str = Field(description="The central thesis grounded in tension or contrast.")
+    editorial_angle: str = Field(description="The chosen angle (Explainer, Cultural Analysis, Case Study, etc.).")
+    voice_persona: str = Field(description="The selected authorial voice (Analyst, Storyteller, Builder, etc.).")
+    structure_architecture: list[str] = Field(description="The narrative flow (Hook -> Context -> Observation -> Example -> Implication -> Conclusion).")
+    supporting_insights: list[str] = Field(description="Key insights assigned to each logical block.")
+    concrete_examples: list[str] = Field(description="Specific, non-abstract examples from the source to illustrate claims.")
 
 
 def generate_draft(outline_path: str, insights_path: str, packet_path: str, brief_path: str = None, feedback: str = None, stream: bool = False):
@@ -84,28 +86,28 @@ def generate_draft(outline_path: str, insights_path: str, packet_path: str, brie
         "In conclusion"
     ])
 
-    system_prompt = f"""You are the Senior Writer Agent for Distill — a premium editorial engine.
-You receive a structural blueprint, grounded insights, and direct transcript excerpts extracted from an original source.
+    system_prompt = f"""You are the Senior Writer Agent for Distill — a premium editorial thinking engine.
+You write like a world-class human author who prioritizes narrative tension, concrete specificity, and original synthesis over generic summarization.
 
-YOUR ASSIGNMENT:
-Write a {content_type} aimed at a {audience}.
-The tone should be: {tone}.
-Your primary goal is to: {goal}.
-The reading level must be: {reading_level}.
-Source grounding style should be: {source_grounding}.
+YOUR PIECE MUST EXHIBIT:
+1. **Editorial Framing**: Grounded in a clear thesis frame and chosen angle.
+2. **Narrative Progression**: A structure that introduces a new idea in every section, avoiding repetitive explanations.
+3. **Identifiable Voice**: Adhering strictly to the selected voice persona (Analyst, Storyteller, etc.).
 
-CRITICAL EDITORIAL STANDARDS (MUST FOLLOW EXACTLY):
-1. AVOID ROBOTIC OPENINGS: Never start with generic AI filler like "In today's rapidly evolving landscape", "It is important to note", "Furthermore", "Moreover", "In conclusion", or "This article explores". Open with narrative framing, direct action, or concrete stakes.
-2. ENCOURAGE HUMAN RHYTHM: Vary sentence length. Mix short, punchy sentences with longer exploratory ones. Avoid repetitive paragraph openers.
-3. PREFER SPECIFICITY OVER ABSTRACTION: Reference real tools, cases, dates, or systems rather than vague implications.
-4. BE INTERPRETIVE: Don't just summarize. Explain implications, highlight contradictions, and synthesize ideas like an analyst.
+CRITICAL WRITING RULES:
+- **SPECIFICITY OVER ABSTRACTION**: Reference real tools, cases, dates, or systems. Instead of "People are carving out identities", write "Someone who once introduced themselves as 'John’s girlfriend' now introduces themselves as 'the one who just started ceramics classes'".
+- **NO AI CLICHÉS**: Strictly avoid: "In today's rapidly evolving world", "It is important to note", "As we move forward", "In conclusion", "Dive into", "Tapestry", "Delve", "Harness". These significantly reduce the human-quality score.
+- **PERSPECTIVE OVER COMMENTARY**: Provide a point of view. Explain *why* something matters to a builder or founder.
+- **Vary Sentence Rhythm**: Mix short, punchy sentences with longer exploratory ones.
 
-MUST INCLUDE these elements:
+TARGET AUDIENCE: {audience}
+CONTENT TYPE: {content_type}
+TONE: {tone}
+GOAL: {goal}
+MUST INCLUDE:
 {chr(10).join([f"   - {item}" for item in must_include])}
 
-SEO & FORMATTING:
-- Format strictly in clean Markdown.
-- If the content type is a blog article or meant for public publishing, integrate meaningful subheadings, topic-relevant keywords, and a scannable structure naturally (without keyword stuffing)."""
+Format strictly in clean Markdown."""
 
     user_prompt = f"""Structure Blueprint:
 {json.dumps(outline_data, indent=2)}
@@ -122,19 +124,20 @@ Source Transcript Excerpts (Use for specific grounding):
     user_prompt += f"\n\nWrite the complete {content_type} now."
 
     try:
-        # Pre-Writing Planning Stage (Internal Outline generation)
-        plan_prompt = f"""Before drafting, analyze the provided blueprint, insights, and transcript.
-Generate a strict structural plan that establishes:
-1. The central thesis
-2. The section structure
-3. Which insights explicitly support each section
-4. Which concrete examples reinforce the claims."""
+        # Advanced Editorial Reasoning Stage
+        reasoning_prompt = f"""Before drafting, perform an internal editorial reasoning sequence:
+1. **Frame Builder**: Determine the central thesis of the piece. Capture tension or contrast grounded in the Insight Packet.
+2. **Angle Selector**: Select the editorial angle (Explainer, Cultural Analysis, Narrative Reflection, Builder Insight, Case Study, or Concept Breakdown).
+3. **Voice Persona Selector**: Select the authorial style (Analyst, Storyteller, Builder, Philosopher, or Explainer).
+4. **Structure Architect**: Determine the narrative flow (Hook, Context, Observation, Example, Implication, Conclusion).
+
+Generate a strict structural plan based on this reasoning."""
         
         plan_completion = client.beta.chat.completions.parse(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a senior editorial planner."},
-                {"role": "user", "content": user_prompt + "\n\n" + plan_prompt}
+                {"role": "system", "content": "You are a senior editorial thinker and strategist."},
+                {"role": "user", "content": user_prompt + "\n\n" + reasoning_prompt}
             ],
             response_format=ContentPlan,
         )
@@ -180,16 +183,36 @@ Generate a strict structural plan that establishes:
             print(json.dumps({"type": "stream_end", "source_id": source_id, "word_count": word_count}), flush=True)
 
         else:
-            # Batch mode — structured output
-            completion = client.beta.chat.completions.parse(
-                model="gpt-4o-mini",
+            # Batch mode — structured output with Self-Editing Pass
+            initial_completion = client.beta.chat.completions.parse(
+                model="gpt-4o",  # Using stronger model for final drafting
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
                 response_format=WrittenDraft,
             )
-            extracted = completion.choices[0].message.parsed
+            v1_draft = initial_completion.choices[0].message.parsed
+            
+            # --- INTERNAL SELF-EDITING PASS ---
+            critic_prompt = f"""You are a high-level Editor. Evaluate the following draft against these standards:
+1. Is the hook engaging and non-generic?
+2. Does each section introduce a new insight without repetition?
+3. Are there concrete examples instead of vague abstractions?
+4. Is the SELECTED VOICE PERSONA consistent?
+5. Are there any AI clichés (e.g. "In today's world", "In conclusion")?
+
+If there are issues, rewrite the section to be more specific and human. Return the FINAL, polished draft."""
+
+            final_completion = client.beta.chat.completions.parse(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a master editorial polisher."},
+                    {"role": "user", "content": f"ORIGINAL DRAFT:\n\nTitle: {v1_draft.title}\n\nContent: {v1_draft.content}" + "\n\n" + critic_prompt}
+                ],
+                response_format=WrittenDraft,
+            )
+            extracted = final_completion.choices[0].message.parsed
             bundle = {
                 "status": "success",
                 "source_id": source_id,

@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/Badge"
 import { cn } from "@/lib/utils"
 import { BarChart3, BookOpen, Lightbulb, MessageSquareQuote, Target, Zap } from "lucide-react"
+import DQMCard, { DQMData } from "./DQMCard"
 
 type StageId = "judge" | "transcript" | "refine" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "export"
 
@@ -350,16 +351,21 @@ function DraftResult({ data, compact }: { data: Record<string, unknown>; compact
 
     return (
         <div className="space-y-4">
-            <div className="prose prose-sm max-w-none text-muted-foreground font-serif">
-                {content.split("\n").map((line, i) => {
-                    if (line.startsWith("# ")) return <h1 key={i} className="text-lg font-bold text-foreground mt-4 mb-2 font-serif">{line.slice(2)}</h1>
-                    if (line.startsWith("## ")) return <h2 key={i} className="text-base font-semibold text-foreground mt-4 mb-1.5 font-serif">{line.slice(3)}</h2>
-                    if (line.startsWith("### ")) return <h3 key={i} className="text-sm font-semibold text-foreground mt-3 mb-1 font-serif">{line.slice(4)}</h3>
-                    if (line.startsWith("- ")) return <ul key={i}><li className="text-sm text-muted-foreground ml-4">{line.slice(2)}</li></ul>
-                    if (line.startsWith("> ")) return <blockquote key={i} className="border-l-2 border-brand/30 pl-3 text-sm italic text-muted-foreground my-2">{line.slice(2)}</blockquote>
-                    if (line.trim() === "") return <br key={i} />
-                    return <p key={i} className="text-sm text-muted-foreground leading-relaxed my-1.5">{line}</p>
-                })}
+            <div className="prose prose-sm max-w-none text-muted-foreground font-serif leading-relaxed">
+                {content.includes("<h1") || content.includes("<p") || content.includes("<div") ? (
+                    <div dangerouslySetInnerHTML={{ __html: content }} />
+                ) : (
+                    content.split("\n").map((line, i) => {
+                        const trimmed = line.trim()
+                        if (!trimmed && line === "") return <div key={i} className="h-2" />
+                        if (trimmed.startsWith("# ")) return <h1 key={i} className="text-xl font-bold text-foreground mt-6 mb-3 font-serif tracking-tight border-b border-border/40 pb-2">{trimmed.slice(2)}</h1>
+                        if (trimmed.startsWith("## ")) return <h2 key={i} className="text-lg font-semibold text-foreground mt-5 mb-2 font-serif tracking-tight">{trimmed.slice(3)}</h2>
+                        if (trimmed.startsWith("### ")) return <h3 key={i} className="text-base font-semibold text-foreground mt-4 mb-2 font-serif">{trimmed.slice(4)}</h3>
+                        if (trimmed.startsWith("- ")) return <li key={i} className="text-sm text-muted-foreground ml-4 list-disc marker:text-brand/50 pl-1 my-1">{trimmed.slice(2)}</li>
+                        if (trimmed.startsWith("> ")) return <blockquote key={i} className="border-l-3 border-brand/30 pl-4 text-sm italic text-muted-foreground/80 my-4 bg-muted/20 py-2 rounded-r-lg">{trimmed.slice(2)}</blockquote>
+                        return <p key={i} className="text-sm text-muted-foreground leading-relaxed my-2">{trimmed}</p>
+                    })
+                )}
             </div>
         </div>
     )
@@ -438,71 +444,24 @@ function VisualResult({ data, compact }: { data: Record<string, unknown>; compac
 }
 
 function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
-    const d = (data.data || data) as Record<string, unknown>
-    const totalScore = getNum(d, "total_score", 0)
-    const decision = getStr(d, "decision", "Pending")
-    const feedback = getStr(d, "feedback")
-
-    const getVerdictVariant = (decision: string): "default" | "secondary" | "outline" | "destructive" | "success" | "warning" => {
-        const d = decision.toLowerCase();
-        if (d.includes("publish ready") || d.includes("publishable") || d.includes("publish-ready")) return "success";
-        if (d.includes("minor improvements")) return "secondary";
-        if (d.includes("needs revision") || d.includes("revise")) return "warning";
-        if (d.includes("major rewrite")) return "destructive";
-        return "destructive"; // Handles "reject" inherently
-    };
-
+    const dqmData = data as unknown as DQMData
+    
     if (compact) {
         return (
             <div className="space-y-2">
                 <div className="flex items-center gap-3">
-                    <span className="text-xl font-bold font-serif">{totalScore}/60</span>
-                    <Badge variant={getVerdictVariant(decision)}>
-                        {decision}
+                    <span className="text-xl font-bold font-serif">{(dqmData?.scores?.publishability) || 0}/100</span>
+                    <Badge variant={(dqmData?.scores?.publishability || 0) >= 80 ? "success" : "secondary"}>
+                        {dqmData?.scores?.publishability ? "Available" : "Pending"}
                     </Badge>
                 </div>
             </div>
         )
     }
 
-    const categories = [
-        { label: "Source Grounding", value: getNum(d, "source_grounding") },
-        { label: "Clarity", value: getNum(d, "clarity") },
-        { label: "Original Insight", value: getNum(d, "original_insight") },
-        { label: "Human Tone", value: getNum(d, "human_tone") },
-        { label: "SEO Structure", value: getNum(d, "seo_structure") },
-        { label: "Specificity", value: getNum(d, "specificity") }
-    ]
-
     return (
-        <div className="space-y-6">
-            <div className="flex items-center gap-3">
-                <span className="text-3xl font-bold tabular-nums font-serif">{totalScore}/60</span>
-                <Badge variant={getVerdictVariant(decision)} className="text-sm">
-                    {decision}
-                </Badge>
-            </div>
-
-            <div className="space-y-3">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Category Breakdown</h4>
-                <div className="grid grid-cols-2 gap-3">
-                    {categories.map((c, i) => (
-                        <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/40 border border-border/40">
-                            <span className="text-xs text-muted-foreground">{c.label}</span>
-                            <span className="text-sm font-medium">{c.value}/10</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {feedback && (
-                <div className="space-y-2">
-                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Revision Feedback</h4>
-                    <p className="text-sm leading-relaxed p-4 rounded-xl bg-amber-50/50 border border-amber-100 text-amber-900 shadow-sm">
-                        {feedback}
-                    </p>
-                </div>
-            )}
+        <div className="pb-10">
+            <DQMCard dqm={dqmData} variant="full" />
         </div>
     )
 }
