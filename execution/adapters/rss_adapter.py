@@ -31,22 +31,54 @@ class RssAdapter(BaseAdapter):
         # Catch-all for any web URL
         return clean_url.startswith("http")
 
-    def normalize(self, url: str) -> NormalizedSource:
+    def normalize(self, url: str, shell: bool = False) -> NormalizedSource:
         url = url.strip()
         source_id = "rss_" + hashlib.md5(url.encode()).hexdigest()[:12]
 
         title = f"RSS Feed: {url}"
         creator = "Unknown Author"
         
+        # Fast Path: return shell if requested
+        if shell:
+            return NormalizedSource(
+                source_id=source_id,
+                source_type="rss",
+                title=title,
+                creator=creator,
+                url=url,
+                transcript_status="manual",
+                source_confidence=0.5,
+                is_shell=True,
+            )
+
         # Try to fetch real title
         try:
             import urllib.request
-            req = urllib.request.Request(url, headers={"User-Agent": "Distill/1.0"})
+            # Use a more modern User-Agent to avoid blocks
+            headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+            req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=5) as resp:
-                content = resp.read().decode("utf-8", errors="replace")
-                if m := re.search(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>", content, re.IGNORECASE):
+                raw_content = resp.read()
+                # Try to detect encoding from headers or meta
+                content = raw_content.decode("utf-8", errors="replace")
+                
+                # 1. Try <title>
+                if m := re.search(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>", content, re.DOTALL | re.IGNORECASE):
                     title = m.group(1).strip()
-        except:
+                
+                # 2. Fallback to first <h1> if title is missing or suspiciously generic/empty
+                if (not title or "rss feed" in title.lower() or "http" in title.lower()) and "</h1>" in content.lower():
+                    if h1 := re.search(r"<h1.*?>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</h1>", content, re.DOTALL | re.IGNORECASE):
+                        # Clean up any nested tags in H1
+                        h1_text = re.sub(r"<[^>]+>", "", h1.group(1)).strip()
+                        if h1_text: title = h1_text
+
+                # 3. Fallback to og:title
+                if not title or "rss feed" in title.lower():
+                    if og := re.search(r'<meta property="og:title" content="(.*?)"', content, re.IGNORECASE):
+                        title = og.group(1).strip()
+
+        except Exception:
             pass
 
         return NormalizedSource(

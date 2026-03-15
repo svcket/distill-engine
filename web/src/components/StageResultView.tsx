@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 import { BarChart3, BookOpen, Lightbulb, MessageSquareQuote, Target, Zap } from "lucide-react"
 import DQMCard, { DQMData } from "./DQMCard"
 
-type StageId = "judge" | "transcript" | "refine" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "export"
+type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "export"
 
 interface StageResultViewProps {
     stageId: StageId
@@ -27,8 +27,9 @@ function getStr(obj: Record<string, unknown>, key: string, fallback = ""): strin
     return typeof val === "string" ? val : String(val || fallback)
 }
 
-function getArr(obj: Record<string, unknown>, key: string): unknown[] {
-    const val = get(obj, key, [])
+function getArr(obj: Record<string, unknown> | unknown[], key: string): unknown[] {
+    if (Array.isArray(obj)) return obj
+    const val = get(obj as Record<string, unknown>, key, [])
     return Array.isArray(val) ? val : []
 }
 
@@ -115,6 +116,25 @@ function RefineResult({ data, compact }: { data: Record<string, unknown>; compac
                 </div>
             )}
         </div>
+    )
+}
+
+function SummaryResult({ data }: { data: Record<string, unknown> | string }) {
+    const summary = typeof data === "string" ? data : getStr(data as Record<string, unknown>, "summary", "")
+
+    return (
+                <ul className="space-y-4 list-none">
+                    {summary.split("\n").map((line, i) => {
+                        const trimmed = line.trim()
+                        if (!trimmed && line === "") return <li key={i} className="h-2" />
+                        if (trimmed.startsWith("# ")) return <li key={i} className="text-xl font-bold text-foreground mt-4 mb-3 font-serif tracking-tight border-b border-border/40 pb-1">{trimmed.slice(2)}</li>
+                        if (trimmed.startsWith("## ")) return <li key={i} className="text-lg font-semibold text-foreground mt-4 mb-2 font-serif tracking-tight">{trimmed.slice(3)}</li>
+                        if (trimmed.startsWith("### ")) return <li key={i} className="text-base font-semibold text-foreground mt-3 mb-2 font-serif">{trimmed.slice(4)}</li>
+                        if (trimmed.startsWith("- ")) return <li key={i} className="text-sm text-muted-foreground ml-4 list-disc marker:text-brand/50 pl-1 my-1">{trimmed.slice(2)}</li>
+                        if (trimmed.startsWith("> ")) return <li key={i} className="border-l-3 border-brand/30 pl-4 text-sm italic text-muted-foreground/80 my-3 bg-muted/20 py-2 rounded-lg">{trimmed.slice(2)}</li>
+                        return <li key={i} className="text-sm text-muted-foreground leading-relaxed my-2">{trimmed}</li>
+                    })}
+                </ul>
     )
 }
 
@@ -350,7 +370,18 @@ function DraftResult({ data, compact }: { data: Record<string, unknown>; compact
     }
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-6">
+            {title && !content.trim().startsWith("# ") && !content.trim().startsWith(title) && (
+                <div className="border-b border-border/40 pb-4 mb-2">
+                    <h1 className="text-2xl font-bold text-foreground font-serif tracking-tight leading-tight">
+                        {title}
+                    </h1>
+                    <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="success" className="bg-brand/10 text-brand border-brand/20">Final Draft</Badge>
+                        <span className="text-xs text-muted-foreground font-medium">{wordCount} words</span>
+                    </div>
+                </div>
+            )}
             <div className="prose prose-sm max-w-none text-muted-foreground font-serif leading-relaxed">
                 {content.includes("<h1") || content.includes("<p") || content.includes("<div") ? (
                     <div dangerouslySetInnerHTML={{ __html: content }} />
@@ -361,8 +392,14 @@ function DraftResult({ data, compact }: { data: Record<string, unknown>; compact
                         if (trimmed.startsWith("# ")) return <h1 key={i} className="text-xl font-bold text-foreground mt-6 mb-3 font-serif tracking-tight border-b border-border/40 pb-2">{trimmed.slice(2)}</h1>
                         if (trimmed.startsWith("## ")) return <h2 key={i} className="text-lg font-semibold text-foreground mt-5 mb-2 font-serif tracking-tight">{trimmed.slice(3)}</h2>
                         if (trimmed.startsWith("### ")) return <h3 key={i} className="text-base font-semibold text-foreground mt-4 mb-2 font-serif">{trimmed.slice(4)}</h3>
-                        if (trimmed.startsWith("- ")) return <li key={i} className="text-sm text-muted-foreground ml-4 list-disc marker:text-brand/50 pl-1 my-1">{trimmed.slice(2)}</li>
-                        if (trimmed.startsWith("> ")) return <blockquote key={i} className="border-l-3 border-brand/30 pl-4 text-sm italic text-muted-foreground/80 my-4 bg-muted/20 py-2 rounded-r-lg">{trimmed.slice(2)}</blockquote>
+                        if (trimmed.startsWith("- ")) {
+                            return (
+                                <ul key={i} className="list-disc ml-6 my-2">
+                                    <li className="text-sm text-muted-foreground marker:text-brand/50 pl-1">{trimmed.slice(2)}</li>
+                                </ul>
+                            )
+                        }
+                        if (trimmed.startsWith("> ")) return <blockquote key={i} className="border-l-3 border-brand/30 pl-4 text-sm italic text-muted-foreground/80 my-4 bg-muted/10 py-2 rounded-r-lg">{trimmed.slice(2)}</blockquote>
                         return <p key={i} className="text-sm text-muted-foreground leading-relaxed my-2">{trimmed}</p>
                     })
                 )}
@@ -468,8 +505,8 @@ function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: 
 
 // ─── Main Component ────────────────────────────────────────────
 
-export function StageResultView({ stageId, data, compact = false }: StageResultViewProps) {
-    const d = data as Record<string, unknown>
+export function StageResultView({ stageId, data, compact = false }: { stageId: StageId; data: Record<string, unknown> | string; compact?: boolean }) {
+    const d = data as any
 
     switch (stageId) {
         case "judge":
@@ -478,6 +515,8 @@ export function StageResultView({ stageId, data, compact = false }: StageResultV
             return <TranscriptResult data={d} compact={compact} />
         case "refine":
             return <RefineResult data={d} compact={compact} />
+        case "summary":
+            return <SummaryResult data={d} />
         case "packet":
             return <PacketResult data={d} />
         case "insights":

@@ -27,7 +27,7 @@ class VimeoAdapter(BaseAdapter):
                 return m.group(1)
         return None
 
-    def normalize(self, url: str) -> NormalizedSource:
+    def normalize(self, url: str, shell: bool = False) -> NormalizedSource:
         video_id = self.extract_video_id(url)
         if not video_id:
             raise ValueError(f"Cannot extract Vimeo ID from: {url}")
@@ -35,6 +35,19 @@ class VimeoAdapter(BaseAdapter):
         clean_url = f"https://vimeo.com/{video_id}"
         source_id = f"vimeo_{video_id}"
         
+        # Fast Path: return shell if requested
+        if shell:
+            return NormalizedSource(
+                source_id=source_id,
+                source_type="vimeo",
+                title=f"Vimeo Video ({video_id})",
+                creator="Vimeo",
+                url=clean_url,
+                transcript_status="pending",
+                source_confidence=0.5,
+                is_shell=True,
+            )
+
         # We fetch metadata using the standard URL
         metadata = self._fetch_oembed(clean_url)
 
@@ -46,7 +59,9 @@ class VimeoAdapter(BaseAdapter):
             url=clean_url,
             duration_seconds=metadata.get("duration", 0),
             thumbnail=metadata.get("thumbnail_url"),
-            transcript_status="manual",  # Vimeo transcripts need manual upload
+            transcript_status="pending",  
+            transcript_strategy="direct", # Prefer Direct (vtt)
+            transcript_source="vtt_srt",
             source_confidence=0.9,
             raw_metadata=metadata,
             referer="https://vimeo.com/",

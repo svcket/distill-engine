@@ -12,6 +12,7 @@ export const metadata: Metadata = {
 };
 
 import { LanguageProvider } from "@/context/LanguageContext";
+import { ThemeProvider } from "@/components/layout/ThemeProvider";
 
 export default function RootLayout({
   children,
@@ -19,13 +20,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="antialiased">
+    <html lang="en" className="antialiased" suppressHydrationWarning>
       <body className={`${inter.variable} ${serif.variable} font-sans`}>
-        <LanguageProvider>
-          <AppShell>
-            {children}
-          </AppShell>
-        </LanguageProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <LanguageProvider>
+            <AppShell>
+              {children}
+            </AppShell>
+          </LanguageProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

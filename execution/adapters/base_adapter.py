@@ -24,10 +24,16 @@ class NormalizedSource:
     duration_seconds: int = 0
     description: str = ""
     transcript_status: str = "unknown"   # available | unavailable | unknown | manual
+    transcript_strategy: str = "unknown" # direct | normalized_text | audio_fallback | unavailable
+    transcript_source: str = "unknown"   # api | vtt_srt | rss_content | audio_whisper
+    fetch_error_type: Optional[str] = None # auth_required | blocked | not_found | no_transcript_route | transient
+    fetch_attempt_count: int = 0
+    last_fetch_attempt_at: Optional[str] = None # ISO 8601
     language: str = "en"
     thumbnail: Optional[str] = None
     source_confidence: float = 1.0       # 0.0–1.0; lower for auto-detected stubs
     referer: Optional[str] = None        # Optional referer for strict downloads (e.g. Vimeo)
+    is_shell: bool = False               # True if this is a skeleton object
     raw_metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -48,10 +54,16 @@ class NormalizedSource:
             "duration_seconds": self.duration_seconds,
             "description": self.description,
             "transcript_status": self.transcript_status,
+            "transcript_strategy": self.transcript_strategy,
+            "transcript_source": self.transcript_source,
+            "fetch_error_type": self.fetch_error_type,
+            "fetch_attempt_count": self.fetch_attempt_count,
+            "last_fetch_attempt_at": self.last_fetch_attempt_at,
             "language": self.language,
             "thumbnail": self.thumbnail,
             "source_confidence": self.source_confidence,
             "referer": self.referer,
+            "is_shell": self.is_shell,
         }
 
     def _seconds_to_iso(self, seconds: int) -> str:
@@ -78,9 +90,10 @@ class BaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def normalize(self, url: str) -> NormalizedSource:
+    def normalize(self, url: str, shell: bool = False) -> NormalizedSource:
         """
         Parse the URL, extract metadata, and return a NormalizedSource.
+        If shell=True, skip heavy network requests and return a skeleton object.
         Must not raise — should return a best-effort NormalizedSource on failure.
         """
         pass
@@ -97,5 +110,7 @@ class BaseAdapter(ABC):
         # Also write legacy list format for backwards compatibility
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump([source.to_legacy_dict()], f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
 
         return out_path

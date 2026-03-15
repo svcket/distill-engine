@@ -158,17 +158,15 @@ export default function DraftStudioPage() {
             <div className="grid md:grid-cols-3 gap-6">
 
                 <div className="md:col-span-2 space-y-6">
-                    <Card className="border-brand bg-brand text-background">
+                    <Card className="border-brand bg-card shadow-soft">
                         <CardHeader className="pb-4">
-                            <CardTitle className="text-lg flex items-center gap-2 font-serif text-background">
-                                <Target className="w-5 h-5 text-yellow-400" /> Primary Framing Angle
+                            <CardTitle className="text-lg flex items-center gap-2 font-serif text-brand">
+                                <Target className="w-5 h-5 text-amber-500" /> Primary Framing Angle
                             </CardTitle>
                         </CardHeader>
-                        <CardContent>
-                            <p className="text-xl font-medium leading-relaxed text-zinc-100">
+                            <p className="text-xl font-medium leading-relaxed text-foreground">
                                 {strategy.framing_angle}
                             </p>
-                        </CardContent>
                     </Card>
 
                     <Card>
@@ -209,9 +207,9 @@ export default function DraftStudioPage() {
 
                             <div className="space-y-2">
                                 <div className="text-xs font-bold text-brand uppercase tracking-wider mb-2">Recommended Main</div>
-                                <div className="p-3 border rounded-md bg-muted/50 flex items-center gap-3">
+                                <div className="p-3 border rounded-md bg-muted/50 flex items-center gap-3 border-border/50">
                                     <Layout className="w-5 h-5 text-muted-foreground" />
-                                    <span className="font-medium text-sm">{strategy.recommended_format}</span>
+                                    <span className="font-medium text-sm text-foreground">{strategy.recommended_format}</span>
                                 </div>
                             </div>
 
@@ -288,7 +286,7 @@ export default function DraftStudioPage() {
                         <div className="flex flex-col items-end gap-2">
                             <Button
                                 size="lg"
-                                className="gap-2 bg-brand hover:bg-brand/90 text-background"
+                                className="gap-2 bg-brand text-brand-foreground hover:bg-brand/90"
                                 onClick={handleWrite}
                                 disabled={isWriting || !!draft}
                             >

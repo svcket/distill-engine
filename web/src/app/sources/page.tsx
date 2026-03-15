@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/Button"
 import { SourceCandidate } from "@/lib/mockData"
 import Link from "next/link"
 import {
-    Search, ArrowRight, ChevronDown, Plus,
-    Play, Grid, List, Trash2
+    Plus, Search, ChevronDown,
+    Play, Grid, List, Trash2, ArrowRight, ChevronRight
 } from "lucide-react"
+import { UnifiedSourceInput } from "@/components/workspace/UnifiedSourceInput"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
 import { format as formatDate, parseISO } from "date-fns"
@@ -67,9 +68,6 @@ async function deleteSource(id: string) {
 export default function SourcesPage() {
     const { t } = useLanguage()
     const router = useRouter()
-    const [searchQuery, setSearchQuery] = useState("")
-    const [isSearching, setIsSearching] = useState(false)
-    const [suggestions, setSuggestions] = useState<SourceCandidate[]>([])
     
     const [activeTab, setActiveTab] = useState<Tab>("processed")
     const [viewMode, setViewMode] = useState<ViewMode>("list")
@@ -98,25 +96,6 @@ export default function SourcesPage() {
         return () => document.removeEventListener("mousedown", handleClickOutside)
     }, [])
 
-    const handleSearch = async (query: string) => {
-        setSearchQuery(query)
-        if (query.length < 2) {
-            setSuggestions([])
-            return
-        }
-        setIsSearching(true)
-        try {
-            const res = await fetch(`/api/sources/discover?query=${encodeURIComponent(query)}`)
-            if (res.ok) {
-                const data = await res.json()
-                setSuggestions(data.suggestions || [])
-            }
-        } catch (error) {
-            console.error("Search failed:", error)
-        } finally {
-            setIsSearching(false)
-        }
-    }
 
     // Load sources
     useEffect(() => {
@@ -158,59 +137,40 @@ export default function SourcesPage() {
         }
     }
 
-    const handleIngest = async (url: string) => {
-        if (!url || !url.trim()) return
+    const handleFileSelect = (file: File) => {
+        const isAudio = file.type.startsWith('audio');
+        const typeLabel = isAudio ? "Audio" : "Video";
         
-        setIsIngesting(true)
-        setIngestStatus(null)
-
-        try {
-            const res = await fetch("/api/sources/ingest", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ url })
-            })
-            
-            const data = await res.json()
-            
-            if (res.ok) {
-                setIngestStatus({ 
-                    type: 'success', 
-                    message: `Successfully started ingestion for: ${data.result?.title || url}` 
-                })
-                setSearchQuery("")
-                
-                // Navigate to the source detail page immediately
-                if (data.result?.source_id) {
-                    router.push(`/sources/${data.result.source_id}`)
-                }
-                
-                // Optionally refresh the source list
-                const storeRes = await fetch("/api/store")
-                if (storeRes.ok) {
-                    const storeData = await storeRes.json()
-                    setSources(storeData.sources || [])
-                }
-            } else {
-                setIngestStatus({ 
-                    type: 'error', 
-                    message: data.error || "Failed to ingest source. Please check the URL." 
-                })
-            }
-        } catch (error) {
-            setIngestStatus({ 
-                type: 'error', 
-                message: "An unexpected error occurred during ingestion." 
-            })
-        } finally {
-            setIsIngesting(false)
-            // Auto-clear status after 5 seconds
-            setTimeout(() => setIngestStatus(null), 5000)
-        }
+        setIngestStatus({
+            type: 'success',
+            message: `Importing local ${typeLabel.toLowerCase()} file: ${file.name}...`
+        });
+        
+        // Simulate adding to list
+        const newId = `local-${Date.now()}`;
+        const mockSource: SourceCandidate = {
+            id: newId,
+            title: file.name.split('.')[0],
+            channel: "Local Device",
+            url: "file://local-import",
+            published: formatDate(new Date(), "MMM dd, yyyy"),
+            duration: "Processing...",
+            status: "processing",
+            score: 0,
+            completedStages: ["judge"]
+        };
+        
+        setSources(prev => [mockSource, ...prev]);
+        
+        // Auto-clear status
+        setTimeout(() => setIngestStatus(null), 3000);
+        
+        // Navigate to detail after a short delay
+        setTimeout(() => router.push(`/sources/${newId}`), 1000);
     }
 
     return (
-        <div className="p-8 max-w-[1400px] mx-auto space-y-8 min-h-full">
+        <div className="p-8 px-12 max-w-[1500px] mx-auto space-y-8 min-h-full">
             <div className="space-y-1">
                 <h1 className="text-3xl font-serif font-semibold tracking-tight">{t("sources")}</h1>
                 <p className="text-muted-foreground">{t("searchPlaceholder")}</p>
@@ -225,128 +185,66 @@ export default function SourcesPage() {
                 </div>
             )}
 
-            <div className="flex flex-col md:flex-row gap-4">
-                <div className="relative flex-1 group">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <input
-                        type="text"
-                        placeholder={t("searchPlaceholder")}
-                        className="w-full pl-10 pr-28 h-11 rounded-lg border border-border bg-background shadow-micro focus:ring-2 focus:ring-brand/20 transition-all outline-none"
-                        value={searchQuery}
-                        onChange={(e) => handleSearch(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                if (searchQuery.includes('://') || searchQuery.includes('.')) {
-                                    handleIngest(searchQuery);
-                                } else if (searchQuery.trim()) {
-                                    // Normal search behavior if any
+            <div className="flex flex-col md:flex-row gap-4 items-start">
+                <div className="flex-1 w-full">
+                    <UnifiedSourceInput 
+                        onIngest={async (input) => {
+                            if (!input || !input.trim()) return
+                            setIsIngesting(true)
+                            setIngestStatus(null)
+
+                            // Intelligent detection: URL vs Topic
+                            const isURL = /^https?:\/\//i.test(input.trim()) || 
+                                          input.includes('.') && !input.includes(' ')
+
+                            try {
+                                if (isURL) {
+                                    const res = await fetch("/api/sources/ingest", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ url: input })
+                                    })
+                                    const data = await res.json()
+                                    if (res.ok && data.result?.source_id) {
+                                        router.push(`/sources/${data.result.source_id}`)
+                                    } else {
+                                        setIngestStatus({ type: 'error', message: data.error || "Failed to ingest source." })
+                                    }
+                                } else {
+                                    // Topic Discovery Search
+                                    const res = await fetch("/api/sources/discover", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ query: input })
+                                    })
+                                    if (res.ok) {
+                                        const data = await res.json()
+                                        // Update local source candidates with discovered ones
+                                        // In a real app, this might open a discovery modal
+                                        setSources(prev => [...(data.sources || []), ...prev])
+                                        setIngestStatus({ type: 'success', message: `Discovered items for topic: ${input}` })
+                                    } else {
+                                        setIngestStatus({ type: 'error', message: "Topic search failed." })
+                                    }
                                 }
+                            } catch (err) {
+                                console.error("Source operation failed:", err)
+                                setIngestStatus({ type: 'error', message: "Operation failed." })
+                            } finally {
+                                setIsIngesting(false)
+                                setTimeout(() => setIngestStatus(null), 5000)
                             }
                         }}
-                        disabled={isIngesting}
+                        onFileSelect={handleFileSelect}
+                        isIngesting={isIngesting}
                     />
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                        <Button 
-                            size="sm" 
-                            variant={searchQuery.trim() ? "default" : "ghost"}
-                            className={cn(
-                                "h-8 px-4 text-xs font-serif font-medium transition-all duration-300",
-                                searchQuery.trim() 
-                                    ? "bg-black text-white hover:bg-black/90 shadow-soft translate-x-0 opacity-100" 
-                                    : "hover:bg-muted opacity-50"
-                            )}
-                            onClick={() => handleIngest(searchQuery)}
-                            disabled={isIngesting || !searchQuery.trim()}
-                        >
-                            {isIngesting ? (
-                                <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                            ) : t("search")}
-                        </Button>
-                    </div>
-                    
-                    {/* Search Suggestions */}
-                    {(suggestions.length > 0 || isSearching) && (
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-border shadow-soft rounded-xl p-2 z-50 animate-in fade-in slide-in-from-top-2">
-                            {isSearching ? (
-                                <div className="p-4 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
-                                    <div className="w-4 h-4 rounded-full border-2 border-brand/30 border-t-brand animate-spin" />
-                                    Finding relevant sources...
-                                </div>
-                            ) : (
-                                <div className="space-y-1">
-                                    <p className="px-3 py-2 text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">Smart Suggestions</p>
-                                    {suggestions.map((suggestion) => (
-                                        <button
-                                            key={suggestion.id}
-                                            className="w-full text-left p-3 rounded-lg hover:bg-muted/50 transition-colors group/item"
-                                            onClick={() => router.push(`/sources/${suggestion.id}`)}
-                                        >
-                                            <div className="flex items-start justify-between">
-                                                <div className="space-y-0.5">
-                                                    <p className="text-sm font-medium line-clamp-1 group-hover/item:text-brand">{suggestion.title}</p>
-                                                    <p className="text-xs text-muted-foreground">{suggestion.channel} · {suggestion.duration}</p>
-                                                </div>
-                                                <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 -translate-x-2 transition-all group-hover/item:opacity-100 group-hover/item:translate-x-0" />
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
                 </div>
-                <div className="flex items-center gap-3">
-                    <Button 
-                        variant="outline"
-                        className="gap-2 h-10 shadow-micro font-serif font-medium border-border hover:bg-muted/50" 
-                        onClick={() => {
-                            const input = document.createElement("input");
-                            input.type = "file";
-                            input.accept = "video/*,audio/*";
-                            input.onchange = (e) => {
-                                const file = (e.target as HTMLInputElement).files?.[0];
-                                if (file) {
-                                    const isAudio = file.type.startsWith('audio');
-                                    const typeLabel = isAudio ? "Audio" : "Video";
-                                    
-                                    setIngestStatus({
-                                        type: 'success',
-                                        message: `Importing local ${typeLabel.toLowerCase()} file: ${file.name}...`
-                                    });
-                                    
-                                    // Simulate adding to list
-                                    const newId = `local-${Date.now()}`;
-                                    const mockSource: SourceCandidate = {
-                                        id: newId,
-                                        title: file.name.split('.')[0],
-                                        channel: "Local Device",
-                                        url: "file://local-import",
-                                        published: formatDate(new Date(), "MMM dd, yyyy"),
-                                        duration: "Processing...",
-                                        status: "processing",
-                                        score: 0,
-                                        completedStages: ["judge"]
-                                    };
-                                    
-                                    setSources(prev => [mockSource, ...prev]);
-                                    
-                                    // Auto-clear status
-                                    setTimeout(() => setIngestStatus(null), 3000);
-                                    
-                                    // Navigate to detail after a short delay
-                                    setTimeout(() => router.push(`/sources/${newId}`), 1000);
-                                }
-                            };
-                            input.click();
-                        }}
-                        type="button"
-                    >
-                        <Plus className="w-4 h-4" /> {t("importSource")}
-                    </Button>
 
+                <div className="flex items-center gap-3">
                     <div className="relative shrink-0" ref={filterRef}>
-                        <Button variant="outline" className={cn("gap-2 h-10 font-serif font-medium", platformFilter !== "All" && "border-brand text-brand bg-brand/5")} onClick={() => setShowFilters(!showFilters)} type="button">
-                            <ChevronDown className={cn("w-4 h-4 transition-transform", showFilters && "rotate-180")} /> {platformFilter === "All" ? t("filter") : platformFilter}
+                        <Button variant="outline" className={cn("gap-2 h-12 px-6 font-serif font-medium shadow-micro rounded-xl border-border", platformFilter !== "All" && "border-brand text-brand bg-brand/5")} onClick={() => setShowFilters(!showFilters)} type="button">
+                            <ChevronDown className={cn("w-4 h-4 transition-transform", showFilters && "rotate-180")} /> 
+                            <span className="text-sm">{platformFilter === "All" ? t("filter") : platformFilter}</span>
                         </Button>
                         
                         {showFilters && (
@@ -518,15 +416,16 @@ export default function SourcesPage() {
                         ))}
                     </div>
                 ) : (
-                    <div className="border border-border rounded-xl bg-background overflow-hidden animate-in fade-in duration-500">
+                    <div className="border border-border rounded-xl bg-card overflow-hidden animate-in fade-in duration-500 text-slate-900 shadow-sleek">
                         <table className="w-full text-left border-collapse">
                             <thead>
-                                <tr className="bg-muted/30 border-b border-border">
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest">Source</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest text-center">Platform</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest text-center">QUAL SCORE</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest text-center">{t("dateAdded")}</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest text-right">{t("actions")}</th>
+                                <tr className="bg-muted/10 border-b border-border/50">
+                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest font-serif">{t("source")}</th>
+                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest text-center font-serif">Platform</th>
+                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest text-center font-serif">QUAL SCORE</th>
+                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest text-center font-serif">{t("dateAdded")}</th>
+                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest text-right font-serif">View</th>
+                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest text-right font-serif">{t("actions")}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border/50">
@@ -566,6 +465,8 @@ export default function SourcesPage() {
                                                     <span className="font-medium text-foreground/70">{formatDisplayDate(source.processedAt || source.published) || "Today"}</span>
                                                 </div>
                                             </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end">

@@ -47,6 +47,24 @@ def ingest_source(source_id: str):
         }), file=sys.stderr)
         sys.exit(1)
 
+    # ENRICHMENT: If this is a shell, run full normalization now
+    if metadata.get("is_shell") or metadata.get("source_confidence", 1.0) < 0.6:
+        from adapters.adapter_router import route_source, ADAPTERS
+        try:
+            url = metadata.get("url")
+            if url:
+                enriched = route_source(url, shell=False)
+                # Update metadata with enriched values
+                metadata.update(enriched.to_legacy_dict())
+                
+                # Save enriched metadata back to disk so future stages benefit
+                base = os.path.dirname(__file__)
+                adapter = next(a for a in ADAPTERS if a.detect(url))
+                adapter.save(enriched, base)
+        except Exception as e:
+            # Non-fatal error; we proceed with shell if enrichment fails
+            pass
+
     result = {
         "source_id": source_id,
 

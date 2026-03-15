@@ -127,11 +127,12 @@ Source Transcript Excerpts (Use for specific grounding):
         # Advanced Editorial Reasoning Stage
         reasoning_prompt = f"""Before drafting, perform an internal editorial reasoning sequence:
 1. **Frame Builder**: Determine the central thesis of the piece. Capture tension or contrast grounded in the Insight Packet.
-2. **Angle Selector**: Select the editorial angle (Explainer, Cultural Analysis, Narrative Reflection, Builder Insight, Case Study, or Concept Breakdown).
-3. **Voice Persona Selector**: Select the authorial style (Analyst, Storyteller, Builder, Philosopher, or Explainer).
-4. **Structure Architect**: Determine the narrative flow (Hook, Context, Observation, Example, Implication, Conclusion).
+2. **Angle Selector**: Select the editorial angle (Explainer, Cultural Analysis, Narrative Reflection, Builder Insight, Case Study, Concept Breakdown, or Contrarian Hot-Take).
+3. **Voice Persona Selector**: Select the authorial style (Analyst, Storyteller, Builder, Philosopher, Explainer, or Provocateur).
+4. **Structure Architect**: Determine the narrative flow (standard Hook-to-Conclusion, or unconventional models like Inverted Pyramid, Tension-Resolution Loop, or The Hero's Technical Journey).
 
-Generate a strict structural plan based on this reasoning."""
+Generate a strict structural plan based on this reasoning. Avoid the "Intro-Body-Conclusion" default where possible to create more human, editorial energy.
+"""
         
         plan_completion = client.beta.chat.completions.parse(
             model="gpt-4o-mini",

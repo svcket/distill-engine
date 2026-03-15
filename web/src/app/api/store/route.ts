@@ -7,6 +7,30 @@ export async function GET() {
         const sortedSources = [...store.sources].sort((a, b) => {
             return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         })
+
+        // Hydration fix: If a source is nameless, try to find its title in the .tmp metadata
+        const path = await import('path')
+        const fs = await import('fs')
+        const baseDir = path.resolve(process.cwd(), '../execution/.tmp/sources')
+
+        for (const source of sortedSources) {
+            if (source.title === 'Unknown Source' || !source.title) {
+                const metaPath = path.join(baseDir, `${source.id}.json`)
+                if (fs.existsSync(metaPath)) {
+                    try {
+                        const raw = fs.readFileSync(metaPath, 'utf-8')
+                        const meta = JSON.parse(raw)
+                        const items = Array.isArray(meta) ? meta : [meta]
+                        const item = items[0]
+                        if (item.title && item.title !== 'Unknown Source') {
+                            source.title = item.title
+                            source.channel = item.channel || item.creator || source.channel
+                        }
+                    } catch { /* skip */ }
+                }
+            }
+        }
+
         return NextResponse.json({ sources: sortedSources })
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Unknown error'

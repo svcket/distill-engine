@@ -16,7 +16,7 @@ export async function POST(request: Request) {
         }
 
         const executionDir = path.resolve(process.cwd(), '../execution')
-        const args = ['--url', url, '--base-dir', executionDir]
+        const args = ['--url', url, '--base-dir', executionDir, '--shell']
         if (source_type) args.push('--source-type', source_type)
 
         const { success, error, rawOutput } = await runPythonScript('adapters/adapter_router.py', args)
@@ -40,7 +40,16 @@ export async function POST(request: Request) {
             duration: result.duration_seconds ? `${Math.floor(result.duration_seconds / 60)}m` : '—',
             score: 0,
             completedStages: []
-        } as any)
+        } as Record<string, unknown> & { id: string })
+
+        // AUTOMATION: Trigger transcription auto-fetch in the background
+        // We don't await this so the user can be redirected to the detail page immediately
+        const transcriptFetchUrl = `${new URL(request.url).origin}/api/transcripts/fetch`
+        fetch(transcriptFetchUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: result.url || url, sourceId: result.source_id, sourceType: result.source_type })
+        }).catch(err => console.error("Auto-transcription trigger failed:", err))
 
         return NextResponse.json({ result })
 

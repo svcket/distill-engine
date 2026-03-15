@@ -14,7 +14,9 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
 
-  --color-brand: #111111;
+  --color-brand: var(--brand);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
@@ -23,29 +25,41 @@
   --font-sans: var(--font-inter), system-ui, sans-serif;
   --font-serif: var(--font-serif), Georgia, serif;
 
-  --shadow-micro: 0 1px 2px rgba(0, 0, 0, 0.02), 0 1px 3px rgba(0, 0, 0, 0.02);
-  --shadow-soft: 0 2px 4px rgba(0, 0, 0, 0.03), 0 4px 12px rgba(0, 0, 0, 0.03);
+  --shadow-micro: 0 1px 2px rgba(0, 0, 0, 0.02), 0 1px 1px rgba(0, 0, 0, 0.01);
+  --shadow-soft: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.03);
+  --shadow-sleek: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-glow: 0 0 15px rgba(255, 255, 255, 0.1);
 }
 
 :root {
-  --background: #F9F9F9;
+  --background: #FFFFFF;
   --foreground: #111111;
-  --border: #E5E5E5;
-  --muted: #F3F4F6;
-  --muted-foreground: #6B7280;
+  --border: #E8E8E8;
+  --muted: #F8F9FA;
+  --muted-foreground: #737373;
   --accent: #F9FAFB;
   --accent-foreground: #111827;
-  --radius: 0.5rem;
+  --card: #FFFFFF;
+  --card-foreground: #111111;
+  --brand: #111111;
+  --brand-foreground: #FFFFFF;
+  --radius: 0.75rem;
+  --page-bg: #F9F9F9;
 }
 
 .dark {
-  --background: #0D1117; /* GitHub Dark */
-  --foreground: #C9D1D9;
-  --border: #30363D;
-  --muted: #161B22;
-  --muted-foreground: #8B949E;
-  --accent: #1F2937;
-  --accent-foreground: #F9FAFB;
+  --background: #0d1117; /* GitHub Dark BG */
+  --foreground: #f0f6fc;
+  --border: #30363d;
+  --muted: #161b22;
+  --muted-foreground: #8b949e;
+  --accent: #21262d;
+  --accent-foreground: #f0f6fc;
+  --page-bg: #0d1117;
+  --card: #161b22; /* GitHub Dark Card */
+  --card-foreground: #f0f6fc;
+  --brand: #f0f6fc;
+  --brand-foreground: #0d1117;
 }
 
 @layer base {
@@ -59,9 +73,9 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    letter-spacing: -0.015em;
-    font-feature-settings: "rlig" 1, "calt" 1;
-    transition: background-color 0.3s ease, color 0.3s ease;
+    letter-spacing: -0.011em;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   h1,

@@ -36,9 +36,22 @@ class PodcastAdapter(BaseAdapter):
     def detect(self, url: str) -> bool:
         return any(re.search(p, url.strip(), re.IGNORECASE) for p in self.PATTERNS)
 
-    def normalize(self, url: str) -> NormalizedSource:
+    def normalize(self, url: str, shell: bool = False) -> NormalizedSource:
         source_id = "podcast_" + hashlib.md5(url.encode()).hexdigest()[:12]
         
+        # Fast Path: return shell if requested
+        if shell:
+            return NormalizedSource(
+                source_id=source_id,
+                source_type="podcast",
+                title="Podcast Episode (Pending...)",
+                creator="Podcast",
+                url=url,
+                transcript_status="unknown",
+                source_confidence=0.5,
+                is_shell=True,
+            )
+
         # 1. Skip resolution if URL is already a direct audio file
         if url.lower().endswith(".mp3") or ".mp3?" in url.lower() or url.lower().endswith(".m4a") or ".m4a?" in url.lower():
             feed_url = url
@@ -57,8 +70,12 @@ class PodcastAdapter(BaseAdapter):
         # If we couldn't resolve a Spotify/Apple feed to an actual MP3, warn the user
         description = metadata.get("description", "")[:500]
         status = "pending_whisper"
+        strategy = "audio_fallback"
+        
         if "spotify.com" in url and not mp3_url:
-            description = "[DRM Warning] Could not resolve a public RSS feed for this Spotify episode. Direct download may fail. Please use an RSS feed or Apple Podcasts link if possible. " + description
+            description = "[Transcript Unavailable] Could not resolve a public RSS feed for this Spotify episode. Direct download is not supported. " + description
+            status = "unavailable"
+            strategy = "unavailable"
             
         return NormalizedSource(
             source_id=source_id,
@@ -70,6 +87,8 @@ class PodcastAdapter(BaseAdapter):
             duration_seconds=metadata.get("duration_seconds", 0),
             description=description,
             transcript_status=status,
+            transcript_strategy=strategy,
+            transcript_source="audio_whisper" if mp3_url else "unknown",
             language="en",
             source_confidence=0.85,
             raw_metadata=metadata,
@@ -94,7 +113,7 @@ class PodcastAdapter(BaseAdapter):
 
             try:
                 # Try to get episode title from the page
-                req_page = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                req_page = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"})
                 with urllib.request.urlopen(req_page, timeout=5) as resp:
                     html = resp.read().decode("utf-8", errors="ignore")
                     og_title = re.search(r'<meta property="og:title" content="(.*?)"', html)
@@ -105,11 +124,16 @@ class PodcastAdapter(BaseAdapter):
                         if title_m:
                             target_title = title_m.group(1).split(" on Apple Podcasts")[0].strip()
 
-                req = urllib.request.Request(f"https://itunes.apple.com/lookup?id={apple_match.group(1)}")
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    data = json.loads(resp.read().decode())
-                    if data.get("results"):
-                        return data["results"][0].get("feedUrl", url), target_title, target_guid
+                # Extract Apple ID (could be in the path like /show-name/id12345 or /episode/name/id12345)
+                # Look for the last 'id' followed by digits
+                id_match = re.search(r"id(\d+)(?:\?|$|/)", url)
+                if id_match:
+                    lookup_id = id_match.group(1)
+                    req = urllib.request.Request(f"https://itunes.apple.com/lookup?id={lookup_id}")
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        data = json.loads(resp.read().decode())
+                        if data.get("results"):
+                            return data["results"][0].get("feedUrl", url), target_title, target_guid
             except Exception:
                 pass
 
@@ -148,11 +172,17 @@ class PodcastAdapter(BaseAdapter):
                 if og_title:
                     raw_title = og_title.group(1)
                     clean_title = raw_title.split("|")[0].strip()
+                    
+                    # Remove "Episode [Number]" prefixes or similar
+                    clean_title = re.sub(r"^(?:Episode|Ep)\s*\d+[:\s-]*", "", clean_title, flags=re.IGNORECASE).strip()
                     target_title = clean_title
                     
                     parts = clean_title.split(" - ")
                     show_name = parts[-1].strip() if len(parts) > 1 else clean_title
                     episode_name = parts[0].strip() if len(parts) > 1 else ""
+                    
+                    # Clean the episode name specifically for better searching
+                    clean_episode = re.sub(r"Season\s*\d+", "", episode_name, flags=re.IGNORECASE).strip()
 
                     # Also try to find the creator/show name directly in meta
                     show_m = re.search(r'property="music:musician" content="(.*?)"', html)
@@ -160,6 +190,8 @@ class PodcastAdapter(BaseAdapter):
                         show_m = re.search(r'property="og:description" content="(.*?)"', html)
                     
                     search_queries = [clean_title]
+                    if clean_episode and len(clean_episode) > 5:
+                        search_queries.append(clean_episode)
                     if show_m:
                         search_queries.append(show_m.group(1).split(" · ")[0])
                     if len(parts) > 1:
@@ -186,7 +218,22 @@ class PodcastAdapter(BaseAdapter):
             match = re.search(r"([^.]+)\.simplecast\.com/episodes/", url)
             if match: return f"https://feeds.simplecast.com/{match.group(1)}", None, None
                 
-        return url, None, None
+        # Generic Fallback: If we couldn't resolve via iTunes, try to find an RSS link in the page HTML
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+                # Look for <link rel="alternate" type="application/rss+xml" href="...">
+                rss_m = re.search(r'type="application/rss\+xml".*?href=["\'](https?://[^"\']+)["\']', html, re.IGNORECASE)
+                if not rss_m:
+                    rss_m = re.search(r'href=["\'](https?://[^"\']+)["\'].*?type="application/rss\+xml"', html, re.IGNORECASE)
+                
+                if rss_m:
+                    return rss_m.group(1), target_title, target_guid
+        except Exception:
+            pass
+
+        return url, target_title, target_guid
 
     def _fetch_rss_metadata(self, url: str, target_title: Optional[str] = None, target_guid: Optional[str] = None) -> tuple[dict, Optional[str]]:
         """

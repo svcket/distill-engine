@@ -31,12 +31,26 @@ class YouTubeAdapter(BaseAdapter):
                 return m.group(1)
         return None
 
-    def normalize(self, url: str) -> NormalizedSource:
+    def normalize(self, url: str, shell: bool = False) -> NormalizedSource:
         video_id = self.extract_video_id(url)
         if not video_id:
             raise ValueError(f"Cannot extract YouTube video ID from: {url}")
 
         clean_url = f"https://www.youtube.com/watch?v={video_id}"
+        
+        # Fast Path: return shell if requested
+        if shell:
+            return NormalizedSource(
+                source_id=video_id,
+                source_type="youtube",
+                title=f"YouTube Video ({video_id})",
+                creator="YouTube",
+                url=clean_url,
+                transcript_status="unknown",
+                source_confidence=0.5, # Lower confidence for shell
+                is_shell=True,
+            )
+
         metadata = self._fetch_metadata(video_id)
 
         return NormalizedSource(

@@ -8,18 +8,17 @@ import { SourceCandidate } from "@/lib/mockData"
 import {
     ArrowLeft, ExternalLink, Calendar, Clock, BarChart3,
     Loader2, FileText, Bot, Sparkles, Target, Edit3,
-    ShieldCheck,
-    X,
+    X, Trash2, ShieldCheck,
     Download, Play, MoreHorizontal
 } from "lucide-react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
 import DQMCard, { DQMData } from "@/components/DQMCard"
 
 // ─── Workflow Stage Definitions ────────────────────────────────────────
-type StageId = "judge" | "transcript" | "refine" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "export"
+type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "export"
 type StageStatus = "completed" | "active" | "locked"
 
 interface WorkflowStage {
@@ -33,22 +32,26 @@ interface WorkflowStage {
 }
 
 const STAGES: WorkflowStage[] = [
-    { id: "judge", label: "Ingest Source", description: "Enrich source metadata and prepare for pipeline", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }) },
-    { id: "transcript", label: "Fetch Transcript", description: "Retrieve and index the source transcript", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (id) => ({ sourceId: id }) },
-    { id: "refine", label: "Refine Transcript", description: "Clean artifacts, chunk into logical segments", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "packet", label: "Build Insight Packet", description: "Package top-density segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "insights", label: "Extract Insights", description: "LLM-powered thesis, frameworks, takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "angle", label: "Choose Angle", description: "Strategic angle and editorial framing", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "draft", label: "Generate Draft", description: "Full editorial output with streaming", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
-    { id: "visual", label: "Visual Planning", description: "Suggest visuals, diagrams, quote cards", icon: Sparkles, apiEndpoint: "/api/visual", apiBody: (id) => ({ sourceId: id }) },
-    { id: "qa", label: "Analyze Matrix", description: "Strategic matrix evaluation and editorial grading", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
-    { id: "export", label: "Export Asset", description: "Package and deliver final outputs", icon: Download, apiEndpoint: "/api/assets/export", apiBody: (id) => ({ draftId: id }) },
+    { id: "judge", label: "Judge Alignment", description: "Enrich source metadata and evaluate against NorthStar Profile", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }) },
+    { id: "transcript", label: "Fetch Transcript", description: "Retrieve indexing data via Fast-Path or Whisper", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (id) => ({ sourceId: id }) },
+    { id: "refine", label: "Refine Context", description: "Denoise transcript and segment into logical chunks", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (id) => ({ transcriptId: id }) },
+    { id: "summary", label: "Synthesize Core", description: "Concise summary and key framework identification", icon: FileText, apiEndpoint: "/api/transcripts/summary", apiBody: (id) => ({ transcriptId: id }) },
+    { id: "packet", label: "Density Mapping", description: "Identify high-signal segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcriptId: id }) },
+    { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (id) => ({ transcriptId: id }) },
+    { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
+    { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
+    { id: "visual", label: "Visual Curation", description: "Suggested diagrams, charts, and quote cards", icon: Sparkles, apiEndpoint: "/api/visual", apiBody: (id) => ({ sourceId: id }) },
+    { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
+    { id: "export", label: "Package Asset", description: "Deliver final content to Draft Studio or Export Center", icon: Download, apiEndpoint: "/api/assets/export", apiBody: (id) => ({ draftId: id }) },
 ]
 
 export default function SourceMissionControl() {
     const { t } = useLanguage()
     const params = useParams()
+    const searchParams = useSearchParams()
+    const router = useRouter()
     const id = params?.id as string
+    const autoStart = searchParams?.get("auto") === "true"
 
     const [source, setSource] = useState<SourceCandidate>({
         id: id,
@@ -58,8 +61,9 @@ export default function SourceMissionControl() {
         published: "—",
         duration: "—",
         status: "idle",
-        score: 0
-    })
+        score: 0,
+        transcriptStatus: "pending"
+    } as any)
 
     // Track which stages are completed
     const [completedStages, setCompletedStages] = useState<Set<StageId>>(() => {
@@ -141,6 +145,7 @@ export default function SourceMissionControl() {
                             published: stored.published || s.published,
                             duration: stored.duration || s.duration,
                             status: stored.status || s.status,
+                            transcriptStatus: stored.transcript_status || stored.transcriptStatus || s.transcriptStatus,
                         }))
                         if (stored.completedStages && stored.completedStages.length > 0) {
                             setCompletedStages(new Set(stored.completedStages))
@@ -197,10 +202,30 @@ export default function SourceMissionControl() {
     const activeIndex = getActiveStageIndex()
 
     const getStageStatus = (index: number): StageStatus => {
-        if (completedStages.has(STAGES[index].id)) return "completed"
+        const stage = STAGES[index]
+        if (completedStages.has(stage.id)) return "completed"
+        
+        // Hard Gate: If transcript is unavailable, all stages from 'transcript' onwards are locked
+        const isTranscriptUnavailable = (source as any).transcriptStatus === "unavailable"
+        if (isTranscriptUnavailable && (stage.id === "transcript" || index > STAGES.findIndex(s => s.id === "transcript"))) {
+            return "locked"
+        }
+
         if (index === activeIndex) return "active"
         return "locked"
     }
+
+    // Handle auto-start trigger
+    useEffect(() => {
+        if (autoStart && activeIndex < STAGES.length && !isRunningAll && !executingStage) {
+            // Wait a bit for state to settle
+            const timer = setTimeout(() => {
+                runFullPipeline()
+            }, 500)
+            return () => clearTimeout(timer)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoStart, activeIndex, isRunningAll, executingStage])
 
     // Execute a workflow stage
     const executeStage = async (stage: WorkflowStage) => {
@@ -218,7 +243,7 @@ export default function SourceMissionControl() {
             if (id.startsWith("local-")) {
                 await new Promise(r => setTimeout(r, 1500)) // Simulate network latency
                 
-                let mockData: any = { status: "success", message: `${stage.label} completed for local file` }
+                let mockData: Record<string, unknown> = { status: "success", message: `${stage.label} completed for local file` }
                 
                 if (stage.id === "judge") mockData = { result: { title: source.title, channel: "Local File", url: "file://local", score: 8 } }
                 if (stage.id === "transcript") mockData = { result: { segments: [{ start: 0, text: "This is a mock transcript for your local file import. It contains the key arguments and discussions from the meeting." }] } }
@@ -238,10 +263,10 @@ export default function SourceMissionControl() {
                 const existing = JSON.parse(localStorage.getItem(localKey) || "{}");
                 localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: data.result || data }));
                 
-                if (stage.id === "qa" && data.result?.total_score !== undefined) {
+                if (stage.id === "qa" && (data.result as any)?.total_score !== undefined) {
                     setSource(s => ({
                         ...s,
-                        score: data.result.total_score,
+                        score: (data.result as any).total_score,
                         status: "done",
                     }))
                     // Save DQM to specific cache for cross-module persistence
@@ -280,12 +305,27 @@ export default function SourceMissionControl() {
             }
             if (stage.id === "judge") {
                 // If judge updates title/channel/url
+                const updatedSource = {
+                    title: data.result?.title || source.title,
+                    channel: data.result?.channel || source.channel,
+                    url: data.result?.url || source.url,
+                }
                 setSource(s => ({
                     ...s,
-                    title: data.result?.title || s.title,
-                    channel: data.result?.channel || s.channel,
-                    url: data.result?.url || s.url,
+                    ...updatedSource
                 }))
+
+                // Persist new metadata to store
+                try {
+                    await fetch("/api/store", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ 
+                            action: "upsert", 
+                            source: { id, ...updatedSource } 
+                        })
+                    })
+                } catch { /* silently fail */ }
             }
 
             // Add log
@@ -309,6 +349,27 @@ export default function SourceMissionControl() {
         }
     }
 
+    const handleDelete = async () => {
+        if (!confirm("Are you sure you want to delete this source? This action cannot be undone.")) return
+
+        try {
+            const res = await fetch("/api/store", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "delete", id })
+            })
+            if (res.ok) {
+                router.push("/sources")
+            } else {
+                const data = await res.json()
+                setError(data.error || "Delete failed")
+            }
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : "Unknown error"
+            setError(msg)
+        }
+    }
+
     // Run full pipeline — auto-chains all remaining stages
     const runFullPipeline = async () => {
         setIsRunningAll(true)
@@ -325,7 +386,7 @@ export default function SourceMissionControl() {
                 
                 const isAudio = id.toLowerCase().includes("mp3") || id.toLowerCase().includes("wav") || id.toLowerCase().includes("m4a") || id.toLowerCase().includes("audio");
                 
-                let mockData: any = { status: "success" }
+                let mockData: Record<string, unknown> = { status: "success" }
                 if (stage.id === "judge") mockData = { result: { title: source.title, channel: isAudio ? "Local Audio" : "Local Video", url: "file://local", score: 8 } }
                 if (stage.id === "transcript") mockData = { result: { segments: [{ start: 0, text: isAudio ? "Mock transcript for audio meeting..." : "Transcript for local media..." }] } }
                 if (stage.id === "refine") mockData = { result: { segments: [{ text: "Refined local transcript..." }] } }
@@ -343,7 +404,8 @@ export default function SourceMissionControl() {
                     } 
                 }
 
-                setStageResults(prev => ({ ...prev, [stage.id]: mockData.result || mockData }))
+                const data = mockData as any
+                setStageResults(prev => ({ ...prev, [stage.id]: data.result || data }))
                 setCompletedStages(prev => new Set([...prev, stage.id]))
                 
                 // Persist to localStorage
@@ -366,18 +428,28 @@ export default function SourceMissionControl() {
                 continue
             }
 
-            // Pause at draft to await intent configuration if we auto-ran into it
-            if (stage.id === "draft" && i !== startIndex) {
-                setLogs(prev => [{ event: `Pipeline paused. Please configure Writing Intent before continuing.`, time: "Just now", status: "info" }, ...prev])
+            // 1. Add human rhythm delay: pause briefly between stages so user can visually see progress
+            if (i !== startIndex) {
+                await new Promise(resolve => setTimeout(resolve, 800))
+            }
+
+            // 2. Pause at "angle" to allow user to review insights and configure intent before framing/generation
+            if (stage.id === "angle" && i !== startIndex) {
+                setLogs(prev => [{ event: `Pipeline paused for review. Please check insights and configure Framing/Intent.`, time: "Just now", status: "info" }, ...prev])
                 setIsRunningAll(false)
+                setExecutingStage(null) // Ensure button isn't stuck in loading state
                 return // Stop auto-execution
             }
 
             setExecutingStage(stage.id)
 
             try {
-                const bodyPayload = stage.id === "draft"
-                    ? { ...stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone }), stream: false }
+                const bodyPayload = stage.id === "draft" || stage.id === "angle"
+                    ? { 
+                        ...stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone }), 
+                        transcriptId: id, // Angle endpoint uses transcriptId
+                        stream: stage.id === "draft" ? false : undefined 
+                      }
                     : stage.apiBody(id)
 
                 const res = await fetch(stage.apiEndpoint, {
@@ -401,13 +473,28 @@ export default function SourceMissionControl() {
                     // Save DQM to specific cache for cross-module persistence
                     localStorage.setItem(`dqm_${id}`, JSON.stringify(data.result))
                 }
+                
                 if (stage.id === "judge") {
+                    const updatedSource = {
+                        title: data.result?.title || source.title,
+                        channel: data.result?.channel || source.channel,
+                        url: data.result?.url || source.url,
+                    }
                     setSource(s => ({
                         ...s,
-                        title: data.result?.title || s.title,
-                        channel: data.result?.channel || s.channel,
-                        url: data.result?.url || s.url,
+                        ...updatedSource
                     }))
+                    // Persist new metadata to store
+                    try {
+                        await fetch("/api/store", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ 
+                                action: "upsert", 
+                                source: { id, ...updatedSource } 
+                            })
+                        })
+                    } catch { /* silently fail */ }
                 }
 
                 setLogs(prev => [{ event: `${stage.label} completed`, time: "Just now", status: "success" }, ...prev])
@@ -440,7 +527,13 @@ export default function SourceMissionControl() {
 
     const openPanel = (stage: WorkflowStage) => {
         const data = stageResults[stage.id]
-        if (data) setPanelContent({ title: stage.label, stageId: stage.id, data })
+        if (data) {
+            // Summary stage might have nested result (e.g., { summary: "..." })
+            const displayData = stage.id === "summary" 
+                ? ((data as any).summary || (data as any).result || data) 
+                : (data as any).result || data
+            setPanelContent({ title: stage.label, stageId: stage.id, data: displayData })
+        }
     }
 
 
@@ -497,6 +590,14 @@ export default function SourceMissionControl() {
                                                 <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-brand" /> 
                                                 {t("visitOriginalSource") || "Visit Original Source"}
                                             </a>
+                                            <div className="h-px bg-border my-1" />
+                                            <button 
+                                                onClick={handleDelete}
+                                                className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 rounded-lg transition-colors flex items-center gap-2 group"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5 text-red-400 group-hover:text-red-600" /> 
+                                                {t("delete") || "Delete Source"}
+                                            </button>
                                         </div>
                                     )}
                                 </div>
@@ -507,41 +608,39 @@ export default function SourceMissionControl() {
                         </div>
                     </div>
 
-                    {/* ═══ TWO-COLUMN GRID — Starts at same height ═══ */}
+                    {/* Metadata Row — Now spans full width above the content grid */}
+                    <div className="flex items-center gap-4 py-3 px-4 rounded-xl bg-muted/30 border border-border/60 flex-wrap">
+                        <div className="flex items-center gap-2 text-sm">
+                            <Calendar className="w-3.5 h-3.5 text-muted-foreground/70" />
+                            <span className="text-muted-foreground">{t("dateAdded")}</span>
+                            <span className="font-medium">{source.published}</span>
+                        </div>
+                        <div className="w-px h-4 bg-border/60 hidden sm:block" />
+                        <div className="flex items-center gap-2 text-sm">
+                            <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
+                            <span className="text-muted-foreground">{t("duration")}</span>
+                            <span className="font-medium">{source.duration}</span>
+                        </div>
+                        <div className="w-px h-4 bg-border/60 hidden sm:block" />
+                        <div className="flex items-center gap-2 text-sm">
+                            <BarChart3 className="w-3.5 h-3.5 text-muted-foreground/70" />
+                            <span className="text-muted-foreground">{t("qualScore")}</span>
+                            <span className={cn("font-semibold tabular-nums", source.score >= 8 ? "text-emerald-600" : source.score >= 6 ? "text-amber-600" : source.score > 0 ? "text-red-500" : "text-muted-foreground")}>
+                                {source.score > 0 ? `${source.score}/10` : <span className="opacity-70 font-normal italic">{t("pending")}...</span>}
+                            </span>
+                            {source.score > 0 && (
+                                <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", source.score >= 6 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600")}>
+                                    {source.score >= 8 ? "Excellent" : source.score >= 6 ? "Passable" : "Rejected"}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* ═══ TWO-COLUMN GRID — Balanced alignment ═══ */}
                     <div className="grid lg:grid-cols-[1fr_320px] gap-8 items-start">
 
-                        {/* ═══ LEFT COLUMN ═══ */}
+                        {/* ═══ LEFT COLUMN (Pipeline Stages) ═══ */}
                         <div className="space-y-8">
-
-                            {/* Metadata Row — horizontal, single line */}
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-4 py-3 px-4 rounded-xl bg-muted/30 border border-border/60 flex-wrap">
-                                    <div className="flex items-center gap-2 text-sm">
-                                        <Calendar className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                        <span className="text-muted-foreground">{t("dateAdded")}</span>
-                                        <span className="font-medium">{source.published}</span>
-                                    </div>
-                                    <div className="w-px h-4 bg-border/60 hidden sm:block" />
-                                    <div className="flex items-center gap-2 text-sm">
-                                        <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                        <span className="text-muted-foreground">{t("duration")}</span>
-                                        <span className="font-medium">{source.duration}</span>
-                                    </div>
-                                    <div className="w-px h-4 bg-border/60 hidden sm:block" />
-                                    <div className="flex items-center gap-2 text-sm">
-                                        <BarChart3 className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                        <span className="text-muted-foreground">{t("qualScore")}</span>
-                                        <span className={cn("font-semibold tabular-nums", source.score >= 8 ? "text-emerald-600" : source.score >= 6 ? "text-amber-600" : source.score > 0 ? "text-red-500" : "text-muted-foreground")}>
-                                            {source.score > 0 ? `${source.score}/10` : <span className="opacity-70 font-normal italic">{t("pending")}...</span>}
-                                        </span>
-                                        {source.score > 0 && (
-                                            <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", source.score >= 6 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600")}>
-                                                {source.score >= 8 ? "Excellent" : source.score >= 6 ? "Passable" : "Rejected"}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
 
                             {/* ═══ PROGRESSIVE WORKFLOW ACTION STACK ═══ */}
                             <div>
@@ -549,16 +648,16 @@ export default function SourceMissionControl() {
                                     <h2 className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-widest font-serif">{t("pipelineStages")}</h2>
                                     {activeIndex < STAGES.length && (
                                         <Button
-                                            variant="outline"
+                                            variant="default"
                                             size="sm"
-                                            className="gap-1.5 h-7 text-[11px] rounded-lg font-normal"
+                                            className="gap-1.5 h-8 text-[12px] rounded-lg font-bold bg-foreground text-background hover:bg-foreground/90 shadow-lg shadow-foreground/10 transition-all duration-200"
                                             onClick={runFullPipeline}
                                             disabled={isRunningAll || !!executingStage}
                                         >
                                             {isRunningAll ? (
-                                                <><Loader2 className="w-3 h-3 animate-spin" /> {t("processing")}...</>
+                                                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {t("processing")}...</>
                                             ) : (
-                                                <><Play className="w-3 h-3" /> {t("run")} {t("all")}</>
+                                                <><Play className="w-3.5 h-3.5 fill-current" /> {t("run")} {t("all")}</>
                                             )}
                                         </Button>
                                     )}
@@ -615,21 +714,30 @@ export default function SourceMissionControl() {
                                                                 "text-[15px] font-medium transition-colors",
                                                                 isCompleted || isActive ? "text-foreground" : "text-muted-foreground"
                                                             )}>
-                                                                {stage.label}
-                                                            </h3>
-                                                            <p className="text-[13px] text-muted-foreground/70 leading-relaxed max-w-md">
-                                                                {stage.description}
-                                                            </p>
-                                                        </div>
+                                                                    {stage.label}
+                                                                </h3>
+                                                                <p className="text-[13px] text-muted-foreground/70 leading-relaxed max-w-md">
+                                                                    {stage.id === "transcript" && (source as any).transcriptStatus === "unavailable" 
+                                                                        ? "Transcript is unavailable for this source. Pipeline stopped."
+                                                                        : stage.description}
+                                                                </p>
+                                                            </div>
 
                                                         <div className="flex items-center gap-4 pt-3.5">
                                                             {isActive && stage.apiEndpoint && (
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); executeStage(stage) }}
-                                                                    disabled={isExecuting}
-                                                                    className="text-[13px] flex items-center gap-1.5 text-brand font-medium hover:underline transition-all"
+                                                                    disabled={isExecuting || (stage.id === "transcript" && (source as any).transcriptStatus === "unavailable")}
+                                                                    className={cn(
+                                                                        "text-[13px] flex items-center gap-1.5 font-medium transition-all",
+                                                                        (stage.id === "transcript" && (source as any).transcriptStatus === "unavailable")
+                                                                            ? "text-red-500 cursor-not-allowed"
+                                                                            : "text-brand hover:underline"
+                                                                    )}
                                                                 >
-                                                                    {isExecuting ? <><Loader2 className="w-3 h-3 animate-spin" /><span>Executing...</span></> : <span>Execute stage</span>}
+                                                                    {isExecuting ? <><Loader2 className="w-3 h-3 animate-spin" /><span>Executing...</span></> : 
+                                                                     (stage.id === "transcript" && (source as any).transcriptStatus === "unavailable") ? 
+                                                                     <span>Unavailable</span> : <span>Execute stage</span>}
                                                                 </button>
                                                             )}
                                                             
@@ -637,7 +745,7 @@ export default function SourceMissionControl() {
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); openPanel(stage) }}
                                                                     title="View stage results"
-                                                                    className="px-4 py-1.5 rounded-full border border-border/60 bg-white text-[13px] font-medium text-foreground hover:bg-muted/30 transition-all group-hover/row:opacity-100"
+                                                                    className="px-4 py-1.5 rounded-full border border-border/40 bg-zinc-900/5 dark:bg-zinc-100/10 text-[13px] font-medium text-foreground hover:bg-zinc-900/10 dark:hover:bg-zinc-100/20 hover:shadow-[0_0_15px_rgba(0,0,0,0.05)] dark:hover:shadow-[0_0_15px_rgba(255,255,255,0.05)] transition-all"
                                                                 >
                                                                     View
                                                                 </button>
@@ -646,8 +754,8 @@ export default function SourceMissionControl() {
                                                         </div>
                                                     </div>
 
-                                                    {/* Writing Intent Setup for Draft Stage */}
-                                                    {stage.id === "draft" && !isCompleted && isActive && (
+                                                    {/* Writing Intent Setup moved to Angle Stage Checkpoint */}
+                                                    {stage.id === "angle" && !isCompleted && isActive && (
                                                         <div className="mt-4 p-5 rounded-2xl bg-white border border-border/80 shadow-soft animate-in fade-in slide-in-from-top-2 flex flex-col gap-4 max-w-2xl" onClick={e => e.stopPropagation()}>
                                                             <div className="flex items-center gap-2 mb-1">
                                                                 <Bot className="w-4 h-4 text-brand" />
@@ -703,18 +811,18 @@ export default function SourceMissionControl() {
                                                             <div className="flex items-center justify-between mt-1 pt-4 border-t border-border/50">
                                                                 <p className="text-[11px] text-muted-foreground italic flex items-center gap-1.5">
                                                                     <Sparkles className="w-3 h-3" />
-                                                                    Draft generation takes 30-45 seconds
+                                                                    Intent confirmed. Strategizing editorial angle next.
                                                                 </p>
                                                                 <Button 
                                                                     size="sm" 
-                                                                    className="h-8 px-4 rounded-xl gap-2 font-semibold shadow-brand/20 shadow-lg"
+                                                                    className="h-8 px-4 rounded-xl gap-2 font-semibold shadow-brand/20 shadow-lg active:translate-y-0.5 transition-all"
                                                                     onClick={(e) => { e.stopPropagation(); runFullPipeline(); }}
                                                                     disabled={isRunningAll || !!executingStage}
                                                                 >
-                                                                    {isRunningAll || executingStage === "draft" ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Play className="w-3.5 h-3.5 fill-current"/>}
-                                                                    Start Generation
+                                                                    {isRunningAll || executingStage === "angle" ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Play className="w-3.5 h-3.5 fill-current"/>}
+                                                                    Continue Pipeline
                                                                 </Button>
-                                                             </div>
+                                                            </div>
                                                         </div>
                                                     )}
                                                 </div>
@@ -724,9 +832,9 @@ export default function SourceMissionControl() {
                                 </div>
 
                                 {activeIndex >= STAGES.length && (
-                                    <div className="mt-6 p-5 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center backdrop-blur-sm">
-                                        <p className="text-sm font-medium text-emerald-700">{t("allStagesComplete")}</p>
-                                        <p className="text-xs text-emerald-600/80 mt-1">{t("sourceProcessed")}</p>
+                                    <div className="mt-6 p-6 rounded-2xl bg-zinc-950 dark:bg-white border border-zinc-900 dark:border-zinc-200 text-center shadow-2xl shadow-emerald-500/10 animate-in zoom-in-95 duration-500">
+                                        <p className="text-[15px] font-serif font-bold tracking-tight text-white dark:text-black">{t("allStagesComplete")}</p>
+                                        <p className="text-[13px] text-emerald-400 dark:text-emerald-600 font-medium mt-1.5">{t("sourceProcessed")}</p>
                                     </div>
                                 )}
                             </div>
@@ -734,27 +842,35 @@ export default function SourceMissionControl() {
 
                         {/* ═══ RIGHT COLUMN ═══ */}
                         <div className="space-y-5">
-
-                            {/* Distill Quality Matrix */}
-                            <DQMCard 
-                                dqm={stageResults.qa as DQMData}
-                            />
-
-                            {/* Processing Logs — Static List */}
+                            
+                            {/* Processing Logs — Now Primary Right Rail Element */}
                             <div className="space-y-4">
-                                <h3 className="text-[11px] font-bold text-muted-foreground/60 uppercase tracking-widest ml-1">
-                                    {t("processingLog")}
-                                </h3>
+                                <div className="flex items-center justify-between px-1">
+                                    <h3 className="text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest leading-none font-serif">
+                                        {t("processingLog")}
+                                    </h3>
+                                    {isRunningAll && (
+                                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-brand/10 border border-brand/20 animate-pulse">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-brand" />
+                                            <span className="text-[10px] font-bold text-brand uppercase tracking-tight">Active</span>
+                                        </div>
+                                    )}
+                                </div>
                                 
                                 <div className="rounded-xl border border-border/60 bg-background p-5 space-y-4 shadow-sm animate-in fade-in duration-500">
-                                    <div className="space-y-0 text-left">
-                                        {logs.map((log, i) => (
+                                    <div className="space-y-0 text-left max-h-[500px] overflow-y-auto pr-1">
+                                        {logs.length === 0 ? (
+                                             <div className="py-8 text-center">
+                                                <p className="text-xs text-muted-foreground italic">No logs generated yet.</p>
+                                             </div>
+                                        ) : logs.map((log, i) => (
                                             <div key={i} className={cn(
-                                                "flex items-start gap-3 py-3",
-                                                i < logs.length - 1 && "border-b border-border/30"
+                                                "flex items-start gap-3 py-3 px-2 rounded-lg transition-colors group/log",
+                                                "hover:bg-muted/30",
+                                                i < logs.length - 1 && "border-b border-border/30 hover:border-transparent"
                                             )}>
                                                 <div className={cn(
-                                                    "w-[6px] h-[6px] rounded-full mt-1.5 shrink-0",
+                                                    "w-[6px] h-[6px] rounded-full mt-1.5 shrink-0 transition-transform group-hover/log:scale-125",
                                                     log.status === "success" && "bg-emerald-500",
                                                     log.status === "info" && "bg-blue-400",
                                                     log.status === "error" && "bg-red-500"
@@ -767,6 +883,17 @@ export default function SourceMissionControl() {
                                         ))}
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Info Card / Secondary Actions Placeholder */}
+                            <div className="p-5 rounded-xl bg-muted/30 border border-border/60 space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <ShieldCheck className="w-4 h-4 text-muted-foreground/30" />
+                                    <h4 className="text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest font-serif">Pipeline Governance</h4>
+                                </div>
+                                <p className="text-[12px] text-muted-foreground leading-relaxed">
+                                    Distill Engine handles parallel fetching and OpenAI-powered transcription. Quality checks are run at the Analysis Matrix stage.
+                                </p>
                             </div>
                         </div>
                     </div>

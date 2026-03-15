@@ -79,7 +79,7 @@ export default function DraftWorkspacePage() {
         editorProps: {
             attributes: {
                 class: cn(
-                    'wysiwyg-editor min-h-[600px] text-foreground bg-transparent font-serif outline-none prose prose-slate max-w-none',
+                    'wysiwyg-editor min-h-[600px] text-foreground bg-transparent font-serif outline-none prose prose-slate dark:prose-invert max-w-none',
                     draft?.format && `editorial-${draft.format.toLowerCase().replace(/[\s\-_]+/g, '-')}`
                 ),
             },
@@ -317,7 +317,7 @@ export default function DraftWorkspacePage() {
     return (
         <div className="flex flex-col h-full bg-background overflow-hidden animate-in fade-in duration-500">
             {/* Header */}
-            <header className="h-14 border-b border-border/60 bg-white/80 backdrop-blur-md flex items-center justify-between px-6 z-20 shrink-0">
+            <header className="h-14 border-b border-border/60 bg-background/80 backdrop-blur-md flex items-center justify-between px-6 z-20 shrink-0">
                 <div className="flex items-center gap-4">
                     <button 
                         onClick={handleBack}
@@ -416,31 +416,31 @@ export default function DraftWorkspacePage() {
                                 <button 
                                     onClick={() => setPreviewMode("email")}
                                     title="Email Preview"
-                                    className={cn("flex-1 p-1.5 rounded-md flex justify-center transition-all", previewMode === "email" ? "bg-white shadow-sm ring-1 ring-black/5" : "hover:bg-white/50")}
+                                    className={cn("flex-1 p-1.5 rounded-md flex justify-center transition-all", previewMode === "email" ? "bg-card shadow-sm ring-1 ring-black/5 dark:ring-white/10" : "hover:bg-muted/50")}
                                 >
                                     <Mail className="w-3.5 h-3.5" />
                                 </button>
                                 <button 
                                     onClick={() => setPreviewMode("mobile")}
                                     title="Mobile Preview"
-                                    className={cn("flex-1 p-1.5 rounded-md flex justify-center transition-all", previewMode === "mobile" ? "bg-white shadow-sm ring-1 ring-black/5" : "hover:bg-white/50")}
+                                    className={cn("flex-1 p-1.5 rounded-md flex justify-center transition-all", previewMode === "mobile" ? "bg-card shadow-sm ring-1 ring-black/5 dark:ring-white/10" : "hover:bg-muted/50")}
                                 >
                                     <Smartphone className="w-3.5 h-3.5" />
                                 </button>
                                 <button 
                                     onClick={() => setPreviewMode("desktop")}
                                     title="Desktop Preview"
-                                    className={cn("flex-1 p-1.5 rounded-md flex justify-center transition-all", previewMode === "desktop" ? "bg-white shadow-sm ring-1 ring-black/5" : "hover:bg-white/50")}
+                                    className={cn("flex-1 p-1.5 rounded-md flex justify-center transition-all", previewMode === "desktop" ? "bg-card shadow-sm ring-1 ring-black/5 dark:ring-white/10" : "hover:bg-muted/50")}
                                 >
                                     <Monitor className="w-3.5 h-3.5" />
                                 </button>
                             </div>
 
                             {previewMode === "email" && (
-                                <div className="border border-border/60 bg-white rounded-xl shadow-micro overflow-hidden flex flex-col h-[320px]">
+                                <div className="border border-border/60 bg-card rounded-xl shadow-micro overflow-hidden flex flex-col h-[320px]">
                                     <div className="bg-muted/30 p-3 flex flex-col gap-1 border-b border-border/40 shrink-0">
                                         <div className="h-1.5 w-24 bg-muted/60 rounded" />
-                                        <p className="text-[10px] font-bold truncate text-foreground/80">{draftTitle}</p>
+                                        <p className="text-[10px] font-bold truncate text-foreground">{draftTitle}</p>
                                     </div>
                                     <div className="p-4 space-y-3 overflow-hidden flex-1">
                                         <p className="text-[11px] text-muted-foreground/90 leading-relaxed font-serif">
@@ -454,13 +454,13 @@ export default function DraftWorkspacePage() {
                             )}
 
                             {previewMode === "mobile" && (
-                                <div className="mx-auto w-[200px] h-[400px] border-[6px] border-[#1a1a1a] rounded-[32px] bg-white relative overflow-hidden shadow-2xl ring-1 ring-black/5">
+                                <div className="mx-auto w-[200px] h-[400px] border-[6px] border-[#1a1a1a] rounded-[32px] bg-card relative overflow-hidden shadow-2xl ring-1 ring-black/5 dark:ring-white/10">
                                     <div className="absolute top-0 w-full h-5 bg-[#1a1a1a] flex justify-center items-center">
                                         <div className="w-12 h-1 bg-white/20 rounded-full" />
                                     </div>
                                     <div className="p-5 pt-10 space-y-4">
                                         <div className="h-1.5 w-8 bg-brand/20 rounded-full" />
-                                        <h4 className="text-[11px] font-bold leading-tight line-clamp-4 font-serif text-foreground/90">{draftTitle}</h4>
+                                        <h4 className="text-[11px] font-bold leading-tight line-clamp-4 font-serif text-foreground">{draftTitle}</h4>
                                         <p className="text-[9px] text-muted-foreground/80 leading-relaxed font-serif">
                                             {getCleanExcerpt(editedContent, 300)}
                                         </p>
@@ -473,7 +473,7 @@ export default function DraftWorkspacePage() {
                             )}
 
                             {previewMode === "desktop" && (
-                                <div className="border border-border/60 bg-white rounded-xl shadow-lg overflow-hidden flex flex-col h-[280px]">
+                                <div className="border border-border/60 bg-card rounded-xl shadow-lg overflow-hidden flex flex-col h-[280px]">
                                     <div className="h-6 bg-muted/20 border-b border-border/40 flex items-center px-3 gap-1.5 shrink-0">
                                         <div className="flex gap-1">
                                             <div className="w-1.5 h-1.5 rounded-full bg-red-400/40" />
@@ -487,7 +487,7 @@ export default function DraftWorkspacePage() {
                                             <div className="w-4 h-4 rounded-full bg-muted/40" />
                                             <div className="h-1.5 w-16 bg-muted/40 rounded-full" />
                                         </div>
-                                        <h4 className="text-[11px] font-bold line-clamp-2 leading-snug font-serif text-foreground/90">{draftTitle}</h4>
+                                        <h4 className="text-[11px] font-bold line-clamp-2 leading-snug font-serif text-foreground">{draftTitle}</h4>
                                         <p className="text-[9px] text-muted-foreground/80 leading-relaxed font-serif">
                                             {getCleanExcerpt(editedContent, 400)}
                                         </p>
@@ -498,7 +498,7 @@ export default function DraftWorkspacePage() {
 
                         <div className="pt-4 pb-4 border-b border-border/40">
                             <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-3">Format Details</h3>
-                            <div className="bg-white/60 p-[14px] rounded-xl border border-border/40 space-y-3">
+                            <div className="bg-card/60 p-[14px] rounded-xl border border-border/40 space-y-3">
                                 <div className="flex justify-between items-center">
                                     <span className="text-xs text-muted-foreground">Type</span>
                                     {(() => {
@@ -565,13 +565,13 @@ export default function DraftWorkspacePage() {
                 </aside>
 
                 {/* Center Panel: Editor */}
-                <section className="flex-1 flex flex-col bg-white overflow-hidden relative">
+                <section className="flex-1 flex flex-col bg-background overflow-hidden relative">
                     {/* Floating Formatting Toolbar */}
                     <div className="h-10 border-b border-border/40 flex items-center justify-center px-4 shrink-0 bg-muted/5 gap-2 shadow-sm z-10">
                         <Button 
                             variant="ghost" 
                             size="icon" 
-                            className={cn("h-8 w-8 hover:bg-white", editor?.isActive('bold') && "bg-white text-brand shadow-sm")} 
+                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('bold') && "bg-muted text-brand shadow-sm")} 
                             title="Bold"
                             onClick={() => editor?.chain().focus().toggleBold().run()}
                         >
@@ -580,7 +580,7 @@ export default function DraftWorkspacePage() {
                         <Button 
                             variant="ghost" 
                             size="icon" 
-                            className={cn("h-8 w-8 hover:bg-white", editor?.isActive('italic') && "bg-white text-brand shadow-sm")} 
+                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('italic') && "bg-muted text-brand shadow-sm")} 
                             title="Italic"
                             onClick={() => editor?.chain().focus().toggleItalic().run()}
                         >
@@ -590,7 +590,7 @@ export default function DraftWorkspacePage() {
                         <Button 
                             variant="ghost" 
                             size="icon" 
-                            className={cn("h-8 w-8 hover:bg-white", editor?.isActive('heading', { level: 1 }) && "bg-white text-brand shadow-sm")} 
+                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('heading', { level: 1 }) && "bg-muted text-brand shadow-sm")} 
                             title="Header 1"
                             onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
                         >
@@ -599,7 +599,7 @@ export default function DraftWorkspacePage() {
                         <Button 
                             variant="ghost" 
                             size="icon" 
-                            className={cn("h-8 w-8 hover:bg-white", editor?.isActive('blockquote') && "bg-white text-brand shadow-sm")} 
+                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('blockquote') && "bg-white text-brand shadow-sm")} 
                             title="Quote"
                             onClick={() => editor?.chain().focus().toggleBlockquote().run()}
                         >
@@ -608,7 +608,7 @@ export default function DraftWorkspacePage() {
                         <Button 
                             variant="ghost" 
                             size="icon" 
-                            className={cn("h-8 w-8 hover:bg-white", editor?.isActive('bulletList') && "bg-white text-brand shadow-sm")} 
+                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('bulletList') && "bg-muted text-brand shadow-sm")} 
                             title="List"
                             onClick={() => editor?.chain().focus().toggleBulletList().run()}
                         >

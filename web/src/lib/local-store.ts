@@ -52,7 +52,23 @@ export function upsertSource(source: Partial<StoredSource> & { id: string }): St
     const existing = store.sources.find(s => s.id === source.id)
 
     if (existing) {
-        Object.assign(existing, source, { updatedAt: new Date().toISOString() })
+        // Only update fields that are actually provided and not null/undefined
+        const updates: Partial<StoredSource> = { updatedAt: new Date().toISOString() };
+        (Object.keys(source) as Array<keyof typeof source>).forEach(key => {
+            const val = source[key];
+            if (val !== undefined && val !== null && val !== "") {
+                // Protect against generic overwrites if we already have good data
+                if (key === 'title' && existing.title && existing.title !== 'Unknown Source' && (val === 'Unknown Source' || val === `Source ${source.id}`)) {
+                    return;
+                }
+                if (key === 'channel' && existing.channel && existing.channel !== 'YouTube Channel' && existing.channel !== 'Unknown' && (val === 'YouTube Channel' || val === 'Unknown')) {
+                    return;
+                }
+                (updates as any)[key] = val;
+            }
+        });
+        
+        Object.assign(existing, updates);
         saveStore(store)
         return existing
     } else {

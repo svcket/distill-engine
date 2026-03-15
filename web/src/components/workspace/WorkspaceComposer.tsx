@@ -14,7 +14,9 @@ interface WorkspaceComposerProps {
 export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerProps) {
     const { t } = useLanguage()
     const [value, setValue] = useState("")
-    const [isListening, setIsListening] = useState(false)
+    const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'processing'>('idle')
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+    const audioChunksRef = useRef<Blob[]>([])
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const handleSend = useCallback(() => {
@@ -27,10 +29,65 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
         if (textarea) (textarea as HTMLElement).style.height = "auto"
     }, [value, isIngesting, onIngest])
 
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            const mediaRecorder = new MediaRecorder(stream)
+            mediaRecorderRef.current = mediaRecorder
+            audioChunksRef.current = []
+        
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) audioChunksRef.current.push(event.data)
+            }
+        
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+                await handleAudioUpload(audioBlob)
+                // Stop all tracks to release the microphone
+                stream.getTracks().forEach(track => track.stop())
+            }
+        
+            mediaRecorder.start()
+            setRecordingState('recording')
+        } catch (err) {
+            console.error("Microphone access denied:", err)
+            setRecordingState('idle')
+        }
+    }
+        
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop()
+            setRecordingState('processing')
+        }
+    }
+        
+    const handleAudioUpload = async (blob: Blob) => {
+        const formData = new FormData()
+        formData.append('audio', blob)
+        
+        try {
+            const res = await fetch('/api/sources/record', {
+                method: 'POST',
+                body: formData
+            })
+            const data = await res.json()
+            if (data.url) {
+                await onIngest(data.url)
+            }
+        } catch (err) {
+            console.error("Recording upload failed:", err)
+        } finally {
+            setRecordingState('idle')
+        }
+    }
+        
     const handleVoiceInput = () => {
-        // Implementation shell for voice recording
-        setIsListening(!isListening)
-        console.log("Mic clicked - recording flow would trigger here")
+        if (recordingState === 'idle') {
+            startRecording()
+        } else if (recordingState === 'recording') {
+            stopRecording()
+        }
     }
 
     const handleFileClick = () => {
@@ -48,7 +105,7 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
             />
             
             <div className={cn(
-                "relative flex flex-col rounded-[28px] border bg-white p-2 transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.03)] group",
+                "relative flex flex-col rounded-[28px] border bg-white p-0 transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.03)] group",
                 value.trim() 
                     ? "border-black border-[1.5px] shadow-[0_4px_24px_rgba(0,0,0,0.06)]" 
                     : "border-[#E5E5E5] focus-within:border-black focus-within:border-[1.5px] focus-within:shadow-[0_4px_24px_rgba(0,0,0,0.06)]"
@@ -74,7 +131,7 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
                     }}
                     placeholder={t('composerPlaceholder')}
                     title={t('composerPlaceholder')}
-                    className="w-full bg-transparent border-none focus:outline-none focus:ring-0 text-[16px] py-4 px-3 placeholder:text-neutral-400/80 resize-none min-h-[48px] max-h-[400px] leading-relaxed text-neutral-900 scrollbar-none"
+                    className="w-full bg-transparent border-none focus:outline-none focus:ring-0 text-[16px] py-3 px-3 placeholder:text-neutral-400/80 resize-none min-h-[48px] max-h-[400px] leading-relaxed text-neutral-900 scrollbar-none"
                     rows={1}
                 />
 
@@ -96,11 +153,18 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
                             onClick={handleVoiceInput}
                             className={cn(
                                 "w-10 h-10 rounded-full transition-all focus-visible:ring-0 focus:ring-0",
-                                isListening ? "text-black animate-pulse bg-black/5" : "text-black/40 hover:text-black hover:bg-black/5"
+                                recordingState === 'recording' ? "text-red-500 animate-pulse bg-red-50" : 
+                                recordingState === 'processing' ? "text-black bg-black/5" :
+                                "text-black/40 hover:text-black hover:bg-black/5"
                             )}
-                            title="Record audio"
+                            title={recordingState === 'recording' ? "Stop recording" : "Record audio"}
+                            disabled={recordingState === 'processing' || isIngesting}
                         >
-                            <Mic className="w-5 h-5" />
+                            {recordingState === 'processing' ? (
+                                <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                            ) : (
+                                <Mic className={cn("w-5 h-5", recordingState === 'recording' && "fill-current")} />
+                            )}
                         </Button>
                     </div>
 
@@ -108,10 +172,10 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
                         onClick={handleSend}
                         disabled={!value.trim() || isIngesting}
                         className={cn(
-                            "w-[52px] h-[48px] rounded-[18px] transition-all duration-300 flex items-center justify-center p-0 focus-visible:ring-0 focus:ring-0",
+                            "w-[52px] h-[44px] rounded-[18px] transition-all duration-300 flex items-center justify-center p-0 focus-visible:ring-0 focus:ring-0",
                             value.trim() 
-                                ? "bg-[#FF4D00] text-white shadow-lg shadow-[#FF4D00]/20 hover:bg-[#E64500] hover:scale-105" 
-                                : "bg-[#FFB499] text-white opacity-100 cursor-not-allowed"
+                                ? "bg-black text-white shadow-lg shadow-black/20 hover:scale-105" 
+                                : "bg-black text-white opacity-40 cursor-not-allowed"
                         )}
                     >
                         {isIngesting ? (

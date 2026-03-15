@@ -23,6 +23,7 @@ from adapters.vimeo_adapter import VimeoAdapter
 from adapters.podcast_adapter import PodcastAdapter
 from adapters.upload_adapter import UploadAdapter
 from adapters.rss_adapter import RssAdapter
+from adapters.recording_adapter import RecordingAdapter
 
 
 # Registry — order matters; more specific platforms first
@@ -31,11 +32,12 @@ ADAPTERS = [
     YouTubeAdapter(),
     VimeoAdapter(),
     UploadAdapter(),
+    RecordingAdapter(),
     RssAdapter(), # Generic fallback
 ]
 
 
-def route_source(url: str) -> NormalizedSource:
+def route_source(url: str, shell: bool = False) -> NormalizedSource:
     """
     Detect source type and normalize via the appropriate adapter.
     Raises ValueError if no adapter matches.
@@ -45,11 +47,11 @@ def route_source(url: str) -> NormalizedSource:
     # Try specific adapters first
     for adapter in ADAPTERS[:-1]:
         if adapter.detect(url):
-            return adapter.normalize(url)
+            return adapter.normalize(url, shell=shell)
 
     # Fallback to RSS/Generic Web if it looks like a URL
     if url.startswith("http") and ADAPTERS[-1].detect(url):
-        return ADAPTERS[-1].normalize(url)
+        return ADAPTERS[-1].normalize(url, shell=shell)
 
     raise ValueError(
         f"No adapter found for source: {url}\n"
@@ -57,12 +59,12 @@ def route_source(url: str) -> NormalizedSource:
     )
 
 
-def ingest(url: str, base_dir: str) -> dict:
+def ingest(url: str, base_dir: str, shell: bool = False) -> dict:
     """
     Full ingest: normalize the source, save it to disk, and return the saved path.
     This is the main function called by the API route.
     """
-    source = route_source(url)
+    source = route_source(url, shell=shell)
     adapter = next(a for a in ADAPTERS if a.detect(url))
     saved_path = adapter.save(source, base_dir)
 
@@ -76,6 +78,7 @@ def ingest(url: str, base_dir: str) -> dict:
         "duration_seconds": source.duration_seconds,
         "transcript_status": source.transcript_status,
         "saved_path": saved_path,
+        "is_shell": shell,
     }
 
 
@@ -85,10 +88,11 @@ if __name__ == "__main__":
     parser.add_argument("--source-type", dest="source_type", help="Optional source type hint")
     parser.add_argument("--base-dir", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         help="Base directory for .tmp file storage.")
+    parser.add_argument("--shell", action="store_true", help="Return immediate shell source without full metadata.")
     args = parser.parse_args()
 
     try:
-        result = ingest(args.url, args.base_dir)
+        result = ingest(args.url, args.base_dir, shell=args.shell)
         print(json.dumps(result))
     except Exception as e:
         print(json.dumps({"status": "error", "error_detail": str(e)}), file=sys.stderr)

@@ -23,7 +23,7 @@ class UploadAdapter(BaseAdapter):
         ext = os.path.splitext(url.lower())[1]
         return ext in SUPPORTED_EXTENSIONS
 
-    def normalize(self, url: str) -> NormalizedSource:
+    def normalize(self, url: str, shell: bool = False) -> NormalizedSource:
         # Strip upload:// prefix if present
         file_path = url.replace("upload://", "")
         filename = os.path.basename(file_path)

@@ -14,7 +14,7 @@ class AngleStrategy(BaseModel):
     working_titles: List[str] = Field(description="3-5 punchy title ideas.")
     rationale: str = Field(description="Why this angle?")
 
-def extract_angle(insights_path: str):
+def extract_angle(insights_path: str, target_type: str = None, target_audience: str = None, target_tone: str = None):
     if not os.path.exists(insights_path):
         print(json.dumps({"status": "failed", "error": f"Insights not found: {insights_path}"}), file=sys.stderr)
         sys.exit(1)
@@ -30,12 +30,12 @@ def extract_angle(insights_path: str):
             "status": "success_mocked",
             "source_id": source_id,
             "data": {
-                "recommended_format": "Technical Deep Dive Essay",
+                "recommended_format": target_type or "Technical Deep Dive Essay",
                 "secondary_formats": ["X Thread", "LinkedIn Post"],
-                "target_audience": "Senior engineers and Product managers",
-                "framing_angle": "How rigid structure enables loose agency.",
+                "target_audience": target_audience or "Senior engineers and Product managers",
+                "framing_angle": f"Automatic Angle for {target_type or 'Essay'}: How rigid structure enables loose agency.",
                 "working_titles": ["The Agency Paradox", "Building Scaffolds"],
-                "rationale": "Appeals to builders tired of unpredictable LLMs."
+                "rationale": f"Targeted at {target_audience or 'Builders'} with a {target_tone or 'Professional'} tone."
             }
         }
         
@@ -50,16 +50,22 @@ def extract_angle(insights_path: str):
 
     client = OpenAI()
     
-    system_prompt = """
+    intent_context = ""
+    if target_type or target_audience or target_tone:
+        intent_context = f"\nUSER INTENT SETTINGS:\n- Format/Type: {target_type}\n- Target Audience: {target_audience}\n- Preferred Tone: {target_tone}\n"
+
+    system_prompt = f"""
     You are the Angle Strategist—a senior editor for a premium technical blog.
     Given these extracted insights from a source, determine the smartest editorial angle, formats, and titles.
+    {intent_context}
     
     CRITICAL RULE:
     The article must revolve around exactly ONE strong, non-generic central thesis.
     Example of a weak thesis: "AI is transforming industries."
     Example of a strong thesis: "AI gives small teams an asymmetric advantage over large corporations by collapsing the cost of specialized labor."
     
-    Choose a specific, opinionated framing angle based on the insights provided. Target technical builders, engineers, and designers.
+    Choose a specific, opinionated framing angle based on the insights provided and the USER INTENT SETTINGS if present.
+    Target the audience specified, or default to technical builders, engineers, and designers.
     """
     
     try:
@@ -96,6 +102,9 @@ def extract_angle(insights_path: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Strategize an editorial angle from generated insights.")
     parser.add_argument("--input", required=True, help="Path to input insights JSON.")
+    parser.add_argument("--type", help="Target content type/format.")
+    parser.add_argument("--audience", help="Target audience.")
+    parser.add_argument("--tone", help="Target tone.")
     
     args = parser.parse_args()
-    extract_angle(args.input)
+    extract_angle(args.input, args.type, args.audience, args.tone)

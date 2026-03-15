@@ -49,8 +49,8 @@ const DQMCard = ({
         <TooltipProvider>
             <div className="space-y-8">
                 {/* Publishability Score */}
-                <div className="bg-white p-4 rounded-2xl shadow-soft border border-border/60 relative overflow-hidden group">
-                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-brand/5 rounded-full blur-2xl group-hover:bg-brand/10 transition-all duration-500" />
+                <div className="bg-background p-4 rounded-2xl shadow-sleek border border-border/60 relative overflow-hidden group">
+                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-brand/10 rounded-full blur-2xl group-hover:bg-brand/15 transition-all duration-500" />
                     <div className="flex items-center justify-between mb-4 relative z-10">
                         <div className="flex flex-col">
                             <div className="flex items-center gap-1.5">
@@ -113,10 +113,10 @@ const DQMCard = ({
                         )}
                         
                         <div className="grid grid-cols-2 gap-3">
-                            <div className="bg-slate-50/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800 group/metric transition-colors hover:border-purple-200 dark:hover:border-purple-800">
+                            <div className="bg-muted/30 p-3 rounded-xl border border-border/50 group/metric transition-colors hover:border-purple-500/30">
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1">
-                                        <p className="text-[11px] text-purple-700/60 dark:text-purple-400/60 uppercase tracking-widest font-bold">SEO</p>
+                                        <p className="text-[11px] text-purple-600/80 dark:text-purple-400/80 uppercase tracking-widest font-bold">SEO</p>
                                         <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <button 
@@ -142,10 +142,10 @@ const DQMCard = ({
                                     !dqm && "text-muted-foreground/30"
                                 )}>{(dqm && dqm.scores) ? dqm.scores.seo : "-"}</p>
                             </div>
-                            <div className="bg-slate-50/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800 transition-colors hover:border-cyan-200 dark:hover:border-cyan-800">
+                            <div className="bg-muted/30 p-3 rounded-xl border border-border/50 transition-colors hover:border-cyan-500/30">
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1">
-                                        <p className="text-[11px] text-cyan-700/60 dark:text-cyan-400/60 uppercase tracking-widest font-bold">AEO</p>
+                                        <p className="text-[11px] text-cyan-600/80 dark:text-cyan-400/80 uppercase tracking-widest font-bold">AEO</p>
                                         <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <button 
@@ -193,7 +193,7 @@ const DQMCard = ({
                             <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
                                 <BarChart3 className="w-3.5 h-3.5" /> Matrix Dimensions
                             </h3>
-                            <div className="bg-white border border-border/40 rounded-2xl overflow-hidden divide-y divide-border/20">
+                            <div className="bg-background border border-border/40 rounded-2xl overflow-hidden divide-y divide-border/20 shadow-micro">
                                 {[
                                     { label: "Source Grounding", score: dqm.scores.source_grounding, icon: ShieldCheck, tooltip: "Accuracy and alignment with source material." },
                                     { label: "Insight Density", score: dqm.scores.insight_density, icon: BrainCircuit, tooltip: "Concentration of unique perspectives and data points." },
@@ -239,9 +239,9 @@ const DQMCard = ({
                                 <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Strengths</h3>
                                 <div className="space-y-2">
                                     {dqm.strengths.map((s, i) => (
-                                        <div key={i} className="flex gap-2 p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl">
+                                        <div key={i} className="flex gap-2 p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
                                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mt-0.5 shrink-0" />
-                                            <p className="text-[11px] font-medium text-emerald-900 leading-tight">{s}</p>
+                                            <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 leading-tight">{s}</p>
                                         </div>
                                     ))}
                                 </div>
@@ -254,9 +254,9 @@ const DQMCard = ({
                                 <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Risks</h3>
                                 <div className="space-y-2">
                                     {dqm.risks.map((r, i) => (
-                                        <div key={i} className="flex gap-2 p-3 bg-amber-50/50 border border-amber-100 rounded-xl">
+                                        <div key={i} className="flex gap-2 p-3 bg-amber-500/5 border border-amber-500/10 rounded-xl">
                                             <AlertCircle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
-                                            <p className="text-[11px] font-medium text-amber-900 leading-tight">{r}</p>
+                                            <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400 leading-tight">{r}</p>
                                         </div>
                                     ))}
                                 </div>

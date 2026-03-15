@@ -72,14 +72,18 @@ export async function POST(request: Request) {
         
         // Update the stored source with score and basic metadata
         const { upsertSource } = await import('@/lib/local-store')
-        upsertSource({
+        const updates: any = {
             id: sourceId,
-            title: result.title,
-            channel: result.channel,
             score: result.score || 0,
             status: result.score >= 6 ? 'done' : 'failed',
             updatedAt: new Date().toISOString()
-        } as any)
+        }
+        
+        // Only update title/channel if the backend actually returned them (and they aren't generic)
+        if (result.title && result.title !== `Source ${sourceId}`) updates.title = result.title;
+        if (result.channel && result.channel !== 'Unknown') updates.channel = result.channel;
+
+        upsertSource(updates)
 
         return NextResponse.json({ result, message: `Judged source: ${sourceId}` })
 
