@@ -1,11 +1,12 @@
-"""
-RSS source adapter.
-Stub implementation for ingesting RSS feeds, blog posts, and text-based articles.
-"""
-
 import re
 import hashlib
+import json
 from typing import Optional
+try:
+    from newspaper import Article
+except ImportError:
+    Article = None
+
 
 from .base_adapter import BaseAdapter, NormalizedSource
 
@@ -51,32 +52,37 @@ class RssAdapter(BaseAdapter):
                 is_shell=True,
             )
 
-        # Try to fetch real title
+        # Try to fetch real title and content
+        content_text = ""
         try:
-            import urllib.request
-            # Use a more modern User-Agent to avoid blocks
-            headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                raw_content = resp.read()
-                # Try to detect encoding from headers or meta
-                content = raw_content.decode("utf-8", errors="replace")
-                
-                # 1. Try <title>
-                if m := re.search(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>", content, re.DOTALL | re.IGNORECASE):
-                    title = m.group(1).strip()
-                
-                # 2. Fallback to first <h1> if title is missing or suspiciously generic/empty
-                if (not title or "rss feed" in title.lower() or "http" in title.lower()) and "</h1>" in content.lower():
-                    if h1 := re.search(r"<h1.*?>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</h1>", content, re.DOTALL | re.IGNORECASE):
-                        # Clean up any nested tags in H1
-                        h1_text = re.sub(r"<[^>]+>", "", h1.group(1)).strip()
-                        if h1_text: title = h1_text
+            # 1. NEW: Try Newspaper3k for full article extraction
+            if Article:
+                article = Article(url)
+                article.download()
+                article.parse()
+                if article.title: title = article.title
+                if article.authors: creator = ", ".join(article.authors)
+                content_text = article.text
+            else:
+                # 2. Legacy/Fallback: fetch raw HTML/XML
+                import urllib.request
+                headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    raw_content = resp.read()
+                    content = raw_content.decode("utf-8", errors="replace")
+                    
+                    if m := re.search(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>", content, re.DOTALL | re.IGNORECASE):
+                        title = m.group(1).strip()
+                    
+                    if (not title or "rss feed" in title.lower()) and "</h1>" in content.lower():
+                        if h1 := re.search(r"<h1.*?>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</h1>", content, re.DOTALL | re.IGNORECASE):
+                            h1_text = re.sub(r"<[^>]+>", "", h1.group(1)).strip()
+                            if h1_text: title = h1_text
 
-                # 3. Fallback to og:title
-                if not title or "rss feed" in title.lower():
-                    if og := re.search(r'<meta property="og:title" content="(.*?)"', content, re.IGNORECASE):
-                        title = og.group(1).strip()
+                    if not title or "rss feed" in title.lower():
+                        if og := re.search(r'<meta property="og:title" content="(.*?)"', content, re.IGNORECASE):
+                            title = og.group(1).strip()
 
         except Exception:
             pass
@@ -89,10 +95,14 @@ class RssAdapter(BaseAdapter):
             url=url,
             published_at=None,
             duration_seconds=0,
-            description="RSS/Blog text content.",
-            transcript_status="manual",
+            description=content_text[:500] if content_text else "RSS/Blog text content.",
+            transcript_status="pending_text" if content_text or url else "manual",
             language="en",
             thumbnail=None,
-            source_confidence=0.5,
-            raw_metadata={"detected_url": url},
+            source_confidence=0.8 if Article else 0.5,
+            raw_metadata={
+                "detected_url": url,
+                "extracted_text_preview": content_text[:1000] if content_text else None
+            },
         )
+

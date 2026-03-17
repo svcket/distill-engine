@@ -105,10 +105,10 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
             />
             
             <div className={cn(
-                "relative flex flex-col rounded-[28px] border bg-white p-0 transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.03)] group",
+                "relative flex flex-col rounded-[28px] border bg-background p-0 transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.03)] group",
                 value.trim() 
-                    ? "border-black border-[1.5px] shadow-[0_4px_24px_rgba(0,0,0,0.06)]" 
-                    : "border-[#E5E5E5] focus-within:border-black focus-within:border-[1.5px] focus-within:shadow-[0_4px_24px_rgba(0,0,0,0.06)]"
+                    ? "border-foreground border-[1.5px] shadow-[0_4px_24px_rgba(0,0,0,0.06)]" 
+                    : "border-border focus-within:border-foreground focus-within:border-[1.5px] focus-within:shadow-[0_4px_24px_rgba(0,0,0,0.06)]"
             )}>
                 {/* Textarea with auto-expand */}
                 <label htmlFor="workspace-composer-textarea" className="sr-only">
@@ -131,7 +131,7 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
                     }}
                     placeholder={t('composerPlaceholder')}
                     title={t('composerPlaceholder')}
-                    className="w-full bg-transparent border-none focus:outline-none focus:ring-0 text-[16px] py-3 px-3 placeholder:text-neutral-400/80 resize-none min-h-[48px] max-h-[400px] leading-relaxed text-neutral-900 scrollbar-none"
+                    className="w-full bg-transparent border-none focus:outline-none focus:ring-0 text-[16px] py-3 px-3 placeholder:text-muted-foreground/80 resize-none min-h-[48px] max-h-[400px] leading-relaxed text-foreground scrollbar-none"
                     rows={1}
                 />
 

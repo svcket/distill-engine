@@ -1,13 +1,15 @@
+import { auth } from "@/auth"
+import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import path from 'path'
 
-/**
- * Unified source ingest endpoint.
- * Accepts any URL (YouTube, Vimeo, podcast, upload) and runs it through
- * the adapter router to produce a normalized source object.
- */
 export async function POST(request: Request) {
+    const session = await auth()
+    if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     try {
         const { url, source_type } = await request.json()
 
@@ -27,23 +29,35 @@ export async function POST(request: Request) {
 
         const result = JSON.parse(rawOutput || '{}')
         
-        // Persist the source to the store immediately so it's accessible by ID
-        const { upsertSource } = await import('@/lib/local-store')
-        upsertSource({
-            id: result.source_id,
-            title: result.title || 'Unknown Source',
-            channel: result.creator || 'Unknown',
-            url: result.url || url,
-            source_type: result.source_type || 'youtube',
-            status: 'idle',
-            published: 'Recently',
-            duration: result.duration_seconds ? `${Math.floor(result.duration_seconds / 60)}m` : '—',
-            score: 0,
-            completedStages: []
-        } as Record<string, unknown> & { id: string })
+        // Persist the source to Postgres scoped to the user
+        const source = await prisma.source.upsert({
+            where: { id: result.source_id },
+            update: {
+                title: result.title || 'Unknown Source',
+                status: 'idle', // Reset status if re-ingesting? 
+            },
+            create: {
+                id: result.source_id,
+                userId: session.user.id,
+                title: result.title || 'Unknown Source',
+                url: result.url || url,
+                type: result.source_type || 'youtube',
+                status: 'idle',
+                published: result.published || 'Recently',
+                duration: result.duration || '—',
+                score: result.score || 0,
+            }
+        })
+
+
+        // Reset usage count logic (Stage 6 prep)
+        await prisma.usage.upsert({
+            where: { userId: session.user.id },
+            update: { sourcesProcessed: { increment: 1 } },
+            create: { userId: session.user.id, sourcesProcessed: 1 }
+        })
 
         // AUTOMATION: Trigger transcription auto-fetch in the background
-        // We don't await this so the user can be redirected to the detail page immediately
         const transcriptFetchUrl = `${new URL(request.url).origin}/api/transcripts/fetch`
         fetch(transcriptFetchUrl, {
             method: 'POST',
@@ -51,7 +65,7 @@ export async function POST(request: Request) {
             body: JSON.stringify({ url: result.url || url, sourceId: result.source_id, sourceType: result.source_type })
         }).catch(err => console.error("Auto-transcription trigger failed:", err))
 
-        return NextResponse.json({ result })
+        return NextResponse.json({ result: source })
 
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Unknown error'

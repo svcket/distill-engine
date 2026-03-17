@@ -13,8 +13,8 @@ export interface SourceCandidate {
     thumbnail?: string;
     completedStages?: string[];
     processedAt?: string;
-    transcriptStatus?: 'pending' | 'available' | 'unavailable';
-    transcript_status?: 'pending' | 'available' | 'unavailable';
+    transcriptStatus?: 'pending' | 'available' | 'unavailable' | 'transcribed' | 'rescued_text';
+    transcript_status?: 'pending' | 'available' | 'unavailable' | 'transcribed' | 'rescued_text';
 }
 
 export interface LibraryInsight {

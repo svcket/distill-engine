@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import path from 'path'
+import fs from 'fs'
 
 const EXECUTION_DIR = path.resolve(process.cwd(), '../execution')
 
@@ -10,6 +11,15 @@ export async function POST(request: Request) {
 
         if (!sourceId) {
             return NextResponse.json({ error: "Missing 'sourceId' parameter." }, { status: 400 })
+        }
+
+        // Guard: Ensure draft exists before evaluation
+        const draftPath = path.join(EXECUTION_DIR, '.tmp', 'drafts', `${sourceId}_draft.json`)
+        if (!fs.existsSync(draftPath)) {
+            return NextResponse.json({ 
+                error: "Prerequisite failure: Draft artifact missing.", 
+                details: "Please generate the draft successfully before running the Matrix evaluation." 
+            }, { status: 400 })
         }
 
         // Call the new DQM evaluator
@@ -27,7 +37,7 @@ export async function POST(request: Request) {
         const dqmData = parsedBundle?.data || parsedBundle || {};
 
         return NextResponse.json({ 
-            result: dqmData, 
+            result: { status: "done", payload: dqmData }, 
             message: `DQM Evaluation complete for: ${sourceId}` 
         })
 

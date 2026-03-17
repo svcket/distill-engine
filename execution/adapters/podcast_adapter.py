@@ -37,7 +37,27 @@ class PodcastAdapter(BaseAdapter):
         return any(re.search(p, url.strip(), re.IGNORECASE) for p in self.PATTERNS)
 
     def normalize(self, url: str, shell: bool = False) -> NormalizedSource:
-        source_id = "podcast_" + hashlib.md5(url.encode()).hexdigest()[:12]
+        # Strip tracking/session parameters for consistent hashing
+        url_clean = url.strip().split("?")[0]
+        
+        # 1. Spotify ID extraction
+        spotify_match = re.search(r"spotify\.com/episode/([a-zA-Z0-9]+)", url_clean)
+        if spotify_match:
+            source_id = f"spotify_{spotify_match.group(1)}"
+        
+        # 2. Apple ID extraction
+        elif "podcasts.apple.com" in url_clean:
+            apple_match = re.search(r"id(\d+)(?:\?|/|$)", url_clean)
+            if apple_match:
+                # If there's an episode ID (?i=), use that
+                i_match = re.search(r"[?&]i=(\d+)", url_clean)
+                source_id = f"apple_{i_match.group(1)}" if i_match else f"apple_{apple_match.group(1)}"
+            else:
+                 source_id = "podcast_" + hashlib.md5(url_clean.encode()).hexdigest()[:12]
+        
+        # 3. Fallback to hash
+        else:
+            source_id = "podcast_" + hashlib.md5(url_clean.encode()).hexdigest()[:12]
         
         # Fast Path: return shell if requested
         if shell:
@@ -73,9 +93,15 @@ class PodcastAdapter(BaseAdapter):
         strategy = "audio_fallback"
         
         if "spotify.com" in url and not mp3_url:
-            description = "[Transcript Unavailable] Could not resolve a public RSS feed for this Spotify episode. Direct download is not supported. " + description
-            status = "unavailable"
-            strategy = "unavailable"
+            description = metadata.get("description", "")
+            if len(description) < 50:
+                 description = "[Transcript Unavailable] Could not resolve a public RSS feed for this Spotify episode."
+                 status = "unavailable"
+                 strategy = "unavailable"
+            else:
+                 # RESCUE: We have show notes, use them as the "Transcript"
+                 status = "rescued_text"
+                 strategy = "normalized_text"
             
         return NormalizedSource(
             source_id=source_id,
@@ -85,14 +111,18 @@ class PodcastAdapter(BaseAdapter):
             url=final_extract_url,
             published_at=metadata.get("published_at"),
             duration_seconds=metadata.get("duration_seconds", 0),
-            description=description,
+            description=description[:1000], 
             transcript_status=status,
             transcript_strategy=strategy,
-            transcript_source="audio_whisper" if mp3_url else "unknown",
+            transcript_source="audio_whisper" if mp3_url else ("rss_description" if status == "rescued_text" else "unknown"),
             language="en",
             source_confidence=0.85,
-            raw_metadata=metadata,
+            raw_metadata={
+                **metadata,
+                "rescued_article_text": description if status == "rescued_text" else None
+            },
         )
+
 
     def _resolve_to_rss_feed_and_title(self, url: str) -> tuple[str, Optional[str], Optional[str]]:
         """
@@ -193,7 +223,11 @@ class PodcastAdapter(BaseAdapter):
                     if clean_episode and len(clean_episode) > 5:
                         search_queries.append(clean_episode)
                     if show_m:
-                        search_queries.append(show_m.group(1).split(" · ")[0])
+                        content = show_m.group(1).split(" · ")[0]
+                        search_queries.append(content)
+                        # NEW: Try combining show name + episode name
+                        if clean_episode:
+                             search_queries.append(f"{content} {clean_episode}")
                     if len(parts) > 1:
                         search_queries.append(show_name)
                     

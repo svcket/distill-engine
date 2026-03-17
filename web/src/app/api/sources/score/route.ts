@@ -1,14 +1,16 @@
+import { auth } from "@/auth"
+import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import path from 'path'
 import fs from 'fs'
 
-/**
- * Score any source using the quality-based scoring engine.
- * Now works for all source types, not just YouTube.
- * Returns full result including rationale string for display in the UI.
- */
 export async function POST(request: Request) {
+    const session = await auth()
+    if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     try {
         const { sourceId } = await request.json()
 
@@ -20,46 +22,29 @@ export async function POST(request: Request) {
         const sourceDir = path.join(executionDir, '.tmp', 'sources')
         fs.mkdirSync(sourceDir, { recursive: true })
 
-        // Ensure source metadata exists — try direct file, then scan all files
+        // 1. Authenticate and find the source scoped to the user
+        const source = await prisma.source.findUnique({
+            where: { id: sourceId, userId: session.user.id }
+        })
+
+        if (!source) {
+            return NextResponse.json({ error: "Source not found or access denied" }, { status: 404 })
+        }
+
+        // 2. Ensure the .json stub exists for the Python judge
         const directFile = path.join(sourceDir, `${sourceId}.json`)
-        let found = fs.existsSync(directFile)
-
-        if (!found) {
-            const existingFiles = fs.readdirSync(sourceDir).filter(f => f.endsWith('.json'))
-            for (const file of existingFiles) {
-                try {
-                    const data = JSON.parse(fs.readFileSync(path.join(sourceDir, file), 'utf8'))
-                    const items = Array.isArray(data) ? data : [data]
-                    if (items.some((item: Record<string, unknown>) =>
-                        item.source_id === sourceId
-                    )) {
-                        found = true
-                        break
-                    }
-                } catch { /* skip */ }
-            }
-        }
-
-        // If still not found, write a minimal stub so scorer can run
-        if (!found) {
-            const stub = [{
+        if (!fs.existsSync(directFile)) {
+             const stub = [{
                 source_id: sourceId,
-
-                source_type: 'youtube',
-                title: `Source ${sourceId}`,
-                channel: 'Unknown',
-                duration: 'PT10M0S',
-                duration_seconds: 600,
-                description: '',
-                transcript_status: 'unknown',
+                source_type: source.type,
+                title: source.title,
+                url: source.url,
             }]
-            fs.writeFileSync(
-                path.join(sourceDir, `${sourceId}.json`),
-                JSON.stringify(stub, null, 2)
-            )
+            fs.writeFileSync(directFile, JSON.stringify(stub, null, 2))
         }
 
-        const { success, data, error, rawOutput } = await runPythonScript(
+        // 3. Execution
+        const { success, data, error } = await runPythonScript(
             'ingest_source.py',
             [`--source-id=${sourceId}`]
         )
@@ -70,22 +55,20 @@ export async function POST(request: Request) {
 
         const result = (data || {}) as any
         
-        // Update the stored source with score and basic metadata
-        const { upsertSource } = await import('@/lib/local-store')
-        const updates: any = {
-            id: sourceId,
-            score: result.score || 0,
-            status: result.score >= 6 ? 'done' : 'failed',
-            updatedAt: new Date().toISOString()
-        }
-        
-        // Only update title/channel if the backend actually returned them (and they aren't generic)
-        if (result.title && result.title !== `Source ${sourceId}`) updates.title = result.title;
-        if (result.channel && result.channel !== 'Unknown') updates.channel = result.channel;
+        // 4. Update the stored source scoped to the user
+        const updatedSource = await prisma.source.update({
+            where: { id: sourceId, userId: session.user.id },
+            data: {
+                score: result.score || 0,
+                status: result.score >= 6 ? 'done' : 'failed'
+            }
+        })
 
-        upsertSource(updates)
+        // 5. Usage Tracking (Stage 6)
+        // Note: Ingest route already increments 'sourcesProcessed'. 
+        // We could track 'successfulJudgments' here if needed.
 
-        return NextResponse.json({ result, message: `Judged source: ${sourceId}` })
+        return NextResponse.json({ result: updatedSource, judgeData: result })
 
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Unknown error'

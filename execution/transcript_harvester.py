@@ -31,10 +31,10 @@ def determine_transcript_strategy(source_id: str, metadata: dict) -> tuple[str, 
         return "direct", "vtt_srt"
 
     # 3. Podcast: Check for platform URLs or MP3 resolution
-    if source_type == "podcast" or "spotify.com" in url or "podcasts.apple.com" in url or "rss.com" in url:
+    if source_type in ("podcast", "apple_podcast", "spotify") or "spotify.com" in url or "podcasts.apple.com" in url or "rss.com" in url:
         # If it's a known platform, we'll try Whisper strategy even without explicit .mp3
         # (yt-dlp handles many of these platform URLs natively)
-        if "spotify.com" in url or "apple.com" in url or "rss.com" in url:
+        if "spotify.com" in url or "apple.com" in url or "rss.com" in url or source_type in ("apple_podcast", "spotify"):
             return "audio_fallback", "audio_whisper"
         
         # Fallback check for direct audio extensions
@@ -142,7 +142,7 @@ def fetch_youtube_transcript(source_id: str, output_dir: str) -> dict:
         json.dump(transcript_list, f, indent=2)
 
     with open(txt_path, "w", encoding="utf-8") as f:
-        f.write(" ".join(c["text"] for c in transcript_list))
+        f.write(" ".join(str(c.get("text", "")) for c in transcript_list))
 
     return {
         "source_id": source_id,
@@ -151,10 +151,120 @@ def fetch_youtube_transcript(source_id: str, output_dir: str) -> dict:
         "text_path": txt_path,
         "segment_count": len(transcript_list),
         "chunk_count": len(transcript_list),
+        "segments": transcript_list[:100]
     }
 
 
-def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, referer: str = None) -> dict:
+def resolve_apple_podcast_audio(url: str) -> str:
+    """Uses iTunes API to find the direct episodeUrl for an Apple Podcasts page."""
+    import urllib.request
+    import json
+    try:
+        # Extract ID from URL
+        m = re.search(r"/id(\d+)", url)
+        if not m: return url
+        collection_id = m.group(1)
+        
+        # If it's an episode link, it usually has ?i=EPISODE_ID
+        ep_match = re.search(r"[?&]i=(\d+)", url)
+        lookup_url = f"https://itunes.apple.com/lookup?id={collection_id}&entity=podcastEpisode"
+        
+        req = urllib.request.Request(lookup_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.load(resp)
+            
+        results = data.get("results", [])
+        if not results: return url
+        
+        # If we have an episode ID, find the exact match
+        if ep_match:
+            ep_id = int(ep_match.group(1))
+            for res in results:
+                if res.get("trackId") == ep_id:
+                    return res.get("episodeUrl") or res.get("previewUrl") or url
+        
+        # Otherwise return the latest episode's url if results[1] exists (results[0] is the collection)
+        if len(results) > 1:
+            return results[1].get("episodeUrl") or results[1].get("previewUrl") or url
+            
+    except Exception as e:
+        print(f"iTunes Resolution failed: {e}")
+    return url
+
+def resolve_spotify_via_itunes(title: str, show_name: str = None) -> str:
+    """Try to find a public Apple Podcast link for a Spotify episode via Title search."""
+    import urllib.request
+    import urllib.parse
+    import json
+    import re
+    
+    try:
+        # Sanitize title for search (Spotify titles often have dates or extra info like "(Pending...)")
+        # Remove anything in parentheses
+        clean_title = re.sub(r'\(.*?\)', '', title).strip()
+        # Remove common separators
+        clean_title = clean_title.split("|")[0].split("-")[0].split("•")[0].strip()
+        
+        if not clean_title or len(clean_title) < 5:
+             # Title is too short or empty, try using show name directly if possible
+             return None
+
+        query = clean_title
+        if show_name: query += f" {show_name}"
+        
+        encoded_query = urllib.parse.quote(query)
+        search_url = f"https://itunes.apple.com/search?term={encoded_query}&entity=podcastEpisode&limit=10"
+        
+        print(f"Searching iTunes for rescue: {query}")
+        req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.load(resp)
+            
+        results = data.get("results", [])
+        
+        # Priority 1: Exact match with show name
+        if show_name:
+            for res in results:
+                res_title = res.get("trackName", "")
+                res_show = res.get("collectionName", "")
+                if clean_title.lower() in res_title.lower() and show_name.lower() in res_show.lower():
+                    found_url = res.get("episodeUrl") or res.get("previewUrl")
+                    if found_url:
+                        print(f"DRM RESCUE (Exact): Found match for '{clean_title}' in '{show_name}'")
+                        return found_url
+
+        # Priority 2: Fuzzy match title
+        for res in results:
+            res_title = res.get("trackName", "")
+            # Basic fuzzy match: is one a subset of the other
+            if clean_title.lower() in res_title.lower() or res_title.lower() in clean_title.lower():
+                found_url = res.get("episodeUrl") or res.get("previewUrl")
+                if found_url:
+                    print(f"DRM RESCUE (Fuzzy): Found match: {res_title}")
+                    return found_url
+                    
+    except Exception as e:
+        print(f"Spotify Search Fallback failed: {e}")
+    return None
+
+def extract_spotify_title(url: str) -> str:
+    """Very basic title extraction from Spotify page as a last resort."""
+    try:
+        import urllib.request
+        import re
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            html = resp.read().decode('utf-8')
+            match = re.search(r'<title>(.*?)</title>', html)
+            if match:
+                # Spotify format: "Title | Podcast on Spotify" or "Title • Podcast"
+                title = match.group(1).split("|")[0].split("•")[0].strip()
+                return title
+    except:
+        pass
+    return None
+
+def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, is_local_source: bool = False, referer: str = None) -> dict:
     """
     Whisper-based transcription using yt-dlp to download and OpenAI to transcribe.
     """
@@ -256,7 +366,29 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, r
     # 2. Existing Whisper Fallback (Optimized)
     # audio_file_path is already initialized if it's a local file.
     
-    if not audio_file_path: # Only attempt download if not already a local file
+    if not audio_file_path: # Correctly wrap download logic
+        # PHASE 0: Pre-flight resolution for Apple Podcasts / Spotify
+        if "podcasts.apple.com" in source_url:
+            print(f"[{source_id}] APPLE PODCAST: Attempting iTunes API audio resolution...")
+            source_url = resolve_apple_podcast_audio(source_url)
+            print(f"[{source_id}] Resolved URL: {source_url}")
+        elif "spotify.com" in source_url:
+            print(f"[{source_id}] SPOTIFY: Detecting likely DRM. Attempting search rescue...")
+            metadata = load_source_metadata(source_id)
+            title = metadata.get("title")
+            show_name = metadata.get("channel")
+            
+            if not title:
+                # Direct page extraction if metadata file is stale/empty
+                title = extract_spotify_title(source_url)
+                print(f"[{source_id}] SPOTIFY: Extracted title from page: {title}")
+
+            if title:
+                rescued_url = resolve_spotify_via_itunes(title, show_name)
+                if rescued_url:
+                    source_url = rescued_url
+                    print(f"[{source_id}] Spotify-to-Apple Rescue: {source_url}")
+
         temp_audio = os.path.join(output_dir, f"{source_id}_audio")
         print(f"[{source_id}] Attempting download to {temp_audio}")
         cmd = [
@@ -327,13 +459,40 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, r
                 time.sleep(2 ** attempt) # Exponential backoff: 1s, 2s
 
         if last_err:
-            print(f"[{source_id}] yt-dlp FAILED: {last_err}")
-            raise Exception(last_err)
+            # Structuring the error for the UI
+            error_type = "Access Denied" if "403" in last_err else "Network/Timeout"
+            print(f"[{source_id}] yt-dlp FAILED ({error_type}): {last_err}. Attempting secondary discovery/fallback...")
+            # We don't raise Exception here yet, we let glob/fallback try first
 
         # Find the downloaded file
         downloaded_files = glob.glob(f"{temp_audio}.*")
         if downloaded_files:
             audio_file_path = downloaded_files[0]
+        else:
+            # DIRECT DOWNLOAD FALLBACK
+            # If yt-dlp fails but the URL is likely a direct audio link, try requests
+            print(f"[{source_id}] yt-dlp produced no file. Trying direct download fallback...")
+            try:
+                import requests
+                # Use browser-like headers for direct download too
+                resp = requests.get(source_url, stream=True, timeout=30, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                })
+                resp.raise_for_status()
+                
+                # Guess extension from content-type
+                ext = "mp3"
+                if "audio/mpeg" in resp.headers.get("Content-Type", ""): ext = "mp3"
+                elif "audio/aac" in resp.headers.get("Content-Type", ""): ext = "aac"
+                elif "audio/wav" in resp.headers.get("Content-Type", ""): ext = "wav"
+                
+                audio_file_path = f"{temp_audio}.{ext}"
+                with open(audio_file_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                print(f"[{source_id}] Direct download SUCCESS: {audio_file_path}")
+            except Exception as de:
+                print(f"[{source_id}] Direct download FAILED: {de}")
 
     if not audio_file_path:
         raise Exception(f"Failed to locate or download audio for {source_id}")
@@ -464,7 +623,7 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, r
         json.dump(transcript_list, f, indent=2)
 
     with open(txt_path, "w", encoding="utf-8") as f:
-        f.write(" ".join(c["text"] for c in transcript_list))
+        f.write(" ".join(str(c.get("text", "")) for c in transcript_list))
 
     return {
         "source_id": source_id,
@@ -482,8 +641,17 @@ def fetch_rss_transcript_if_available(url: str) -> str:
     """Check RSS/URL for a pre-existing transcript link to avoid Whisper."""
     import urllib.request
     import re
+    # Improved Headers to bypass common bot-blocking (403)
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache"
+    }
+    
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=5) as resp:
             content = resp.read().decode("utf-8", errors="replace")
             
@@ -511,8 +679,15 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
     or a pre-existing transcript link discovered in RSS.
     """
     import urllib.request
+    # Improved Headers to bypass common bot-blocking (403)
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9"
+    }
+    
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=10) as resp:
             content = resp.read().decode("utf-8", errors="replace")
 
@@ -531,8 +706,12 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
             text = content_m.group(1) if content_m else ""
             
             # 2. If text is suspiciously short for a podcast, it's likely just a summary, not a transcript
-            if len(text.split()) < 100:
-                print(f"[{source_id}] RSS text is too short ({len(text.split())} words). Likely a summary. Skipping Fast-Path.")
+            # 2. If text is dangerously short, it's likely just a summary, not a transcript
+            # We enforce a 500-character or 100-word threshold for "Rescue"
+            word_count = len(text.split())
+            char_count = len(text)
+            if word_count < 100 or char_count < 500:
+                print(f"[{source_id}] RSS text check: {word_count} words, {char_count} chars. Threshold not met (min 100/500). Skipping Fast-Path.")
                 return None
         else:
             # HTML - very naive para extraction
@@ -576,7 +755,7 @@ def finish_transcript(source_id: str, transcript_list: list, output_dir: str) ->
         json.dump(transcript_list, f, indent=2)
 
     with open(txt_path, "w", encoding="utf-8") as f:
-        f.write(" ".join(c["text"] for c in transcript_list))
+        f.write(" ".join(str(c.get("text", "")) for c in transcript_list))
 
     return {
         "source_id": source_id,
@@ -593,6 +772,7 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
     base = os.path.dirname(__file__)
 
     # Load metadata if not provided
+    print(f"[{source_id}] HARVESTER START | URL: {source_url} | Type: {source_type}")
     metadata = {}
     if not source_type or not source_url:
         metadata = load_source_metadata(source_id)
@@ -605,8 +785,11 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
                 source_type = "podcast"
             elif source_url and (source_url.endswith(".xml") or "rss" in source_url):
                 source_type = "rss"
+            elif source_url and ("medium.com" in source_url or "substack.com" in source_url):
+                source_type = "rss"
         
         source_type = source_type or metadata.get("source_type", "youtube")
+
         
         # Build fallback URL only if missing
         if not source_url:
@@ -644,7 +827,28 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
             json.dump([metadata], f, indent=2)
 
     if strategy == "unavailable":
+        # Final Rescue: check if metadata already has the full text (from RssAdapter or Podcast description rescue)
+        rescued = metadata.get("raw_metadata", {}).get("extracted_text_preview") or \
+                  metadata.get("raw_metadata", {}).get("rescued_article_text") or \
+                  (metadata.get("description") if len(metadata.get("description", "")) > 300 else None)
+        
+        # Spotify Specific Rescue
+        if not rescued and "spotify.com" in source_url:
+             print(f"[{source_id}] SPOTIFY: Audio fails frequently. Attempting description rescue...")
+             # yt-dlp might have gotten the description even if audio failed
+             rescued = metadata.get("description")
+
+        if rescued:
+            print(f"[{source_id}] RESCUE: Using metadata text as transcript fallback.")
+            output_dir = os.path.join(base, ".tmp", "transcripts", source_id)
+            os.makedirs(output_dir, exist_ok=True)
+            result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)
+            result["status"] = "rescued_text"
+            print(json.dumps(result))
+            return
+
         raise Exception(f"Transcript unavailable for this source. Route: {method}")
+
 
     # Determine the actual YouTube ID for YouTube sources
     yt_id = source_id
@@ -675,19 +879,38 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
             result["source_id"] = source_id
             print(json.dumps(result))
 
-        elif source_type in ("podcast", "upload", "vimeo", "recording"):
-            result = fetch_whisper_transcript(source_id, source_url, output_dir, referer=referer)
-            print(json.dumps(result))
+        elif source_type in ("podcast", "upload", "vimeo", "recording", "apple_podcast", "spotify"):
+            try:
+                result = fetch_whisper_transcript(source_id, source_url, output_dir, referer=referer)
+                print(json.dumps(result))
+            except Exception as e:
+                # Rescue for podcasts if audio fails but we have metadata text
+                rescued = metadata.get("raw_metadata", {}).get("rescued_article_text")
+                if rescued:
+                    print(f"[{source_id}] RESCUE: Audio failed, falling back to show notes.", file=sys.stderr)
+                    result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)
+                    result["status"] = "rescued_text"
+                    print(json.dumps(result))
+                else:
+                    raise e
+
 
         elif source_type == "rss":
-            # If we reached here, the Fast-Path check above didn't return (or failed)
-            # We try one more time with the base URL as the content source
-            result = fetch_rss_text_transcript(source_id, source_url, output_dir)
-            
-            if result:
+            # 1. Check if metadata already has extracted text preview (from Newspaper3k in RssAdapter)
+            rescued = metadata.get("raw_metadata", {}).get("extracted_text_preview")
+            if rescued:
+                result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)
                 print(json.dumps(result))
             else:
-                raise Exception("RSS content contains no usable transcript.")
+                # 2. If we reached here, the Fast-Path check above didn't return (or failed)
+                # We try one more time with the base URL as the content source
+                result = fetch_rss_text_transcript(source_id, source_url, output_dir)
+                
+                if result:
+                    print(json.dumps(result))
+                else:
+                    raise Exception("RSS content contains no usable transcript.")
+
 
         else:
             raise Exception(f"Unsupported source type: {source_type}")

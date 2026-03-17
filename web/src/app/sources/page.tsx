@@ -36,11 +36,11 @@ function scoreBorder(s: number) {
 }
 
 function getPlatformBadge(platform: string) {
-    const p = platform.toLowerCase()
+    const p = (platform || "").toLowerCase()
     if (p.includes("youtube")) return "bg-red-50 text-red-700 border-red-100"
     if (p.includes("twitter") || p.includes("x.com")) return "bg-sky-50 text-sky-700 border-sky-100"
-    if (p.includes("web") || p.includes("article")) return "bg-emerald-50 text-emerald-700 border-emerald-100"
-    if (p.includes("podcast")) return "bg-purple-50 text-purple-700 border-purple-100"
+    if (p.includes("web") || p.includes("article") || p.includes("rss")) return "bg-emerald-50 text-emerald-700 border-emerald-100"
+    if (p.includes("podcast") || p.includes("spotify") || p.includes("apple")) return "bg-purple-50 text-purple-700 border-purple-100"
     return "bg-slate-50 text-slate-700 border-slate-100"
 }
 
@@ -105,16 +105,24 @@ export default function SourcesPage() {
                 if (res.ok) {
                     const data = await res.json()
                     setSources(data.sources || [])
+                } else if (res.status === 401) {
+                    router.push("/login")
                 }
             } catch { /* fail silently */ }
         }
         load()
-    }, [])
+    }, [router])
 
     const filteredSources = sources.filter(s => {
         const matchTab = getTab(s) === activeTab
-        const sType = s.source_type || "Unknown"
-        const matchPlatform = platformFilter === "All" || sType === platformFilter
+        const sType = (s.source_type || s.type || "Unknown").toLowerCase()
+        
+        let matchPlatform = platformFilter === "All"
+        if (!matchPlatform) {
+            const filter = platformFilter.toLowerCase()
+            if (filter === "web articles") matchPlatform = sType === "rss" || sType === "article" || sType === "web"
+            else matchPlatform = sType.includes(filter)
+        }
         
         let matchDate = true
         if (dateFilter !== "All") {
@@ -205,8 +213,8 @@ export default function SourcesPage() {
                                         body: JSON.stringify({ url: input })
                                     })
                                     const data = await res.json()
-                                    if (res.ok && data.result?.source_id) {
-                                        router.push(`/sources/${data.result.source_id}`)
+                                    if (res.ok && data.result?.id) {
+                                        router.push(`/sources/${data.result.id}`)
                                     } else {
                                         setIngestStatus({ type: 'error', message: data.error || "Failed to ingest source." })
                                     }
@@ -449,8 +457,8 @@ export default function SourcesPage() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-center">
-                                            <Badge variant="outline" className={cn("text-[10px] font-bold uppercase tracking-wider h-5 shadow-micro", getPlatformBadge(source.source_type || "YouTube"))}>
-                                                {source.source_type || "YouTube"}
+                                            <Badge variant="outline" className={cn("text-[10px] font-bold uppercase tracking-wider h-5 shadow-micro", getPlatformBadge(source.type || source.source_type || "YouTube"))}>
+                                                {source.type || source.source_type || "YouTube"}
                                             </Badge>
                                         </td>
                                         <td className="px-6 py-4 text-center">

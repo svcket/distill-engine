@@ -64,6 +64,7 @@ class NormalizedSource:
             "source_confidence": self.source_confidence,
             "referer": self.referer,
             "is_shell": self.is_shell,
+            "raw_metadata": self.raw_metadata,
         }
 
     def _seconds_to_iso(self, seconds: int) -> str:

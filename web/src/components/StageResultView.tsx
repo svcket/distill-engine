@@ -9,16 +9,23 @@ type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insig
 
 interface StageResultViewProps {
     stageId: StageId
-    data: Record<string, unknown>
+    data: Record<string, unknown> | string
     compact?: boolean // for accordion vs full panel
 }
+
 
 // Helper to safely access nested data
 function get(obj: Record<string, unknown>, key: string, fallback: unknown = ""): unknown {
     if (obj[key] !== undefined) return obj[key]
+    // Check nested "payload" (common in our adapters)
+    const payload = obj.payload as Record<string, unknown> | undefined
+    if (payload && payload[key] !== undefined) return payload[key]
     // Check nested "data" field (common in API responses)
     const data = obj.data as Record<string, unknown> | undefined
     if (data && data[key] !== undefined) return data[key]
+    // Check nested "result" (common in page.tsx streaming or fetch fallbacks)
+    const result = obj.result as Record<string, unknown> | undefined
+    if (result && result[key] !== undefined) return result[key]
     return fallback
 }
 
@@ -68,22 +75,46 @@ function JudgeResult({ data, compact }: { data: Record<string, unknown>; compact
 function TranscriptResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
     const segments = getArr(data, "segments")
     const segmentCount = segments.length || getNum(data, "segment_count", 0)
+    const status = getStr(data, "status")
+    const isRescued = status === "rescued_text"
 
     return (
         <div className="space-y-3">
-            <div className="flex items-center gap-3">
-                <Badge variant="secondary">{segmentCount} segments retrieved</Badge>
+            <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant={isRescued ? "secondary" : "secondary"}>
+                    {segmentCount} {isRescued ? "content block" : "segments"} retrieved
+                </Badge>
+                {isRescued && (
+                    <Badge variant="success" className="bg-brand/10 text-brand border-brand/20">
+                        Rescued from Metadata
+                    </Badge>
+                )}
             </div>
+            
+            {isRescued && !compact && (
+                <div className="p-4 rounded-xl bg-muted/30 border border-brand/10 text-xs text-muted-foreground leading-relaxed italic">
+                    Note: Audio transcription was unavailable. Distill rescued this content from source metadata and show notes to maintain pipeline continuity.
+                </div>
+            )}
+
             {!compact && segments.length > 0 && (
                 <div className="space-y-2 pr-2 pb-6">
                     {segments.map((seg, i) => {
                         const s = seg as Record<string, unknown>
+                        const hasTime = typeof s.start === "number" && s.start > 0
                         return (
                             <div key={i} className="p-3 rounded-lg bg-muted/40 border border-border/40">
-                                <span className="text-[10px] font-mono text-muted-foreground/60 block mb-1">
-                                    {typeof s.start === "number" ? `${Math.floor(s.start / 60)}:${String(Math.floor(s.start % 60)).padStart(2, "0")}` : ""}
-                                </span>
-                                <p className="text-xs text-foreground leading-relaxed">{getStr(s, "text")}</p>
+                                {hasTime && (
+                                    <span className="text-[10px] font-mono text-muted-foreground/60 block mb-1">
+                                        {`${Math.floor((s.start as number) / 60)}:${String(Math.floor((s.start as number) % 60)).padStart(2, "0")}`}
+                                    </span>
+                                )}
+                                <p className={cn(
+                                    "text-xs text-foreground leading-relaxed",
+                                    isRescued ? "text-sm" : ""
+                                )}>
+                                    {getStr(s, "text")}
+                                </p>
                             </div>
                         )
                     })}
@@ -153,7 +184,7 @@ function PacketResult({ data }: { data: Record<string, unknown> }) {
 }
 
 function InsightsResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
-    const d = (data.data || data) as Record<string, unknown>
+    const d = (data.payload || data.data || data) as Record<string, unknown>
     const coreArgument = getStr(d, "core_argument")
     const keyClaims = getArr(d, "key_claims")
     const examples = getArr(d, "supporting_examples")
@@ -298,7 +329,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
 }
 
 function AngleResult({ data }: { data: Record<string, unknown> }) {
-    const d = (data.data || data) as Record<string, unknown>
+    const d = (data.payload || data.data || data) as Record<string, unknown>
     const format = getStr(d, "recommended_format")
     const secondaryFormats = getArr(d, "secondary_formats")
     const audience = getStr(d, "target_audience")
@@ -351,7 +382,7 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
 }
 
 function DraftResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
-    const d = (data.data || data) as Record<string, unknown>
+    const d = (data.result || data.data || data) as Record<string, unknown>
     const title = getStr(d, "title")
     const content = getStr(d, "content")
     const wordCount = getNum(d, "word_count")
@@ -481,16 +512,17 @@ function VisualResult({ data, compact }: { data: Record<string, unknown>; compac
 }
 
 function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
-    const dqmData = data as unknown as DQMData
+    const dqmData = (data.result || data.payload || data.data || data) as unknown as DQMData
     
     if (compact) {
         return (
             <div className="space-y-2">
                 <div className="flex items-center gap-3">
                     <span className="text-xl font-bold font-serif">{(dqmData?.scores?.publishability) || 0}/100</span>
-                    <Badge variant={(dqmData?.scores?.publishability || 0) >= 80 ? "success" : "secondary"}>
-                        {dqmData?.scores?.publishability ? "Available" : "Pending"}
-                    </Badge>
+                <Badge variant={((dqmData?.scores?.publishability as number) || 0) >= 80 ? "success" : "secondary"}>
+                    {dqmData?.scores?.publishability ? "Available" : "Pending"}
+                </Badge>
+
                 </div>
             </div>
         )
@@ -505,8 +537,9 @@ function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: 
 
 // ─── Main Component ────────────────────────────────────────────
 
-export function StageResultView({ stageId, data, compact = false }: { stageId: StageId; data: Record<string, unknown> | string; compact?: boolean }) {
-    const d = data as any
+export function StageResultView({ stageId, data, compact = false }: StageResultViewProps) {
+    const d = typeof data === 'string' ? data : data as Record<string, unknown>
+
 
     switch (stageId) {
         case "judge":
@@ -530,9 +563,10 @@ export function StageResultView({ stageId, data, compact = false }: { stageId: S
         case "qa":
             return <QaResult data={d} compact={compact} />
         default:
-            return <GenericResult data={d as Record<string, unknown>} />
+            return <GenericResult data={typeof d === 'string' ? { message: d } : d} />
     }
 }
+
 
 // Export for use in Inspect panel with full detail
 export function StageResultPanel({ stageId, data }: { stageId: StageId; data: Record<string, unknown> }) {

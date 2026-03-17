@@ -52,18 +52,26 @@ def generate_draft(outline_path: str, insights_path: str, packet_path: str, brie
     transcript_text = "\n\n".join([f"[{c.get('start', 0)}s]: {c.get('text', '')}" for c in transcript_segments])
 
     if not os.environ.get("OPENAI_API_KEY"):
+        title = outline_data.get("title", "Mock Draft")
+        content = "# Mock Content\n\nThis is a mocked draft. Provide OPENAI_API_KEY to run the real writer.\n\n## Section 1\nThe backend pipeline and streaming architecture are working correctly."
+        
+        if stream:
+            print(json.dumps({"type": "stream_start", "source_id": source_id, "title": title}), flush=True)
+            print(json.dumps({"type": "chunk", "text": content}), flush=True)
+            print(json.dumps({"type": "stream_end", "source_id": source_id, "word_count": len(content.split())}), flush=True)
+
         mock_result = {
             "status": "success_mocked",
             "source_id": source_id,
-
             "data": {
-                "title": outline_data.get("title", "Mock Draft"),
-                "content": "# Mock Content\n\nThis is a mocked draft. Provide OPENAI_API_KEY to run the real writer.\n\n## Section 1\nThe backend pipeline and streaming architecture are working correctly.",
-                "word_count": 30,
+                "title": title,
+                "content": content,
+                "word_count": len(content.split()),
             }
         }
         _save_draft(source_id, mock_result)
-        print(json.dumps(mock_result))
+        if not stream:
+            print(json.dumps(mock_result))
         return
 
     client = OpenAI()

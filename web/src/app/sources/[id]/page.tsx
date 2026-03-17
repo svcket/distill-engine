@@ -29,21 +29,52 @@ interface WorkflowStage {
     stub?: boolean   // Not yet implemented — renders as locked
     apiEndpoint?: string
     apiBody?: (id: string, params?: { type?: string, audience?: string, tone?: string }) => Record<string, string | undefined>
+    hidden?: boolean // UX optimization: run in background but don't show to user
 }
 
 const STAGES: WorkflowStage[] = [
-    { id: "judge", label: "Judge Alignment", description: "Enrich source metadata and evaluate against NorthStar Profile", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }) },
+    { id: "judge", label: "Judge Alignment", description: "Enrich source metadata and evaluate against NorthStar Profile", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }), hidden: true },
     { id: "transcript", label: "Fetch Transcript", description: "Retrieve indexing data via Fast-Path or Whisper", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (id) => ({ sourceId: id }) },
-    { id: "refine", label: "Refine Context", description: "Denoise transcript and segment into logical chunks", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "summary", label: "Synthesize Core", description: "Concise summary and key framework identification", icon: FileText, apiEndpoint: "/api/transcripts/summary", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "packet", label: "Density Mapping", description: "Identify high-signal segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcriptId: id }) },
+    { id: "refine", label: "Refine Context", description: "Denoise transcript and segment into logical chunks", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (id) => ({ transcriptId: id }), hidden: true },
+    { id: "summary", label: "Synthesize Core", description: "Concise summary and key framework identification", icon: FileText, apiEndpoint: "/api/transcripts/summary", apiBody: (id) => ({ transcriptId: id }), hidden: true },
+    { id: "packet", label: "Density Mapping", description: "Identify high-signal segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcriptId: id }), hidden: true },
     { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (id) => ({ transcriptId: id }) },
     { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
-    { id: "visual", label: "Visual Curation", description: "Suggested diagrams, charts, and quote cards", icon: Sparkles, apiEndpoint: "/api/visual", apiBody: (id) => ({ sourceId: id }) },
+    { id: "visual", label: "Visual Curation", description: "Suggested diagrams, charts, and quote cards", icon: Sparkles, apiEndpoint: "/api/visual", apiBody: (id) => ({ sourceId: id }), hidden: true },
     { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
-    { id: "export", label: "Package Asset", description: "Deliver final content to Draft Studio or Export Center", icon: Download, apiEndpoint: "/api/assets/export", apiBody: (id) => ({ draftId: id }) },
+    { id: "export", label: "Package Asset", description: "Deliver final content to Draft Studio or Export Center", icon: Download, apiEndpoint: "/api/assets/export", apiBody: (id) => ({ draftId: id }), hidden: true },
 ]
+
+const validateStageGating = (stageId: StageId, results: Record<string, any>): { valid: boolean; missing?: string; type?: "error" | "info" } => {
+    switch (stageId) {
+        case "refine": 
+            if (!results.transcript) return { valid: false, missing: "Transcript", type: "error" };
+            break;
+        case "summary":
+            if (!results.refine && !results.transcript) return { valid: false, missing: "Refined Transcript", type: "error" };
+            break;
+        case "insights":
+            if (!results.summary && !results.refine) return { valid: false, missing: "Summary/Refinement", type: "error" };
+            break;
+        case "angle":
+            if (!results.insights) return { valid: false, missing: "Insights", type: "error" };
+            break;
+        case "draft":
+            if (!results.angle || !results.insights) {
+                return { 
+                    valid: false, 
+                    missing: "Editorial Strategy/Insights", 
+                    type: results.insights && !results.angle ? "info" : "error" 
+                };
+            }
+            break;
+        case "qa":
+            if (!results.draft && !results.WrittenDraft) return { valid: false, missing: "Draft Content", type: "error" };
+            break;
+    }
+    return { valid: true };
+};
 
 export default function SourceMissionControl() {
     const { t } = useLanguage()
@@ -68,9 +99,12 @@ export default function SourceMissionControl() {
     // Track which stages are completed
     const [completedStages, setCompletedStages] = useState<Set<StageId>>(() => {
         const initial = new Set<StageId>()
-        if (source.score > 0) {
+        if ((source.score ?? 0) > 0) {
             initial.add("judge")
-            initial.add("qa") // If score exists, evaluation completed historically
+            initial.add("qa") // Historically done if score exists
+        }
+        if (source.transcriptStatus === "transcribed" || source.transcriptStatus === "rescued_text") {
+            initial.add("transcript")
         }
         return initial
     })
@@ -81,7 +115,7 @@ export default function SourceMissionControl() {
     // Currently executing stage
     const [executingStage, setExecutingStage] = useState<StageId | null>(null)
     const [isRunningAll, setIsRunningAll] = useState(false)
-    const [error, setError] = useState<string | null>(null)
+    const [error, setError] = useState<{ message: string; type: "error" | "info" } | null>(null)
 
     // Side panel state
     const [panelContent, setPanelContent] = useState<{ title: string; stageId: StageId; data: unknown } | null>(null)
@@ -149,10 +183,6 @@ export default function SourceMissionControl() {
                         }))
                         if (stored.completedStages && stored.completedStages.length > 0) {
                             setCompletedStages(new Set(stored.completedStages))
-                            setLogs(prev => [
-                                { event: `${stored.completedStages.length} stages restored from previous session`, time: "Previously", status: "success" as const },
-                                ...prev
-                            ])
                         }
                     }
                 }
@@ -163,6 +193,21 @@ export default function SourceMissionControl() {
                     const { results } = await resultsRes.json()
                     if (results && Object.keys(results).length > 0) {
                         setStageResults(results)
+
+                        // ════ TRUTH AUDIT ════
+                        // If a stage is marked completed in DB but has no artifact on disk,
+                        // remove it from the local completion set to allow a re-run.
+                        setCompletedStages(prev => {
+                            const validated = new Set(Array.from(prev))
+                            const criticalArtifactStages: StageId[] = ["insights", "angle", "draft", "qa"]
+                            
+                            criticalArtifactStages.forEach(sid => {
+                                if (prev.has(sid) && !results[sid]) {
+                                    validated.delete(sid)
+                                }
+                            })
+                            return validated
+                        })
                     }
                 }
 
@@ -203,11 +248,16 @@ export default function SourceMissionControl() {
 
     const getStageStatus = (index: number): StageStatus => {
         const stage = STAGES[index]
+        const tStatus = (source as any).transcriptStatus
+        
         if (completedStages.has(stage.id)) return "completed"
         
-        // Hard Gate: If transcript is unavailable, all stages from 'transcript' onwards are locked
-        const isTranscriptUnavailable = (source as any).transcriptStatus === "unavailable"
-        if (isTranscriptUnavailable && (stage.id === "transcript" || index > STAGES.findIndex(s => s.id === "transcript"))) {
+        // Ensure transcript stage shows as completed if status is retrieved
+        if (stage.id === "transcript" && (tStatus === "transcribed" || tStatus === "rescued_text")) return "completed"
+        
+        // Hard Gate: If transcript is unavailable or explicitly failed, lock all downstream
+        const isTranscriptDead = tStatus === "unavailable" || tStatus === "failed"
+        if (isTranscriptDead && (stage.id === "transcript" || index > STAGES.findIndex(s => s.id === "transcript"))) {
             return "locked"
         }
 
@@ -230,6 +280,15 @@ export default function SourceMissionControl() {
     // Execute a workflow stage
     const executeStage = async (stage: WorkflowStage) => {
         if (!stage.apiEndpoint || !stage.apiBody) return
+
+        // ════ STAGE GATING ════
+        const gate = validateStageGating(stage.id, stageResults)
+        if (!gate.valid) {
+            setError({ message: `Prerequisite missing: ${gate.missing}. Please run previous stages first.`, type: gate.type || "error" })
+            setLogs(prev => [{ event: `Blocked: ${stage.label} requires ${gate.missing}`, time: "Just now", status: gate.type === "info" ? "info" : "error" }, ...prev])
+            return
+        }
+
         setExecutingStage(stage.id)
         setError(null)
 
@@ -283,17 +342,61 @@ export default function SourceMissionControl() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(bodyPayload)
             })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data.error || "Execution failed")
+
+            let data: Record<string, any> | null = null;
+            
+            // Handle streaming for Draft stage
+            if (stage.id === "draft" && res.body) {
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let fullContent = "";
+                let buffer = "";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() || "";
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const parsed = JSON.parse(line);
+                            if (parsed.type === "status") {
+                                setLogs(prev => [{ event: parsed.text, time: "Just now", status: "info" }, ...prev]);
+                            } else if (parsed.type === "chunk" && parsed.text) {
+                                fullContent += parsed.text;
+                                setStageResults(prev => ({ 
+                                    ...prev, 
+                                    [stage.id]: { result: { content: fullContent, title: "Generating Draft..." } } 
+                                }));
+                            } else if (parsed.type === "error") {
+                                // CRITICAL: Stop the stream and report backend error
+                                setError({ message: parsed.message, type: "error" });
+                                setLogs(prev => [{ event: `${stage.label} failed: ${parsed.message}`, time: "Just now", status: "error" }, ...prev]);
+                                setExecutingStage(null);
+                                return; // Stop execution
+                            }
+                        } catch (e) {
+                            console.error("Error parsing stream chunk:", e, line);
+                        }
+                    }
+                }
+                data = { status: "success", result: { content: fullContent } };
+            } else {
+                data = await res.json()
+                if (!res.ok) throw new Error(data.error || "Execution failed")
+            }
 
             // Store result
-            setStageResults(prev => ({ ...prev, [stage.id]: data.result || data }))
+            setStageResults(prev => ({ ...prev, [stage.id]: data?.result || data }))
 
             // Mark completed
             setCompletedStages(prev => new Set([...prev, stage.id]))
 
-            // Update source score + rationale if this is the evaluation stage
-            if (stage.id === "qa" && data.result?.score !== undefined) {
+            if (data && data.result?.score !== undefined) {
                 setSource(s => ({
                     ...s,
                     score: data.result.score,
@@ -303,29 +406,31 @@ export default function SourceMissionControl() {
                 // Save DQM to specific cache for cross-module persistence
                 localStorage.setItem(`dqm_${id}`, JSON.stringify(data.result))
             }
-            if (stage.id === "judge") {
-                // If judge updates title/channel/url
-                const updatedSource = {
-                    title: data.result?.title || source.title,
-                    channel: data.result?.channel || source.channel,
-                    url: data.result?.url || source.url,
-                }
-                setSource(s => ({
-                    ...s,
-                    ...updatedSource
-                }))
+            if (data && data.result) {
+                if (stage.id === "judge") {
+                    // If judge updates title/channel/url
+                    const updatedSource = {
+                        title: data.result.title || source.title,
+                        channel: data.result.channel || source.channel,
+                        url: data.result.url || source.url,
+                    }
+                    setSource(s => ({
+                        ...s,
+                        ...updatedSource
+                    }))
 
-                // Persist new metadata to store
-                try {
-                    await fetch("/api/store", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ 
-                            action: "upsert", 
-                            source: { id, ...updatedSource } 
+                    // Persist new metadata to store
+                    try {
+                        await fetch("/api/store", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ 
+                                action: "upsert", 
+                                source: { id, ...updatedSource } 
+                            })
                         })
-                    })
-                } catch { /* silently fail */ }
+                    } catch { /* silently fail */ }
+                }
             }
 
             // Add log
@@ -342,7 +447,7 @@ export default function SourceMissionControl() {
 
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : "Unknown error"
-            setError(msg)
+            setError({ message: msg, type: "error" })
             setLogs(prev => [{ event: `${stage.label} failed: ${msg}`, time: "Just now", status: "error" }, ...prev])
         } finally {
             setExecutingStage(null)
@@ -362,11 +467,11 @@ export default function SourceMissionControl() {
                 router.push("/sources")
             } else {
                 const data = await res.json()
-                setError(data.error || "Delete failed")
+                setError({ message: data.error || "Delete failed", type: "error" })
             }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : "Unknown error"
-            setError(msg)
+            setError({ message: msg, type: "error" })
         }
     }
 
@@ -376,9 +481,24 @@ export default function SourceMissionControl() {
         setError(null)
 
         const startIndex = getActiveStageIndex()
+        const currentResults: Record<string, any> = { ...stageResults }; // Local mutable copy for gating checks
 
         for (let i = startIndex; i < STAGES.length; i++) {
             const stage = STAGES[i]
+
+            // ════ STAGE GATING ════
+            const gate = validateStageGating(stage.id, currentResults)
+            if (!gate.valid) {
+                if (gate.type === "info") {
+                    setLogs(prev => [{ event: `Pipeline paused for review. Please check insights and configure Framing/Intent.`, time: "Just now", status: "info" }, ...prev])
+                    setError({ message: `Pipeline waiting for Editorial Strategy. Please confirm your intent options below.`, type: "info" })
+                } else {
+                    setLogs(prev => [{ event: `Pipeline halted: ${stage.label} is missing ${gate.missing}`, time: "Just now", status: "error" }, ...prev])
+                    setError({ message: `Pipeline stopped at ${stage.label} due to missing ${gate.missing}`, type: "error" })
+                }
+                setIsRunningAll(false)
+                break
+            }
             
             // ═══ LOCAL MOCK BYPASS ═══
             if (id.startsWith("local-")) {
@@ -405,16 +525,18 @@ export default function SourceMissionControl() {
                 }
 
                 const data = mockData as any
-                setStageResults(prev => ({ ...prev, [stage.id]: data.result || data }))
+                const resValue = data.result || data
+                setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
+                currentResults[stage.id] = resValue
                 setCompletedStages(prev => new Set([...prev, stage.id]))
                 
                 // Persist to localStorage
                 const localKey = `distill_results_${id}`;
                 const existing = JSON.parse(localStorage.getItem(localKey) || "{}");
-                localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: mockData.result || mockData }));
+                localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: resValue }));
                 
                 if (stage.id === "qa") {
-                     localStorage.setItem(`dqm_${id}`, JSON.stringify(mockData.result))
+                     localStorage.setItem(`dqm_${id}`, JSON.stringify(resValue))
                 }
 
                 setLogs(prev => [{ event: `${stage.label} (Local Mode) completed`, time: "Just now", status: "success" }, ...prev])
@@ -423,7 +545,11 @@ export default function SourceMissionControl() {
 
             if (!stage.apiEndpoint || !stage.apiBody) {
                 // Skip stages without API endpoints (e.g., QA stub)
-                setCompletedStages(prev => new Set([...prev, stage.id]))
+                setCompletedStages(prev => {
+                    const next = new Set(prev)
+                    next.add(stage.id)
+                    return next
+                })
                 setLogs(prev => [{ event: `${stage.label} skipped (not implemented)`, time: "Just now", status: "info" }, ...prev])
                 continue
             }
@@ -434,10 +560,12 @@ export default function SourceMissionControl() {
             }
 
             // 2. Pause at "angle" to allow user to review insights and configure intent before framing/generation
+            // This ensures the pipeline doesn't just "blow past" the editorial strategy gate.
             if (stage.id === "angle" && i !== startIndex) {
-                setLogs(prev => [{ event: `Pipeline paused for review. Please check insights and configure Framing/Intent.`, time: "Just now", status: "info" }, ...prev])
+                setLogs(prev => [{ event: `Pipeline paused for strategy review. Please configure Framing/Intent below.`, time: "Just now", status: "info" }, ...prev])
+                setError({ message: `Pipeline waiting for Editorial Strategy. Please confirm your intent options below.`, type: "info" })
                 setIsRunningAll(false)
-                setExecutingStage(null) // Ensure button isn't stuck in loading state
+                setExecutingStage(null)
                 return // Stop auto-execution
             }
 
@@ -448,7 +576,7 @@ export default function SourceMissionControl() {
                     ? { 
                         ...stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone }), 
                         transcriptId: id, // Angle endpoint uses transcriptId
-                        stream: stage.id === "draft" ? false : undefined 
+                        stream: stage.id === "draft" ? true : undefined 
                       }
                     : stage.apiBody(id)
 
@@ -457,49 +585,104 @@ export default function SourceMissionControl() {
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(bodyPayload)
                 })
-                const data = await res.json()
-                if (!res.ok) throw new Error(data.error || "Execution failed")
 
-                setStageResults(prev => ({ ...prev, [stage.id]: data.result || data }))
+                let data: Record<string, any> | null = null;
+                if (stage.id === "draft" && res.body) {
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
+                    let fullContent = "";
+                    let buffer = "";
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split("\n");
+                        buffer = lines.pop() || "";
+
+                        for (const line of lines) {
+                            if (!line.trim()) continue;
+                            try {
+                                const parsed = JSON.parse(line);
+                                if (parsed.type === "status") {
+                                    setLogs(prev => [{ event: parsed.text, time: "Just now", status: "info" }, ...prev]);
+                                } else if (parsed.type === "chunk" && parsed.text) {
+                                    fullContent += parsed.text;
+                                    setStageResults(prev => ({ 
+                                        ...prev, 
+                                        [stage.id]: { result: { content: fullContent, title: "Generating Draft..." } } 
+                                    }));
+                                } else if (parsed.type === "error") {
+                                    // CRITICAL: Stop the stream and the loop on explicit backend error
+                                    setError({ message: parsed.message, type: "error" });
+                                    setLogs(prev => [{ event: `${stage.label} failed: ${parsed.message}`, time: "Just now", status: "error" }, ...prev]);
+                                    setIsRunningAll(false);
+                                    setExecutingStage(null);
+                                    return; // Break the runFullPipeline loop
+                                }
+                            } catch (e) {
+                                console.error("Error parsing stream chunk:", e, line);
+                            }
+                        }
+                    }
+                    data = { status: "success", result: { content: fullContent } };
+                } else {
+                    data = await res.json()
+                    if (!res.ok) throw new Error(data.error || "Execution failed")
+                }
+
+                // Store result
+                const resValue = data?.result || data
+                setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
+                currentResults[stage.id] = resValue // Update local copy for gating
+
+                // Mark completed
                 setCompletedStages(prev => new Set([...prev, stage.id]))
 
-                if (stage.id === "qa" && data.result?.score !== undefined) {
-                    setSource(s => ({
-                        ...s,
-                        score: data.result.score,
-                        status: data.result.score >= 6 ? "done" : "failed",
-                    }))
-                    setStageResults(prev => ({ ...prev, qa_rationale: data.result.rationale }))
-                    // Save DQM to specific cache for cross-module persistence
-                    localStorage.setItem(`dqm_${id}`, JSON.stringify(data.result))
+                // Update UI metadata
+                if (stage.id === "qa" && data?.result?.score !== undefined) {
+                    const dqmPayload = data.result?.payload || data.result || data;
+                    const scoreValue = dqmPayload?.scores?.publishability || dqmPayload?.publishability;
+                    
+                    if (scoreValue !== undefined) {
+                        setSource(s => ({
+                            ...s,
+                            score: scoreValue,
+                            status: scoreValue >= 80 ? "done" : "failed",
+                        }))
+                        localStorage.setItem(`dqm_${id}`, JSON.stringify(dqmPayload))
+                    }
                 }
                 
-                if (stage.id === "judge") {
-                    const updatedSource = {
-                        title: data.result?.title || source.title,
-                        channel: data.result?.channel || source.channel,
-                        url: data.result?.url || source.url,
-                    }
-                    setSource(s => ({
-                        ...s,
-                        ...updatedSource
-                    }))
-                    // Persist new metadata to store
-                    try {
-                        await fetch("/api/store", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ 
-                                action: "upsert", 
-                                source: { id, ...updatedSource } 
+                if (data && data.result) {
+                    if (stage.id === "judge") {
+                        const updatedSource = {
+                            title: data.result.title || source.title,
+                            channel: data.result.channel || source.channel,
+                            url: data.result.url || source.url,
+                        }
+                        setSource(s => ({
+                            ...s,
+                            ...updatedSource
+                        }))
+                        try {
+                            await fetch("/api/store", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ 
+                                    action: "upsert", 
+                                    source: { id, ...updatedSource } 
+                                })
                             })
-                        })
-                    } catch { /* silently fail */ }
+                        } catch { /* silently fail */ }
+                    }
                 }
 
+                // Add log
                 setLogs(prev => [{ event: `${stage.label} completed`, time: "Just now", status: "success" }, ...prev])
 
-                // Persist completion
+                // Persist stage completion
                 try {
                     await fetch("/api/store", {
                         method: "POST",
@@ -510,14 +693,13 @@ export default function SourceMissionControl() {
 
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : "Unknown error"
-                setError(msg)
+                setError({ message: msg, type: "error" })
                 setLogs(prev => [{ event: `Pipeline stopped: ${stage.label} failed — ${msg}`, time: "Just now", status: "error" }, ...prev])
-                setExecutingStage(null)
                 setIsRunningAll(false)
-                return // Stop pipeline on error
+                break // Stop pipeline on error
+            } finally {
+                setExecutingStage(null)
             }
-
-            setExecutingStage(null)
         }
 
         setIsRunningAll(false)
@@ -529,9 +711,10 @@ export default function SourceMissionControl() {
         const data = stageResults[stage.id]
         if (data) {
             // Summary stage might have nested result (e.g., { summary: "..." })
+            // Unified handling for standard response wrappers
             const displayData = stage.id === "summary" 
-                ? ((data as any).summary || (data as any).result || data) 
-                : (data as any).result || data
+                ? ((data as any).summary || (data as any).result || (data as any).payload || data) 
+                : (data as any).result || (data as any).payload || data
             setPanelContent({ title: stage.label, stageId: stage.id, data: displayData })
         }
     }
@@ -548,9 +731,16 @@ export default function SourceMissionControl() {
                         <ArrowLeft className="w-3.5 h-3.5 transition-transform duration-200 group-hover:-translate-x-0.5" /> {t("viewAll")} {t("sources")}
                     </Link>
 
+                    {/* ─── Global Error/Info Banner ─── */}
                     {error && (
-                        <div className="p-3 rounded-xl bg-red-50/80 text-red-600 text-sm border border-red-100 backdrop-blur-sm">
-                            {error}
+                        <div className={cn(
+                            "mx-8 mt-6 mb-2 p-4 rounded-xl border flex items-center gap-3 animate-in fade-in slide-in-from-top-2",
+                            error.type === "info" 
+                                ? "bg-blue-500/10 border-blue-500/20 text-blue-400" 
+                                : "bg-red-500/10 border-red-500/20 text-red-500"
+                        )}>
+                            {error.type === "info" ? <Target className="w-5 h-5" /> : <X className="w-5 h-5 cursor-pointer" onClick={() => setError(null)} />}
+                            <span className="text-sm font-medium">{error.message}</span>
                         </div>
                     )}
 
@@ -625,8 +815,8 @@ export default function SourceMissionControl() {
                         <div className="flex items-center gap-2 text-sm">
                             <BarChart3 className="w-3.5 h-3.5 text-muted-foreground/70" />
                             <span className="text-muted-foreground">{t("qualScore")}</span>
-                            <span className={cn("font-semibold tabular-nums", source.score >= 8 ? "text-emerald-600" : source.score >= 6 ? "text-amber-600" : source.score > 0 ? "text-red-500" : "text-muted-foreground")}>
-                                {source.score > 0 ? `${source.score}/10` : <span className="opacity-70 font-normal italic">{t("pending")}...</span>}
+                            <span className={cn("font-semibold tabular-nums", source.score >= 80 || (source.score >= 8 && source.score <= 10) ? "text-emerald-600" : source.score >= 60 || (source.score >= 6 && source.score <= 7) ? "text-amber-600" : source.score > 0 ? "text-red-500" : "text-muted-foreground")}>
+                                {source.score > 0 ? (source.score > 10 ? `${source.score}/100` : `${source.score}/10`) : <span className="opacity-70 font-normal italic">{t("pending")}...</span>}
                             </span>
                             {source.score > 0 && (
                                 <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", source.score >= 6 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600")}>
@@ -664,8 +854,10 @@ export default function SourceMissionControl() {
                                 </div>
 
                                 <div className="space-y-0 relative">
-                                    {STAGES.map((stage, i) => {
-                                        const status = getStageStatus(i)
+                                    {(() => {
+                                        const renderedStages = STAGES.map((s, i) => ({ ...s, originalIndex: i })).filter(s => !s.hidden);
+                                        return renderedStages.map((stage, i) => {
+                                            const status = getStageStatus(stage.originalIndex)
                                         const isExecuting = executingStage === stage.id
                                         const isCompleted = status === "completed"
                                         const isActive = status === "active"
@@ -679,7 +871,7 @@ export default function SourceMissionControl() {
                                                     {/* Vertical Connector Lines */}
                                                     <div className={cn(
                                                         "absolute w-0.5 transition-colors duration-500",
-                                                        i === 0 ? "top-[13px] h-full" : i === STAGES.length - 1 ? "top-0 h-[13px]" : "top-0 h-full",
+                                                        i === 0 ? "top-[13px] h-[calc(100%-13px)]" : i === renderedStages.length - 1 ? "top-0 h-[13px]" : "top-0 h-full",
                                                         isCompleted ? "bg-emerald-500" : "bg-border/30"
                                                     )} />
                                                     
@@ -756,7 +948,7 @@ export default function SourceMissionControl() {
 
                                                     {/* Writing Intent Setup moved to Angle Stage Checkpoint */}
                                                     {stage.id === "angle" && !isCompleted && isActive && (
-                                                        <div className="mt-4 p-5 rounded-2xl bg-white border border-border/80 shadow-soft animate-in fade-in slide-in-from-top-2 flex flex-col gap-4 max-w-2xl" onClick={e => e.stopPropagation()}>
+                                                        <div className="mt-4 p-6 rounded-2xl bg-card border border-border/80 shadow-soft animate-in fade-in slide-in-from-top-2 flex flex-col gap-4 max-w-2xl" onClick={e => e.stopPropagation()}>
                                                             <div className="flex items-center gap-2 mb-1">
                                                                 <Bot className="w-4 h-4 text-brand" />
                                                                 <h4 className="text-[12px] font-bold text-foreground uppercase tracking-wider font-serif">Writing Intent Strategy</h4>
@@ -769,7 +961,7 @@ export default function SourceMissionControl() {
                                                                         value={intentType}
                                                                         onChange={(e) => setIntentType(e.target.value)}
                                                                         title="Select content format"
-                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-2 w-full focus:ring-1 focus:ring-brand shadow-micro"
+                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-no-repeat bg-[right_0.5rem_center]"
                                                                     >
                                                                         <option value="blog_article">Blog Article</option>
                                                                         <option value="essay">Thematic Essay</option>
@@ -784,7 +976,7 @@ export default function SourceMissionControl() {
                                                                         value={intentAudience}
                                                                         onChange={(e) => setIntentAudience(e.target.value)}
                                                                         title="Select target audience"
-                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-2 w-full focus:ring-1 focus:ring-brand shadow-micro"
+                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-no-repeat bg-[right_0.5rem_center]"
                                                                     >
                                                                         <option value="general_reader">General Reader</option>
                                                                         <option value="beginner">Beginner</option>
@@ -799,7 +991,7 @@ export default function SourceMissionControl() {
                                                                         value={intentTone}
                                                                         onChange={(e) => setIntentTone(e.target.value)}
                                                                         title="Select voice and tone"
-                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-2 w-full focus:ring-1 focus:ring-brand shadow-micro"
+                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-no-repeat bg-[right_0.5rem_center]"
                                                                     >
                                                                         <option value="conversational_editorial">Conversational</option>
                                                                         <option value="formal_authoritative">Formal</option>
@@ -828,7 +1020,8 @@ export default function SourceMissionControl() {
                                                 </div>
                                             </div>
                                         )
-                                    })}
+                                        })
+                                    })()}
                                 </div>
 
                                 {activeIndex >= STAGES.length && (

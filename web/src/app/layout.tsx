@@ -13,6 +13,7 @@ export const metadata: Metadata = {
 
 import { LanguageProvider } from "@/context/LanguageContext";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
+import { Providers } from "@/components/providers/Providers";
 
 export default function RootLayout({
   children,
@@ -28,11 +29,13 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <LanguageProvider>
-            <AppShell>
-              {children}
-            </AppShell>
-          </LanguageProvider>
+          <Providers>
+            <LanguageProvider>
+              <AppShell>
+                {children}
+              </AppShell>
+            </LanguageProvider>
+          </Providers>
         </ThemeProvider>
       </body>
     </html>

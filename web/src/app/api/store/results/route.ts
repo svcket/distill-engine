@@ -32,6 +32,15 @@ export async function GET(request: Request) {
             try {
                 const raw = fs.readFileSync(filePath, 'utf-8')
                 results[stageId] = JSON.parse(raw)
+                // If it's the QA stage, try to extract a top-level publishability score for the source
+                if (stageId === 'qa') {
+                    const data = results[stageId] as any;
+                    const dqmPayload = data.payload || data.data || data;
+                    const score = dqmPayload?.scores?.publishability || dqmPayload?.publishability;
+                    if (score !== undefined) {
+                        (results as any).publishability = score;
+                    }
+                }
             } catch { /* skip */ }
         }
     }
@@ -47,14 +56,18 @@ export async function GET(request: Request) {
                 const meta = JSON.parse(raw)
                 const items = Array.isArray(meta) ? meta : [meta]
                 const item = items[0]
-                results.judge = { 
-                    score: item.score || 5, 
-                    title: item.title,
-                    channel: item.channel,
-                    status: "done", 
-                    rationale: item.rationale || "Source evaluated." 
+                if (item) {
+                    results.judge = { 
+                        score: item.score || 5, 
+                        title: item.title,
+                        channel: item.channel,
+                        status: "done", 
+                        rationale: item.rationale || "Source evaluated." 
+                    }
                 }
-            } catch { /* skip */ }
+            } catch (e) { 
+                console.error(`[Results API] Error parsing legacyPath for ${sourceId}:`, e)
+            }
         }
     } else {
         try {
@@ -62,14 +75,18 @@ export async function GET(request: Request) {
             const meta = JSON.parse(raw)
             const items = Array.isArray(meta) ? meta : [meta]
             const item = items[0]
-            results.judge = { 
-                score: item.score || 5, 
-                title: item.title,
-                channel: item.channel,
-                status: "done", 
-                rationale: item.rationale || "Source evaluated." 
+            if (item) {
+                results.judge = { 
+                    score: item.score || 5, 
+                    title: item.title,
+                    channel: item.channel,
+                    status: "done", 
+                    rationale: item.rationale || "Source evaluated." 
+                }
             }
-        } catch { /* skip */ }
+        } catch (e) { 
+            console.error(`[Results API] Error parsing scorePath for ${sourceId}:`, e)
+        }
     }
 
     return NextResponse.json({ results })

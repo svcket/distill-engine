@@ -81,10 +81,28 @@ def evaluate_dqm(source_id: str):
         print(json.dumps({"status": "error", "error_detail": f"Draft '{source_id}' not found."}), file=sys.stderr)
         sys.exit(1)
         
+    if not os.path.exists(draft_file):
+        print(json.dumps({
+            "status": "failed", 
+            "error": f"Draft file not found at {draft_file}. Please generate the draft first.",
+            "source_id": source_id
+        }), file=sys.stderr)
+        sys.exit(1)
+        
     with open(draft_file, "r", encoding="utf-8") as f:
         draft_bundle = json.load(f)
         
-    content = draft_bundle.get("data", {}).get("content", "") or draft_bundle.get("content", "")
+    # Standardize content extraction from the WrittenDraft bundle
+    # The WrittenDraft bundle from writer.py is { "status": "success", "data": { "title": "...", "content": "..." } }
+    data_payload = draft_bundle.get("data", {})
+    if isinstance(data_payload, dict):
+        content = data_payload.get("content", "")
+    else:
+        content = draft_bundle.get("content", "")
+    
+    if not content:
+        # Fallback to keys that might be present in direct models
+        content = draft_bundle.get("content", "") or ""
     
     # Load brief for grounding context
     brief_file = os.path.join(base, ".tmp", "briefs", f"{source_id}_brief.json")

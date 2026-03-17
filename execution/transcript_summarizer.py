@@ -17,13 +17,29 @@ def generate_summary(transcript_path: str, output_path: str):
         sys.exit(1)
 
     # Combine text for the LLM
-    full_text = " ".join([s.get('text', '') for s in segments])
+    try:
+        if not isinstance(segments, list):
+            raise ValueError(f"Expected segments to be a list, got {type(segments)}")
+            
+        full_text = " ".join([s.get('text', '') for s in segments if isinstance(s, dict)])
+        
+        if not full_text.strip():
+            print(json.dumps({"status": "error", "error_detail": "Transcript text is empty after parsing segments."}), file=sys.stderr)
+            sys.exit(1)
+            
+    except Exception as e:
+        print(json.dumps({"status": "error", "error_detail": f"Failed to process transcript segments: {e}"}), file=sys.stderr)
+        sys.exit(1)
     
     # Cap text length to avoid token limits for very long transcripts in this initial pass
-    # (In a production system, we'd chunk and recursive summarize)
-    capped_text = full_text[:20000] # roughly 4k-5k tokens
+    capped_text = full_text[:40000] # Increased to ~10k tokens for gpt-4o
     
-    client = OpenAI()
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key or api_key == "mock":
+        print(json.dumps({"status": "error", "error_detail": "OPENAI_API_KEY is missing or invalid ('mock')."}), file=sys.stderr)
+        sys.exit(1)
+        
+    client = OpenAI(api_key=api_key)
     
     try:
         response = client.chat.completions.create(
