@@ -38,16 +38,17 @@ class YouTubeAdapter(BaseAdapter):
 
         clean_url = f"https://www.youtube.com/watch?v={video_id}"
         
-        # Fast Path: return shell if requested
+        # Fast Path: return shell if requested, but try to get a title
         if shell:
+            metadata = self._fetch_metadata(video_id)
             return NormalizedSource(
                 source_id=video_id,
                 source_type="youtube",
-                title=f"YouTube Video ({video_id})",
-                creator="YouTube",
+                title=metadata.get("title") or f"YouTube Video ({video_id})",
+                creator=metadata.get("channel") or "YouTube",
                 url=clean_url,
                 transcript_status="unknown",
-                source_confidence=0.5, # Lower confidence for shell
+                source_confidence=0.8, # Higher confidence because we got a title
                 is_shell=True,
             )
 

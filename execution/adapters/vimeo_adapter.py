@@ -35,16 +35,17 @@ class VimeoAdapter(BaseAdapter):
         clean_url = f"https://vimeo.com/{video_id}"
         source_id = f"vimeo_{video_id}"
         
-        # Fast Path: return shell if requested
+        # Fast Path: return shell if requested, but try to get oEmbed title
         if shell:
+            metadata = self._fetch_oembed(clean_url)
             return NormalizedSource(
                 source_id=source_id,
                 source_type="vimeo",
-                title=f"Vimeo Video ({video_id})",
-                creator="Vimeo",
+                title=metadata.get("title") or f"Vimeo Video ({video_id})",
+                creator=metadata.get("author_name") or "Vimeo",
                 url=clean_url,
                 transcript_status="pending",
-                source_confidence=0.5,
+                source_confidence=0.8,
                 is_shell=True,
             )
 

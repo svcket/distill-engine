@@ -1,5 +1,4 @@
-"use client"
-
+import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/Badge"
 import { cn } from "@/lib/utils"
 import { BarChart3, BookOpen, Lightbulb, MessageSquareQuote, Target, Zap } from "lucide-react"
@@ -221,8 +220,8 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Key Claims */}
             {keyClaims.length > 0 && (
                 <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
-                        <Zap className="w-3.5 h-3.5" /> Key Claims
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">
+                        <Zap className="w-3.5 h-3.5 text-brand" /> Key Claims
                     </div>
                     <ul className="space-y-1.5">
                         {keyClaims.map((claim, i) => (
@@ -238,8 +237,8 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Supporting Examples */}
             {examples.length > 0 && (
                 <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
-                        <Target className="w-3.5 h-3.5" /> Supporting Examples
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">
+                        <Target className="w-3.5 h-3.5 text-emerald-500" /> Supporting Examples
                     </div>
                     <ul className="space-y-1.5">
                         {examples.map((ex, i) => (
@@ -255,8 +254,8 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Frameworks */}
             {!compact && frameworks.length > 0 && (
                 <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
-                        <BookOpen className="w-3.5 h-3.5" /> Frameworks
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">
+                        <BookOpen className="w-3.5 h-3.5 text-blue-500" /> Frameworks
                     </div>
                     <div className="grid gap-2">
                         {frameworks.map((fw, i) => {
@@ -275,8 +274,8 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Quotes */}
             {!compact && quotes.length > 0 && (
                 <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">
-                        <MessageSquareQuote className="w-3.5 h-3.5" /> Notable Quotes
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">
+                        <MessageSquareQuote className="w-3.5 h-3.5 text-brand" /> Notable Quotes
                     </div>
                     {quotes.map((q, i) => (
                         <blockquote key={i} className="border-l-2 border-brand/30 pl-3 text-sm text-muted-foreground italic">
@@ -289,7 +288,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Controversies & Tensions */}
             {!compact && controversies.length > 0 && (
                 <div className="space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Controversies & Tensions</div>
+                    <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">Controversies & Tensions</div>
                     <ul className="space-y-1">
                         {controversies.map((c, i) => (
                             <li key={i} className="text-sm text-muted-foreground">? {String(c)}</li>
@@ -301,7 +300,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Contradictions */}
             {!compact && contradictions.length > 0 && (
                 <div className="space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Contradictions</div>
+                    <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">Contradictions</div>
                     <ul className="space-y-1">
                         {contradictions.map((c, i) => (
                             <li key={i} className="text-sm text-red-500/70">! {String(c)}</li>
@@ -313,11 +312,11 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
             {/* Implications */}
             {!compact && implications.length > 0 && (
                 <div className="space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Broader Implications</div>
+                    <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">Broader Implications</div>
                     <ul className="space-y-1.5">
                         {implications.map((imp, i) => (
-                            <li key={i} className="text-sm text-muted-foreground flex gap-2 items-start">
-                                <span className="text-blue-500 mt-0.5 shrink-0">~</span>
+                            <li key={i} className="text-sm text-foreground/70 flex gap-2 items-start group/imp">
+                                <span className="text-blue-500 mt-0.5 shrink-0 transition-transform group-hover/imp:scale-110">~</span>
                                 <span>{String(imp)}</span>
                             </li>
                         ))}
@@ -337,37 +336,39 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
     const titles = getArr(d, "working_titles")
     const rationale = getStr(d, "rationale")
 
+    const displayFormat = format.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())
+
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
-                <Badge>{format}</Badge>
+                <Badge className="bg-brand/10 text-brand border-brand/20">{displayFormat}</Badge>
                 {secondaryFormats.map((f, i) => (
-                    <Badge key={i} variant="secondary">{String(f)}</Badge>
+                    <Badge key={i} variant="secondary">{String(f).replace(/_/g, " ")}</Badge>
                 ))}
             </div>
 
             {framing && (
                 <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1 font-serif">Framing Angle</p>
-                    <p className="text-sm text-foreground font-medium">{framing}</p>
+                    <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif mb-1">Framing Angle</div>
+                    <p className="text-sm text-foreground/70 italic leading-relaxed">&ldquo;{framing}&rdquo;</p>
                 </div>
             )}
 
             {audience && (
                 <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1 font-serif">Target Audience</p>
-                    <p className="text-sm text-muted-foreground">{audience}</p>
+                    <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif mb-1">Target Audience</div>
+                    <p className="text-sm text-foreground/70">{audience}</p>
                 </div>
             )}
 
             {titles.length > 0 && (
                 <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 font-serif">Working Titles</p>
+                    <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif mb-2">Working Titles</div>
                     <div className="space-y-1.5">
                         {titles.map((t, i) => (
                             <div key={i} className="flex items-center gap-2">
                                 <span className="text-xs text-muted-foreground/50 font-mono w-4">{i + 1}.</span>
-                                <p className="text-sm text-foreground font-medium">{String(t)}</p>
+                                <p className="text-sm text-foreground/70 font-medium">{String(t)}</p>
                             </div>
                         ))}
                     </div>
@@ -381,59 +382,90 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
     )
 }
 
-function DraftResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
-    const d = (data.result || data.data || data) as Record<string, unknown>
-    const title = getStr(d, "title")
-    const content = getStr(d, "content")
-    const wordCount = getNum(d, "word_count")
 
-    if (compact) {
-        return (
-            <div className="space-y-2">
-                <p className="text-sm font-semibold text-foreground">{title}</p>
-                <div className="flex items-center gap-2">
-                    <Badge variant="success">Draft Complete</Badge>
-                    <span className="text-xs text-muted-foreground">{wordCount} words</span>
-                </div>
-                <p className="text-xs text-muted-foreground line-clamp-3">{content.replace(/[#*]/g, "").slice(0, 200)}...</p>
-            </div>
-        )
-    }
+
+function DraftResult({ data, isGenerating }: { data: any, isGenerating: boolean }) {
+    const [displayedContent, setDisplayedContent] = useState("")
+    
+    // Support both structured data from generate API and raw results from other stages
+    const d = (data?.result || data?.data || data) as any
+    const fullText = typeof d === 'string' ? d : (d?.content || d?.text || "")
+    const title = d?.title || ""
+    const wordCount = d?.word_count || 0
+    
+    useEffect(() => {
+        if (!isGenerating) {
+            setDisplayedContent(fullText)
+            return
+        }
+
+        // If we are generating, catch up to current fullText but don't reset everything
+        // We'll use a simpler interval that just adds words as they arrive if needed
+        // but for high-fidelity we want a smooth rhythm
+        const words = fullText.split(" ")
+        const displayedWords = displayedContent.split(" ")
+        
+        if (words.length > displayedWords.length) {
+            const nextWord = words[displayedWords.length]
+            const timeout = setTimeout(() => {
+                setDisplayedContent(prev => prev + (prev ? " " : "") + nextWord)
+            }, 30)
+            return () => clearTimeout(timeout)
+        }
+    }, [fullText, isGenerating, displayedContent])
+
+    if (!data) return null
 
     return (
-        <div className="space-y-6">
-            {title && !content.trim().startsWith("# ") && !content.trim().startsWith(title) && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-700">
+            {title && (
                 <div className="border-b border-border/40 pb-4 mb-2">
                     <h1 className="text-2xl font-bold text-foreground font-serif tracking-tight leading-tight">
                         {title}
                     </h1>
                     <div className="flex items-center gap-2 mt-2">
-                        <Badge variant="success" className="bg-brand/10 text-brand border-brand/20">Final Draft</Badge>
-                        <span className="text-xs text-muted-foreground font-medium">{wordCount} words</span>
+                        <Badge variant="success" className="bg-brand/10 text-brand border-brand/20">Draft Article</Badge>
+                        {wordCount > 0 && <span className="text-xs text-muted-foreground font-medium">{wordCount} words</span>}
+                        {isGenerating && <span className="text-xs text-brand animate-pulse">Drafting...</span>}
                     </div>
                 </div>
             )}
-            <div className="prose prose-sm max-w-none text-muted-foreground font-serif leading-relaxed">
-                {content.includes("<h1") || content.includes("<p") || content.includes("<div") ? (
-                    <div dangerouslySetInnerHTML={{ __html: content }} />
-                ) : (
-                    content.split("\n").map((line, i) => {
-                        const trimmed = line.trim()
-                        if (!trimmed && line === "") return <div key={i} className="h-2" />
-                        if (trimmed.startsWith("# ")) return <h1 key={i} className="text-xl font-bold text-foreground mt-6 mb-3 font-serif tracking-tight border-b border-border/40 pb-2">{trimmed.slice(2)}</h1>
-                        if (trimmed.startsWith("## ")) return <h2 key={i} className="text-lg font-semibold text-foreground mt-5 mb-2 font-serif tracking-tight">{trimmed.slice(3)}</h2>
-                        if (trimmed.startsWith("### ")) return <h3 key={i} className="text-base font-semibold text-foreground mt-4 mb-2 font-serif">{trimmed.slice(4)}</h3>
-                        if (trimmed.startsWith("- ")) {
-                            return (
-                                <ul key={i} className="list-disc ml-6 my-2">
-                                    <li className="text-sm text-muted-foreground marker:text-brand/50 pl-1">{trimmed.slice(2)}</li>
+            
+            <div className="prose prose-invert max-w-none prose-p:text-foreground/90 prose-p:leading-relaxed prose-headings:font-serif prose-headings:text-white relative">
+                {displayedContent.split("\n\n").map((line, i) => {
+                    const trimmed = line.trim()
+                    if (!trimmed) return null
+                    
+                    const isLastLine = i === displayedContent.split("\n\n").length - 1
+                    
+                    return (
+                        <div key={i} className="mb-4 relative">
+                            {trimmed.startsWith("# ") ? (
+                                <h1 className="text-2xl font-bold text-foreground mt-8 mb-4 font-serif tracking-tight border-b-2 border-brand/20 pb-2">
+                                    {trimmed.slice(2)}
+                                </h1>
+                            ) : trimmed.startsWith("## ") ? (
+                                <h2 className="text-xl font-bold text-white mt-7 mb-3 font-serif tracking-tight border-b border-border/40 pb-1">
+                                    {trimmed.slice(3)}
+                                </h2>
+                            ) : trimmed.startsWith("### ") ? (
+                                <h3 className="text-lg font-bold text-white mt-6 mb-2 font-serif tracking-tight">
+                                    {trimmed.slice(4)}
+                                </h3>
+                            ) : trimmed.startsWith("- ") ? (
+                                <ul className="list-disc ml-6 my-2">
+                                    <li className="text-sm text-foreground/90 marker:text-brand/50 pl-1">{trimmed.slice(2)}</li>
                                 </ul>
-                            )
-                        }
-                        if (trimmed.startsWith("> ")) return <blockquote key={i} className="border-l-3 border-brand/30 pl-4 text-sm italic text-muted-foreground/80 my-4 bg-muted/10 py-2 rounded-r-lg">{trimmed.slice(2)}</blockquote>
-                        return <p key={i} className="text-sm text-muted-foreground leading-relaxed my-2">{trimmed}</p>
-                    })
-                )}
+                            ) : (
+                                <p className="text-base leading-relaxed">{trimmed}</p>
+                            )}
+                            
+                            {isGenerating && isLastLine && (
+                                <span className="inline-block w-2 h-5 bg-brand/60 ml-1 animate-pulse align-middle" />
+                            )}
+                        </div>
+                    )
+                })}
             </div>
         </div>
     )
@@ -494,7 +526,7 @@ function VisualResult({ data, compact }: { data: Record<string, unknown>; compac
                             <div className="pl-2">
                                 <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground/60 mb-1">{type}</p>
                                 <p className="text-sm font-medium text-foreground">{String(desc)}</p>
-                                {sg.content && (
+                                {!!sg.content && (
                                     <p className="text-xs text-muted-foreground mt-2 italic border-l-2 border-border/50 pl-2">
                                         &quot;{String(sg.content)}&quot;
                                     </p>
@@ -512,7 +544,7 @@ function VisualResult({ data, compact }: { data: Record<string, unknown>; compac
 }
 
 function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
-    const dqmData = (data.result || data.payload || data.data || data) as unknown as DQMData
+    const dqmData = ((data.result || data.payload || data.data || data) as unknown) as DQMData
     
     if (compact) {
         return (
@@ -538,32 +570,32 @@ function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: 
 // ─── Main Component ────────────────────────────────────────────
 
 export function StageResultView({ stageId, data, compact = false }: StageResultViewProps) {
-    const d = typeof data === 'string' ? data : data as Record<string, unknown>
+    const d = (typeof data === 'string' ? data : data as Record<string, unknown>) || {}
 
 
     switch (stageId) {
         case "judge":
-            return <JudgeResult data={d} compact={compact} />
+            return <JudgeResult data={d as Record<string, unknown>} compact={compact} />
         case "transcript":
-            return <TranscriptResult data={d} compact={compact} />
+            return <TranscriptResult data={d as Record<string, unknown>} compact={compact} />
         case "refine":
-            return <RefineResult data={d} compact={compact} />
+            return <RefineResult data={d as Record<string, unknown>} compact={compact} />
         case "summary":
-            return <SummaryResult data={d} />
+            return <SummaryResult data={d as Record<string, unknown>} />
         case "packet":
-            return <PacketResult data={d} />
+            return <PacketResult data={d as Record<string, unknown>} />
         case "insights":
-            return <InsightsResult data={d} compact={compact} />
+            return <InsightsResult data={d as Record<string, unknown>} compact={compact} />
         case "angle":
-            return <AngleResult data={d} />
+            return <AngleResult data={d as Record<string, unknown>} />
         case "draft":
-            return <DraftResult data={d} compact={compact} />
+            return <DraftResult data={d as Record<string, unknown>} compact={compact} />
         case "visual":
-            return <VisualResult data={d} compact={compact} />
+            return <VisualResult data={d as Record<string, unknown>} compact={compact} />
         case "qa":
-            return <QaResult data={d} compact={compact} />
+            return <QaResult data={d as Record<string, unknown>} compact={compact} />
         default:
-            return <GenericResult data={typeof d === 'string' ? { message: d } : d} />
+            return <GenericResult data={typeof d === 'string' ? { message: d } : (d as Record<string, unknown>)} />
     }
 }
 
@@ -576,8 +608,8 @@ export function StageResultPanel({ stageId, data }: { stageId: StageId; data: Re
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-serif">Engine Output</span>
+                    <BarChart3 className="w-4 h-4 text-brand" />
+                    <span className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">Engine Output</span>
                 </div>
                 {wordCount !== null && (
                     <Badge variant="success" className="font-sans">{wordCount} words</Badge>

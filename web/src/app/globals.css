@@ -32,22 +32,6 @@
 }
 
 :root {
-  --background: #FFFFFF;
-  --foreground: #111111;
-  --border: #E8E8E8;
-  --muted: #F8F9FA;
-  --muted-foreground: #737373;
-  --accent: #F9FAFB;
-  --accent-foreground: #111827;
-  --card: #FFFFFF;
-  --card-foreground: #111111;
-  --brand: #111111;
-  --brand-foreground: #FFFFFF;
-  --radius: 0.75rem;
-  --page-bg: #F9F9F9;
-}
-
-.dark {
   --background: #0d1117; /* GitHub Dark BG */
   --foreground: #f0f6fc;
   --border: #30363d;
@@ -60,6 +44,7 @@
   --card-foreground: #f0f6fc;
   --brand: #f0f6fc;
   --brand-foreground: #0d1117;
+  --radius: 0.75rem;
 }
 
 @layer base {

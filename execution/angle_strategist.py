@@ -64,7 +64,10 @@ def extract_angle(insights_path: str, target_type: str = None, target_audience: 
     Example of a weak thesis: "AI is transforming industries."
     Example of a strong thesis: "AI gives small teams an asymmetric advantage over large corporations by collapsing the cost of specialized labor."
     
-    Choose a specific, opinionated framing angle based on the insights provided and the USER INTENT SETTINGS if present.
+    Choose a specific, opinionated framing angle based on the insights provided.
+    
+    IMPORTANT: If USER INTENT SETTINGS provide a specific 'Format/Type', you MUST output that exactly as the 'recommended_format'. Do NOT use 'Long-form Essay' if the user requested 'blog_article' or 'technical_explainer'.
+    
     Target the audience specified, or default to technical builders, engineers, and designers.
     """
     

@@ -12,7 +12,7 @@ export async function POST(req: Request) {
         const baseDir = path.resolve(process.cwd(), '../execution')
         const scriptPath = path.join(baseDir, 'visual_planner.py')
         
-        return new Promise((resolve) => {
+        return new Promise<NextResponse>((resolve) => {
             const process = spawn('python3', [scriptPath, '--source-id', sourceId])
 
             let output = ''

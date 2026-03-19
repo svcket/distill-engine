@@ -15,6 +15,7 @@ interface UnifiedSourceInputProps {
 export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: UnifiedSourceInputProps) {
     const { t } = useLanguage()
     const [value, setValue] = useState("")
+    const [isDragging, setIsDragging] = useState(false)
     const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'processing'>('idle')
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const audioChunksRef = useRef<Blob[]>([])
@@ -57,7 +58,7 @@ export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: Unif
             setRecordingState('processing')
         }
     }
-        
+
     const handleAudioUpload = async (blob: Blob) => {
         const formData = new FormData()
         formData.append('audio', blob)
@@ -78,13 +79,39 @@ export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: Unif
         }
     }
 
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault()
+        setIsDragging(true)
+    }
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault()
+        setIsDragging(false)
+    }
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault()
+        setIsDragging(false)
+        const file = e.dataTransfer.files?.[0]
+        if (file) onFileSelect(file)
+    }
+
     return (
-        <div className="flex flex-col md:flex-row gap-3 w-full animate-in fade-in slide-in-from-top-4 duration-500">
+        <div 
+            className={cn(
+                "flex flex-col md:flex-row gap-3 w-full animate-in fade-in slide-in-from-top-4 duration-500",
+                isDragging && "scale-[1.01] transition-transform duration-200"
+            )}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+        >
             <input 
                 type="file" 
                 ref={fileInputRef} 
                 className="hidden" 
                 accept="video/*,audio/*,.pdf,.txt,.docx"
+                title="Source File"
                 onChange={(e) => {
                     const file = e.target.files?.[0]
                     if (file) onFileSelect(file)
@@ -95,18 +122,19 @@ export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: Unif
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground transition-colors group-focus-within:text-brand" />
                 <input
                     type="text"
-                    placeholder={t("composerPlaceholder") || "Paste source URL or search..."}
+                    placeholder={isDragging ? "Drop your file here..." : (t("composerPlaceholder") || "Paste source URL or search...")}
                     aria-label={t("composerPlaceholder") || "Paste source URL or search..."}
                     className={cn(
                         "w-full pl-11 pr-24 h-12 rounded-xl border border-border bg-background shadow-micro transition-all outline-none",
-                        "focus:ring-4 focus:ring-brand/5 focus:border-brand/30 dark:border-white/5 dark:focus:border-white/15 dark:focus:ring-white/5"
+                        "focus:ring-4 focus:ring-brand/5 focus:border-brand/30 dark:border-white/5 dark:focus:border-white/15 dark:focus:ring-white/5",
+                        isDragging && "border-brand bg-brand/5 ring-4 ring-brand/5"
                     )}
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter') handleSend()
                     }}
-                    disabled={isIngesting}
+                    disabled={isIngesting || isDragging}
                 />
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                     <Button 

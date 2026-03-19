@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils"
 import { getFormatStyles } from "@/lib/format-styles"
 import "../editor.css"
 import DQMCard from "@/components/DQMCard"
+import { useLanguage } from "@/context/LanguageContext"
 
 interface Draft {
     id: string
@@ -60,6 +61,7 @@ interface DQMResult {
 }
 
 export default function DraftWorkspacePage() {
+    const { t } = useLanguage()
     const { id } = useParams()
     const [draft, setDraft] = useState<Draft | null>(null)
     const [loading, setLoading] = useState(true)
@@ -69,6 +71,34 @@ export default function DraftWorkspacePage() {
     const [previewMode, setPreviewMode] = useState<"email" | "mobile" | "desktop">("email")
     const [exportOpen, setExportOpen] = useState(false)
     const [dqm, setDqm] = useState<DQMResult | null>(null)
+    // Hydrate scores
+    useEffect(() => {
+        if (!id) return
+        
+        const fetchMetadata = async () => {
+            try {
+                // Try cache first
+                const cached = localStorage.getItem(`dqm_${id}`)
+                if (cached) {
+                    setDqm(JSON.parse(cached))
+                }
+
+                // Always fetch fresh from store to ensure persistence
+                const res = await fetch(`/api/store/results?sourceId=${id}`)
+                if (res.ok) {
+                    const data = await res.json()
+                    if (data.results?.qa) {
+                        setDqm(data.results.qa.data || data.results.qa)
+                    } else if (data.qa) {
+                        setDqm(data.qa.data || data.qa)
+                    }
+                    localStorage.setItem(`dqm_${id}`, JSON.stringify(data.results?.qa?.data || data.results?.qa || data.qa))
+                }
+            } catch (e) { console.error("Score hydration failed", e) }
+        }
+
+        fetchMetadata()
+    }, [id])
 
     const editor = useEditor({
         extensions: [
@@ -95,19 +125,18 @@ export default function DraftWorkspacePage() {
         try {
             const res = await fetch("/api/drafts/evaluate", {
                 method: "POST",
-                body: JSON.stringify({ sourceId })
+                body: JSON.stringify({ sourceId, draftContent: editedContent })
             })
             if (res.ok) {
                 const data = await res.json()
                 if (data.result) {
                     setDqm(data.result)
-                    // Save to cache
                     localStorage.setItem(`dqm_${sourceId}`, JSON.stringify(data.result))
                 }
             }
         } catch { /* fail */ }
         finally { setIsQAing(false) }
-    }, [id])
+    }, [id, editedContent])
 
     const normalizeMarkdown = (md: string) => {
         if (!md) return "";
@@ -240,12 +269,18 @@ export default function DraftWorkspacePage() {
     const handleRegenerate = async () => {
         setIsRegenerating(true)
         try {
-            await fetch("/api/drafts/generate", {
+            const res = await fetch("/api/drafts/generate", {
                 method: "POST",
-                body: JSON.stringify({ source_id: id, force: true })
+                body: JSON.stringify({ 
+                    transcriptId: id, // API expects transcriptId
+                    force: true,
+                    stream: false 
+                })
             })
-            await new Promise(r => setTimeout(r, 3000))
-            window.location.reload()
+            if (res.ok) {
+                await new Promise(r => setTimeout(r, 2000))
+                window.location.reload()
+            }
         } catch { /* fail */ }
         finally { setIsRegenerating(false) }
     }
@@ -351,11 +386,12 @@ export default function DraftWorkspacePage() {
                     </Button>
                     <div className="relative">
                         <Button 
+                            variant="outline"
                             size="sm" 
-                            className="h-8 text-xs gap-2 bg-black hover:bg-black/90 text-white pr-2"
+                            className="h-8 text-[12px] font-bold px-4 rounded-full border border-border/40 bg-zinc-900/5 dark:bg-zinc-100/10 text-foreground hover:bg-zinc-900/10 dark:hover:bg-zinc-100/20 transition-all gap-2"
                             onClick={() => setExportOpen(!exportOpen)}
                         >
-                            <Download className="w-3.5 h-3.5" /> Export <ChevronDown className="w-3 h-3 opacity-50" />
+                            <Download className="w-3.5 h-3.5" /> {t("export")} <ChevronDown className="w-3 h-3 opacity-50" />
                         </Button>
                         {exportOpen && (
                             <div className="absolute right-0 top-full mt-2 w-52 bg-background border border-border rounded-xl shadow-2xl p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 z-[9999]">

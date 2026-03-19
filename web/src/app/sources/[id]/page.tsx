@@ -9,10 +9,9 @@ import {
     ArrowLeft, ExternalLink, Calendar, Clock, BarChart3,
     Loader2, FileText, Bot, Sparkles, Target, Edit3,
     X, Trash2, ShieldCheck,
-    Download, Play, MoreHorizontal
+    RefreshCw, Play, MoreHorizontal
 } from "lucide-react"
-import Link from "next/link"
-import { useParams, useSearchParams, useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
 import DQMCard, { DQMData } from "@/components/DQMCard"
@@ -36,17 +35,24 @@ const STAGES: WorkflowStage[] = [
     { id: "judge", label: "Judge Alignment", description: "Enrich source metadata and evaluate against NorthStar Profile", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }), hidden: true },
     { id: "transcript", label: "Fetch Transcript", description: "Retrieve indexing data via Fast-Path or Whisper", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (id) => ({ sourceId: id }) },
     { id: "refine", label: "Refine Context", description: "Denoise transcript and segment into logical chunks", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (id) => ({ transcriptId: id }), hidden: true },
-    { id: "summary", label: "Synthesize Core", description: "Concise summary and key framework identification", icon: FileText, apiEndpoint: "/api/transcripts/summary", apiBody: (id) => ({ transcriptId: id }), hidden: true },
+    { id: "summary", label: "Source Summary", description: "Concise summary and key framework identification", icon: FileText, apiEndpoint: "/api/transcripts/summary", apiBody: (id) => ({ transcriptId: id }) },
     { id: "packet", label: "Density Mapping", description: "Identify high-signal segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcriptId: id }), hidden: true },
     { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (id) => ({ transcriptId: id }) },
     { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
-    { id: "visual", label: "Visual Curation", description: "Suggested diagrams, charts, and quote cards", icon: Sparkles, apiEndpoint: "/api/visual", apiBody: (id) => ({ sourceId: id }), hidden: true },
+    { id: "visual", label: "Visual Curation", description: "Suggested diagrams, charts, and quote cards", icon: Sparkles, apiEndpoint: "/api/visual", apiBody: (id) => ({ sourceId: id }) },
     { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
-    { id: "export", label: "Package Asset", description: "Deliver final content to Draft Studio or Export Center", icon: Download, apiEndpoint: "/api/assets/export", apiBody: (id) => ({ draftId: id }), hidden: true },
 ]
 
-const validateStageGating = (stageId: StageId, results: Record<string, any>): { valid: boolean; missing?: string; type?: "error" | "info" } => {
+const INTENT_DESCRIPTIONS: Record<string, string> = {
+    blog_article: "Long-form editorial piece with structured arguments and narrative flow.",
+    social_thread: "X-style thread optimized for engagement and viral potential.",
+    whitepaper: "Technical deep-dive with formal tone and comprehensive data evidence.",
+    newsletter_segment: "Curated update for high-signal technical newsletters.",
+    executive_brief: "Concise summary focusing on bottom-line impact and strategic value."
+}
+
+const validateStageGating = (stageId: StageId, results: Record<string, unknown>): { valid: boolean; missing?: string; type?: "error" | "info" } => {
     switch (stageId) {
         case "refine": 
             if (!results.transcript) return { valid: false, missing: "Transcript", type: "error" };
@@ -79,10 +85,8 @@ const validateStageGating = (stageId: StageId, results: Record<string, any>): { 
 export default function SourceMissionControl() {
     const { t } = useLanguage()
     const params = useParams()
-    const searchParams = useSearchParams()
     const router = useRouter()
     const id = params?.id as string
-    const autoStart = searchParams?.get("auto") === "true"
 
     const [source, setSource] = useState<SourceCandidate>({
         id: id,
@@ -93,8 +97,45 @@ export default function SourceMissionControl() {
         duration: "—",
         status: "idle",
         score: 0,
-        transcriptStatus: "pending"
-    } as any)
+        transcriptStatus: "pending",
+        createdAt: new Date().toISOString()
+    })
+
+    // Stage results stored by ID
+    const [stageResults, setStageResults] = useState<Record<string, unknown>>({})
+
+    // Sync score & duration from results to source header
+    useEffect(() => {
+        // 1. Sync Score
+        if (stageResults.qa) {
+            const qa = stageResults.qa as any
+            const dqmPayload = qa.payload || qa.data || qa.result || qa;
+            const score = dqmPayload?.scores?.publishability || dqmPayload?.publishability || dqmPayload?.total_score || dqmPayload?.score;
+            if (score && score !== source.score) {
+                setSource(s => ({ ...s, score }));
+            }
+        }
+        
+        // 2. Sync Duration
+        if (stageResults.transcript) {
+            const ts = stageResults.transcript as any
+            const duration = ts.duration || ts.result?.duration || ts.metadata?.duration;
+            if (duration && duration !== source.duration) {
+                setSource(s => ({ ...s, duration }));
+            }
+        }
+    }, [stageResults.qa, stageResults.transcript, source.score, source.duration])
+
+    // Invalidate strategy/draft when intent changes
+    const invalidateStrategy = () => {
+        setCompletedStages(prev => {
+            const next = new Set(prev)
+            next.delete("angle")
+            next.delete("draft")
+            next.delete("qa")
+            return next
+        })
+    }
 
     // Track which stages are completed
     const [completedStages, setCompletedStages] = useState<Set<StageId>>(() => {
@@ -109,8 +150,7 @@ export default function SourceMissionControl() {
         return initial
     })
 
-    // Stage results stored by ID
-    const [stageResults, setStageResults] = useState<Record<string, unknown>>({})
+
 
     // Currently executing stage
     const [executingStage, setExecutingStage] = useState<StageId | null>(null)
@@ -248,7 +288,7 @@ export default function SourceMissionControl() {
 
     const getStageStatus = (index: number): StageStatus => {
         const stage = STAGES[index]
-        const tStatus = (source as any).transcriptStatus
+        const tStatus = source.transcriptStatus
         
         if (completedStages.has(stage.id)) return "completed"
         
@@ -265,7 +305,8 @@ export default function SourceMissionControl() {
         return "locked"
     }
 
-    // Handle auto-start trigger
+    // Auto-start disabled as per user request for manual control
+    /*
     useEffect(() => {
         if (autoStart && activeIndex < STAGES.length && !isRunningAll && !executingStage) {
             // Wait a bit for state to settle
@@ -274,8 +315,13 @@ export default function SourceMissionControl() {
             }, 500)
             return () => clearTimeout(timer)
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [autoStart, activeIndex, isRunningAll, executingStage])
+    */
+
+    const runStage = async (stageId: StageId) => {
+        const stage = STAGES.find(s => s.id === stageId)
+        if (stage) await executeStage(stage)
+    }
 
     // Execute a workflow stage
     const executeStage = async (stage: WorkflowStage) => {
@@ -293,14 +339,14 @@ export default function SourceMissionControl() {
         setError(null)
 
         try {
-            const bodyPayload = stage.id === "draft"
+            const bodyPayload = (stage.id === "draft" || stage.id === "angle")
                 ? stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone })
                 : stage.apiBody(id)
 
             // ═══ LOCAL MOCK BYPASS ═══
             // If the source is a local import, don't hit the real API
             if (id.startsWith("local-")) {
-                await new Promise(r => setTimeout(r, 1500)) // Simulate network latency
+                await new Promise(r => setTimeout(r, 100)) // Simulate network latency
                 
                 let mockData: Record<string, unknown> = { status: "success", message: `${stage.label} completed for local file` }
                 
@@ -322,10 +368,10 @@ export default function SourceMissionControl() {
                 const existing = JSON.parse(localStorage.getItem(localKey) || "{}");
                 localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: data.result || data }));
                 
-                if (stage.id === "qa" && (data.result as any)?.total_score !== undefined) {
+                if (stage.id === "qa" && (data.result as Record<string, unknown>)?.total_score !== undefined) {
                     setSource(s => ({
                         ...s,
-                        score: (data.result as any).total_score,
+                        score: (data.result as Record<string, unknown>).total_score as number,
                         status: "done",
                     }))
                     // Save DQM to specific cache for cross-module persistence
@@ -370,7 +416,13 @@ export default function SourceMissionControl() {
                                 fullContent += parsed.text;
                                 setStageResults(prev => ({ 
                                     ...prev, 
-                                    [stage.id]: { result: { content: fullContent, title: "Generating Draft..." } } 
+                                    [stage.id]: { 
+                                        result: { 
+                                            content: fullContent, 
+                                            title: "Generating Draft...",
+                                            word_count: fullContent.trim().split(/\s+/).filter(Boolean).length
+                                        } 
+                                    } 
                                 }));
                             } else if (parsed.type === "error") {
                                 // CRITICAL: Stop the stream and report backend error
@@ -396,17 +448,33 @@ export default function SourceMissionControl() {
             // Mark completed
             setCompletedStages(prev => new Set([...prev, stage.id]))
 
-            if (data && data.result?.score !== undefined) {
+            // ════ AUTO-OPEN SIDE PANEL ON VISUAL ════
+            if (stage.id === "visual") {
+                const visualData = data?.result || data;
+                setPanelContent({ 
+                    title: "Visual Curation", 
+                    stageId: "visual", 
+                    data: visualData
+                })
+                // Force persist result metadata
+                setStageResults(prev => ({ ...prev, [stage.id]: visualData }))
+            }
+
+            // Sync score if available
+            if (data && (data.result?.score !== undefined || data.result?.total_score !== undefined)) {
+                const newScore = data.result.total_score || data.result.score;
                 setSource(s => ({
                     ...s,
-                    score: data.result.score,
-                    status: data.result.score >= 6 ? "done" : "failed",
+                    score: newScore,
+                    status: newScore >= 6 ? "done" : s.status,
                 }))
-                setStageResults(prev => ({ ...prev, qa_rationale: data.result.rationale }))
-                // Save DQM to specific cache for cross-module persistence
                 localStorage.setItem(`dqm_${id}`, JSON.stringify(data.result))
             }
             if (data && data.result) {
+                if (stage.id === "transcript" && data.result.duration && source.duration === "—") {
+                    setSource(s => ({ ...s, duration: data.result.duration }));
+                }
+
                 if (stage.id === "judge") {
                     // If judge updates title/channel/url
                     const updatedSource = {
@@ -451,6 +519,10 @@ export default function SourceMissionControl() {
             setLogs(prev => [{ event: `${stage.label} failed: ${msg}`, time: "Just now", status: "error" }, ...prev])
         } finally {
             setExecutingStage(null)
+            // If this was the last stage, mark source as done
+            if (STAGES.findIndex(s => s.id === stage.id) === STAGES.length - 1) {
+                setSource(s => ({ ...s, status: "done" }))
+            }
         }
     }
 
@@ -502,7 +574,7 @@ export default function SourceMissionControl() {
             
             // ═══ LOCAL MOCK BYPASS ═══
             if (id.startsWith("local-")) {
-                await new Promise(r => setTimeout(r, 800))
+                await new Promise(r => setTimeout(r, 100))
                 
                 const isAudio = id.toLowerCase().includes("mp3") || id.toLowerCase().includes("wav") || id.toLowerCase().includes("m4a") || id.toLowerCase().includes("audio");
                 
@@ -537,6 +609,8 @@ export default function SourceMissionControl() {
                 
                 if (stage.id === "qa") {
                      localStorage.setItem(`dqm_${id}`, JSON.stringify(resValue))
+                     const score = resValue.total_score || resValue.scores?.publishability || 0;
+                     setSource(s => ({ ...s!, score }));
                 }
 
                 setLogs(prev => [{ event: `${stage.label} (Local Mode) completed`, time: "Just now", status: "success" }, ...prev])
@@ -556,7 +630,7 @@ export default function SourceMissionControl() {
 
             // 1. Add human rhythm delay: pause briefly between stages so user can visually see progress
             if (i !== startIndex) {
-                await new Promise(resolve => setTimeout(resolve, 800))
+                await new Promise(resolve => setTimeout(resolve, 100))
             }
 
             // 2. Pause at "angle" to allow user to review insights and configure intent before framing/generation
@@ -609,10 +683,27 @@ export default function SourceMissionControl() {
                                     setLogs(prev => [{ event: parsed.text, time: "Just now", status: "info" }, ...prev]);
                                 } else if (parsed.type === "chunk" && parsed.text) {
                                     fullContent += parsed.text;
-                                    setStageResults(prev => ({ 
-                                        ...prev, 
-                                        [stage.id]: { result: { content: fullContent, title: "Generating Draft..." } } 
-                                    }));
+                                    const wordCount = fullContent.trim().split(/\s+/).filter(Boolean).length;
+                                    setStageResults(prev => {
+                                        const updated = { 
+                                            ...prev, 
+                                            [stage.id]: { 
+                                                result: { 
+                                                    content: fullContent, 
+                                                    title: "Generating Draft...",
+                                                    word_count: wordCount
+                                                } 
+                                            } 
+                                        };
+                                        // Sync with panel if open for real-time visual movement
+                                        if (panelContent && panelContent.stageId === stage.id) {
+                                            setPanelContent({
+                                                ...panelContent,
+                                                data: updated[stage.id]
+                                            });
+                                        }
+                                        return updated;
+                                    });
                                 } else if (parsed.type === "error") {
                                     // CRITICAL: Stop the stream and the loop on explicit backend error
                                     setError({ message: parsed.message, type: "error" });
@@ -677,6 +768,12 @@ export default function SourceMissionControl() {
                             })
                         } catch { /* silently fail */ }
                     }
+                    if (stage.id === "transcript") {
+                        const duration = data.duration || (data.result && data.result.duration) || (data.data && data.data.duration);
+                        if (duration) {
+                            setSource(s => ({ ...s!, duration }));
+                        }
+                    }
                 }
 
                 // Add log
@@ -726,15 +823,107 @@ export default function SourceMissionControl() {
             <div className={cn("flex-1 overflow-y-auto transition-all duration-300", panelContent ? "pr-0" : "")}>
                 <div className="p-8 max-w-[1100px] mx-auto space-y-8 animate-in fade-in duration-500">
 
-                    {/* Back Link */}
-                    <Link href="/sources" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground hover:text-foreground transition-all duration-200 group">
-                        <ArrowLeft className="w-3.5 h-3.5 transition-transform duration-200 group-hover:-translate-x-0.5" /> {t("viewAll")} {t("sources")}
-                    </Link>
+                    {/* Back Link & Global Actions */}
+                    <div className="flex items-center justify-between pb-4 border-b border-border/40">
+                        <div className="flex items-center gap-4">
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-9 px-3 border-border/40 bg-zinc-900/5 dark:bg-zinc-100/10 hover:bg-zinc-900/10 dark:hover:bg-zinc-100/20 text-muted-foreground hover:text-foreground"
+                                onClick={() => router.push("/sources")}
+                                title={t("backToLibrary")}
+                            >
+                                <ArrowLeft className="w-4 h-4 mr-2" /> 
+                                {t("viewAll")} {t("sources")}
+                            </Button>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <a 
+                                href={source.url === "#" ? undefined : source.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className={cn(
+                                    "w-10 h-10 flex items-center justify-center rounded-full border border-border/40 bg-zinc-900/5 dark:bg-zinc-100/10 text-muted-foreground hover:text-foreground hover:bg-zinc-900/10 dark:hover:bg-zinc-100/20 transition-all",
+                                    source.url === "#" && "opacity-20 cursor-not-allowed pointer-events-none"
+                                )}
+                                title="Open original source"
+                            >
+                                <ExternalLink className="w-4 h-4" />
+                            </a>
+                            
+                            <div className="relative group/menu">
+                                <button 
+                                    className="w-10 h-10 flex items-center justify-center rounded-full border border-border/40 bg-zinc-900/5 dark:bg-zinc-100/10 text-muted-foreground hover:text-foreground hover:bg-zinc-900/10 dark:hover:bg-zinc-100/20 transition-all"
+                                    title="More actions"
+                                >
+                                    <MoreHorizontal className="w-4 h-4" />
+                                </button>
+                                <div className="absolute right-0 top-full mt-2 w-48 bg-background border border-border/60 rounded-xl shadow-xl shadow-black/20 opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all z-50 p-1">
+                                    <button 
+                                        onClick={runFullPipeline}
+                                        disabled={isRunningAll}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-foreground hover:bg-muted rounded-lg transition-colors"
+                                    >
+                                        <Play className="w-3.5 h-3.5 fill-current" />
+                                        Run Full Pipeline
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            setStageResults(prev => {
+                                                const next = { ...prev }
+                                                delete next.draft
+                                                delete next.qa
+                                                return next
+                                            })
+                                            setCompletedStages(prev => {
+                                                const next = new Set(prev)
+                                                next.delete("draft")
+                                                next.delete("qa")
+                                                return next
+                                            })
+                                            runStage("draft")
+                                        }}
+                                        disabled={isRunningAll}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-foreground hover:bg-muted rounded-lg transition-colors"
+                                    >
+                                        <RefreshCw className="w-3.5 h-3.5" />
+                                        Regenerate Draft
+                                    </button>
+                                    <button 
+                                        onClick={handleDelete}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-red-500 hover:bg-red-500/10 rounded-lg transition-colors text-left"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={runFullPipeline}
+                                disabled={isRunningAll || activeIndex >= STAGES.length}
+                                className={cn(
+                                    "h-10 px-6 rounded-full flex items-center gap-2 text-sm font-bold shadow-lg transition-all active:scale-95",
+                                    activeIndex >= STAGES.length
+                                        ? "bg-muted text-muted-foreground cursor-not-allowed border border-border/20"
+                                        : "bg-zinc-900 dark:bg-zinc-950 text-zinc-100 shadow-zinc-500/10 hover:shadow-zinc-500/20 border border-zinc-800"
+                                )}
+                            >
+                                {isRunningAll ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <Play className="w-4 h-4 fill-current" />
+                                )}
+                                {isRunningAll ? "Processing..." : activeIndex >= STAGES.length ? "Processed" : t("startAnalyze")}
+                            </button>
+                        </div>
+                    </div>
 
                     {/* ─── Global Error/Info Banner ─── */}
                     {error && (
                         <div className={cn(
-                            "mx-8 mt-6 mb-2 p-4 rounded-xl border flex items-center gap-3 animate-in fade-in slide-in-from-top-2",
+                            "p-4 rounded-xl border flex items-center gap-3 animate-in fade-in slide-in-from-top-2",
                             error.type === "info" 
                                 ? "bg-blue-500/10 border-blue-500/20 text-blue-400" 
                                 : "bg-red-500/10 border-red-500/20 text-red-500"
@@ -744,58 +933,60 @@ export default function SourceMissionControl() {
                         </div>
                     )}
 
-                    <div className="space-y-2">
-                        <div className="flex items-start justify-between gap-6">
-                            <h1 className="text-[26px] font-serif font-semibold tracking-tight text-balance leading-[1.2]">{source.title}</h1>
-                            <div className="flex items-center gap-2 mt-1 shrink-0">
-                                <div className="relative export-dropdown-container">
-                                    <Button 
-                                        variant="outline" 
-                                        size="sm" 
-                                        className="w-10 h-10 p-0 rounded-full flex items-center justify-center"
-                                        onClick={() => setIsExportOpen(!isExportOpen)}
-                                        title="More options"
-                                    >
-                                        <MoreHorizontal className="w-4 h-4" />
-                                    </Button>
-                                    {isExportOpen && (
-                                        <div className="absolute right-0 top-full mt-2 w-52 bg-background border border-border rounded-xl shadow-lg p-1 animate-in fade-in slide-in-from-top-1 duration-200 z-50">
-                                            <Link 
-                                                href="/exports" 
-                                                className="w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group"
-                                            >
-                                                <FileText className="w-3.5 h-3.5 text-muted-foreground group-hover:text-brand" /> 
-                                                {t("goToExportCenter") || "Go to Draft Studio"}
-                                            </Link>
-                                            <div className="h-px bg-border my-1" />
-                                            <a 
-                                                href={source.url === "#" ? undefined : source.url} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer" 
-                                                className={cn(
-                                                    "w-full text-left px-3 py-2 text-xs hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group",
-                                                    source.url === "#" && "opacity-30 cursor-not-allowed pointer-events-none"
-                                                )}
-                                            >
-                                                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-brand" /> 
-                                                {t("visitOriginalSource") || "Visit Original Source"}
-                                            </a>
-                                            <div className="h-px bg-border my-1" />
-                                            <button 
-                                                onClick={handleDelete}
-                                                className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 rounded-lg transition-colors flex items-center gap-2 group"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5 text-red-400 group-hover:text-red-600" /> 
-                                                {t("delete") || "Delete Source"}
-                                            </button>
+                    {/* ─── SOURCE HEADER ─── */}
+                    <div className="flex flex-col gap-8 pb-4">
+                        <div className="space-y-2.5">
+                            <div className="flex items-center gap-2 mb-1">
+                                <Badge variant="secondary" className="bg-brand/10 text-brand border-brand/20 uppercase tracking-widest text-[10px] h-5 px-2 font-bold italic">
+                                    {source.source_type || "Source"}
+                                </Badge>
+                                {source.status === "done" && (
+                                    <Badge variant="success" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 uppercase tracking-widest text-[10px] h-5 px-2 font-bold">
+                                        Completed
+                                    </Badge>
+                                )}
+                            </div>
+                            <h1 className="text-4xl font-bold tracking-tight text-foreground font-serif leading-tight max-w-4xl">
+                                {source.title}
+                            </h1>
+                        </div>
+
+                        {/* ─── SOURCE SUMMARY OVERVIEW ─── */}
+                        {source.status === "done" && (!!stageResults.summary || !!stageResults.insights || !!stageResults.qa) && (
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-4 duration-700">
+                                <div className="lg:col-span-2 p-8 rounded-[2rem] bg-zinc-950 border border-zinc-900 shadow-2xl shadow-brand/5">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="w-10 h-10 rounded-2xl bg-brand/10 flex items-center justify-center border border-brand/20">
+                                            <FileText className="w-5 h-5 text-brand" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-xl font-bold text-white font-serif tracking-tight">Source Summary</h2>
+                                            <p className="text-[11px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">Automated Intelligence Synthesis</p>
+                                        </div>
+                                    </div>
+                                    <div className="prose prose-invert prose-sm max-w-none">
+                                        {stageResults.summary ? (
+                                            <StageResultPanel stageId="summary" data={stageResults.summary as Record<string, unknown>} />
+                                        ) : stageResults.insights ? (
+                                             <StageResultPanel stageId="insights" data={stageResults.insights as Record<string, unknown>} />
+                                        ) : (
+                                            <p className="text-zinc-500 italic text-xs">Synthesis details arriving shortly...</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="lg:col-span-1">
+                                    {stageResults.qa ? (
+                                        <DQMCard dqm={stageResults.qa as DQMData} variant="full" />
+                                    ) : (
+                                        <div className="h-full p-8 rounded-[2rem] bg-zinc-900/50 border border-zinc-800 flex flex-col items-center justify-center text-center gap-3">
+                                            <ShieldCheck className="w-8 h-8 text-zinc-700" />
+                                            <p className="text-xs text-zinc-500">Quality Matrix pending pipeline completion</p>
                                         </div>
                                     )}
                                 </div>
                             </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Badge variant="secondary">{source.channel || source.source_type || "Source"}</Badge>
-                        </div>
+                        )}
                     </div>
 
                     {/* Metadata Row — Now spans full width above the content grid */}
@@ -816,7 +1007,7 @@ export default function SourceMissionControl() {
                             <BarChart3 className="w-3.5 h-3.5 text-muted-foreground/70" />
                             <span className="text-muted-foreground">{t("qualScore")}</span>
                             <span className={cn("font-semibold tabular-nums", source.score >= 80 || (source.score >= 8 && source.score <= 10) ? "text-emerald-600" : source.score >= 60 || (source.score >= 6 && source.score <= 7) ? "text-amber-600" : source.score > 0 ? "text-red-500" : "text-muted-foreground")}>
-                                {source.score > 0 ? (source.score > 10 ? `${source.score}/100` : `${source.score}/10`) : <span className="opacity-70 font-normal italic">{t("pending")}...</span>}
+                                {source.score > 0 ? (source.score > 10 ? `${source.score}/100` : `${source.score}/10`) : (stageResults.qa ? <span className="text-muted-foreground opacity-50">Calculating...</span> : <span className="opacity-70 font-normal italic">{t("pending")}...</span>)}
                             </span>
                             {source.score > 0 && (
                                 <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", source.score >= 6 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600")}>
@@ -840,7 +1031,7 @@ export default function SourceMissionControl() {
                                         <Button
                                             variant="default"
                                             size="sm"
-                                            className="gap-1.5 h-8 text-[12px] rounded-lg font-bold bg-foreground text-background hover:bg-foreground/90 shadow-lg shadow-foreground/10 transition-all duration-200"
+                                            className="gap-1.5 h-8 text-[12px] rounded-lg font-bold bg-zinc-900 dark:bg-zinc-100 text-zinc-100 dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-lg shadow-zinc-500/10 transition-all duration-200"
                                             onClick={runFullPipeline}
                                             disabled={isRunningAll || !!executingStage}
                                         >
@@ -877,10 +1068,10 @@ export default function SourceMissionControl() {
                                                     
                                                     {/* Stage Node (Circle Indicator) */}
                                                     <div className={cn(
-                                                        "relative z-10 w-[26px] h-[26px] rounded-full flex items-center justify-center transition-all duration-300 bg-white border-2 mt-3",
-                                                        isCompleted && "bg-emerald-500 border-emerald-500 text-white shadow-sm shadow-emerald-200",
-                                                        isActive && "bg-white border-emerald-500 text-emerald-500 ring-4 ring-emerald-50 ring-offset-0",
-                                                        isLocked && "bg-white border-border/60 text-muted-foreground/30",
+                                                        "relative z-10 w-[26px] h-[26px] rounded-full flex items-center justify-center transition-all duration-300 bg-background border-2 mt-3",
+                                                        isCompleted && "bg-emerald-500 border-emerald-500 text-white shadow-sm shadow-emerald-500/20",
+                                                        isActive && "bg-background border-emerald-500 text-emerald-500 ring-4 ring-emerald-500/10 ring-offset-0",
+                                                        isLocked && "bg-background border-border/60 text-muted-foreground/30",
                                                         isExecuting && "animate-pulse"
                                                     )}>
                                                         {isCompleted ? (
@@ -909,9 +1100,13 @@ export default function SourceMissionControl() {
                                                                     {stage.label}
                                                                 </h3>
                                                                 <p className="text-[13px] text-muted-foreground/70 leading-relaxed max-w-md">
-                                                                    {stage.id === "transcript" && (source as any).transcriptStatus === "unavailable" 
+                                                                    {stage.id === "transcript" && source.transcriptStatus === "unavailable" 
                                                                         ? "Transcript is unavailable for this source. Pipeline stopped."
-                                                                        : stage.description}
+                                                                        : isActive && stage.id === "angle"
+                                                                          ? (INTENT_DESCRIPTIONS[intentType] || stage.description)
+                                                                          : stage.id === "draft" 
+                                                                            ? `Generate ${intentType.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())} for ${intentAudience.replace(/_/g, " ")} target.`
+                                                                            : stage.description}
                                                                 </p>
                                                             </div>
 
@@ -919,21 +1114,21 @@ export default function SourceMissionControl() {
                                                             {isActive && stage.apiEndpoint && (
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); executeStage(stage) }}
-                                                                    disabled={isExecuting || (stage.id === "transcript" && (source as any).transcriptStatus === "unavailable")}
+                                                                    disabled={isExecuting || (stage.id === "transcript" && source.transcriptStatus === "unavailable")}
                                                                     className={cn(
                                                                         "text-[13px] flex items-center gap-1.5 font-medium transition-all",
-                                                                        (stage.id === "transcript" && (source as any).transcriptStatus === "unavailable")
+                                                                        (stage.id === "transcript" && source.transcriptStatus === "unavailable")
                                                                             ? "text-red-500 cursor-not-allowed"
                                                                             : "text-brand hover:underline"
                                                                     )}
                                                                 >
                                                                     {isExecuting ? <><Loader2 className="w-3 h-3 animate-spin" /><span>Executing...</span></> : 
-                                                                     (stage.id === "transcript" && (source as any).transcriptStatus === "unavailable") ? 
+                                                                     (stage.id === "transcript" && source.transcriptStatus === "unavailable") ? 
                                                                      <span>Unavailable</span> : <span>Execute stage</span>}
                                                                 </button>
                                                             )}
                                                             
-                                                            {(isCompleted || (isActive && hasResult)) && (
+                                                            {Boolean((isCompleted || (isActive && hasResult)) && (stage.id !== 'draft' || !!stageResults.draft)) && (
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); openPanel(stage) }}
                                                                     title="View stage results"
@@ -946,8 +1141,8 @@ export default function SourceMissionControl() {
                                                         </div>
                                                     </div>
 
-                                                    {/* Writing Intent Setup moved to Angle Stage Checkpoint */}
-                                                    {stage.id === "angle" && !isCompleted && isActive && (
+                                                    {/* Writing Intent Setup moved to Angle Stage Checkpoint - Always visible when stage is selected or done */}
+                                                    {stage.id === "angle" && isActive && (
                                                         <div className="mt-4 p-6 rounded-2xl bg-card border border-border/80 shadow-soft animate-in fade-in slide-in-from-top-2 flex flex-col gap-4 max-w-2xl" onClick={e => e.stopPropagation()}>
                                                             <div className="flex items-center gap-2 mb-1">
                                                                 <Bot className="w-4 h-4 text-brand" />
@@ -959,10 +1154,11 @@ export default function SourceMissionControl() {
                                                                     <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Format</label>
                                                                     <select
                                                                         value={intentType}
-                                                                        onChange={(e) => setIntentType(e.target.value)}
+                                                                        onChange={(e) => { setIntentType(e.target.value); invalidateStrategy(); }}
                                                                         title="Select content format"
                                                                         className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-no-repeat bg-[right_0.5rem_center]"
                                                                     >
+                                                                        <option value="technical_explainer">Technical Explainer</option>
                                                                         <option value="blog_article">Blog Article</option>
                                                                         <option value="essay">Thematic Essay</option>
                                                                         <option value="technical_breakdown">Technical Breakdown</option>
@@ -974,7 +1170,7 @@ export default function SourceMissionControl() {
                                                                     <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Audience</label>
                                                                     <select
                                                                         value={intentAudience}
-                                                                        onChange={(e) => setIntentAudience(e.target.value)}
+                                                                        onChange={(e) => { setIntentAudience(e.target.value); invalidateStrategy(); }}
                                                                         title="Select target audience"
                                                                         className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-no-repeat bg-[right_0.5rem_center]"
                                                                     >
@@ -989,7 +1185,7 @@ export default function SourceMissionControl() {
                                                                     <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Tone</label>
                                                                     <select
                                                                         value={intentTone}
-                                                                        onChange={(e) => setIntentTone(e.target.value)}
+                                                                        onChange={(e) => { setIntentTone(e.target.value); invalidateStrategy(); }}
                                                                         title="Select voice and tone"
                                                                         className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-no-repeat bg-[right_0.5rem_center]"
                                                                     >

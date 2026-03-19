@@ -13,7 +13,6 @@ import {
 } from "lucide-react"
 import { signOut } from "next-auth/react"
 import { useLanguage, Language } from "@/context/LanguageContext"
-import { ThemeToggle } from "./ThemeToggle"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname()
@@ -108,7 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                                 : "text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
                                         )}
                                     >
-                                        <item.icon className={cn("h-4 w-4", isActive ? "text-brand" : "text-muted-foreground/70")} />
+                                        <item.icon className={cn("h-4 w-4", isActive ? "text-white dark:text-black" : "text-muted-foreground/70")} />
                                         {item.name}
                                     </Link>
                                 )
@@ -146,7 +145,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             Distill Engine <span className="text-border">/</span> <span className="text-foreground font-serif font-medium">{breadcrumb}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                            <ThemeToggle />
                             <div className="relative" ref={langRef}>
                                 <button 
                                     onClick={() => setIsLangOpen(!isLangOpen)}

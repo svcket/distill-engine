@@ -61,14 +61,24 @@ class PodcastAdapter(BaseAdapter):
         
         # Fast Path: return shell if requested
         if shell:
+            # If it's a direct audio file, we don't need to resolve anything
+            is_direct = url.lower().endswith(".mp3") or ".mp3?" in url.lower() or url.lower().endswith(".m4a") or ".m4a?" in url.lower()
+            target_title = "Direct Audio Source" if is_direct else None
+            
+            if not is_direct:
+                # Try a VERY quick resolution with short timeout
+                try:
+                    _, target_title, _ = self._resolve_to_rss_feed_and_title(url)
+                except: pass
+                
             return NormalizedSource(
                 source_id=source_id,
                 source_type="podcast",
-                title="Podcast Episode (Pending...)",
+                title=target_title or "Podcast Episode",
                 creator="Podcast",
                 url=url,
                 transcript_status="unknown",
-                source_confidence=0.5,
+                source_confidence=0.7,
                 is_shell=True,
             )
 

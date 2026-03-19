@@ -16,38 +16,80 @@ export async function GET() {
             orderBy: { createdAt: 'desc' }
         })
 
-        const sources = data.map((s: any) => ({
-            ...s,
-            completedStages: s.completedStages ? s.completedStages.split(',') : []
-        }))
+        // Hydration fix: If a source is missing metrics or title, try to find them in the .tmp artifacts
+        const webDir = path.resolve(process.cwd())
+        const baseDir = webDir.endsWith('web') 
+            ? path.resolve(webDir, '../execution/.tmp')
+            : path.resolve(webDir, 'execution/.tmp')
 
-
-        // Hydration fix: If a source is nameless, try to find its title in the .tmp metadata
-        const baseDir = path.resolve(process.cwd(), '../execution/.tmp/sources')
-
-        for (const source of sources) {
-            if (source.title === 'Unknown Source' || !source.title) {
-                const metaPath = path.join(baseDir, `${source.id}.json`)
+        const hydratedSources = data.map((s: any) => {
+            const source = {
+                ...s,
+                source_type: s.type, // Map 'type' to 'source_type' for frontend consistency
+                completedStages: s.completedStages ? s.completedStages.split(',') : []
+            }
+            
+            // 1. Hydrate Title
+            if (source.title === 'Unknown Source' || !source.title || source.title === 'New Source') {
+                const metaPath = path.join(baseDir, 'transcripts', source.id, 'metadata.json')
                 if (fs.existsSync(metaPath)) {
                     try {
-                        const raw = fs.readFileSync(metaPath, 'utf-8')
-                        const meta = JSON.parse(raw)
-                        const items = Array.isArray(meta) ? meta : [meta]
-                        const item = items[0]
-                        if (item && item.title && item.title !== 'Unknown Source') {
-                            // Local mutation for current response only
-                            source.title = item.title
+                        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+                        if (meta.title && meta.title !== 'Unknown Source') {
+                            source.title = meta.title
                         }
-                    } catch (e) { 
-                        console.error(`[Store API] Error hydration for ${source.id}:`, e)
-                    }
+                    } catch (e) { /* ignore */ }
                 }
             }
-        }
 
-        return NextResponse.json({ sources })
-    } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Unknown error'
+            // 2. Hydrate Duration
+            if (!source.duration || source.duration === '—') {
+                const transcriptPath = path.join(baseDir, 'transcripts', source.id, `${source.id}_raw.json`)
+                if (fs.existsSync(transcriptPath)) {
+                    try {
+                        const transcriptData = JSON.parse(fs.readFileSync(transcriptPath, 'utf-8'));
+                        let totalSecs = 0;
+                        if (Array.isArray(transcriptData) && transcriptData.length > 0) {
+                            const last = transcriptData[transcriptData.length - 1];
+                            totalSecs = (last.start || 0) + (last.duration || 0);
+                        } else {
+                            const payload = transcriptData.payload || transcriptData.data || transcriptData.result || transcriptData;
+                            totalSecs = payload.duration || payload.metadata?.duration || payload.result?.duration;
+                        }
+
+                        if (totalSecs > 0) {
+                            const h = Math.floor(totalSecs / 3600);
+                            const m = Math.floor((totalSecs % 3600) / 60);
+                            const s_val = Math.floor(totalSecs % 60);
+                            source.duration = h > 0 
+                                ? `${h}:${String(m).padStart(2, '0')}:${String(s_val).padStart(2, '0')}`
+                                : `${m}:${String(s_val).padStart(2, '0')}`;
+                        }
+                    } catch (e) { /* ignore */ }
+                }
+            }
+
+            // 3. Hydrate DQM Score
+            if (!source.score || source.score === 0) {
+                const evalPath = path.join(baseDir, 'evaluations', `${source.id}_eval.json`)
+                if (fs.existsSync(evalPath)) {
+                    try {
+                        const evalData = JSON.parse(fs.readFileSync(evalPath, 'utf-8'))
+                        const dqmPayload = evalData.payload || evalData.data || evalData
+                        const score = dqmPayload?.scores?.publishability || dqmPayload?.publishability
+                        if (score) {
+                            source.score = score
+                        }
+                    } catch (e) { /* ignore */ }
+                }
+            }
+            
+            return source
+        })
+
+        return NextResponse.json({ sources: hydratedSources })
+    } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error'
         return NextResponse.json({ error: msg }, { status: 500 })
     }
 }

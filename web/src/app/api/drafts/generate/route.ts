@@ -139,7 +139,7 @@ export async function POST(request: Request) {
                                 prisma.draft.create({
                                     data: {
                                         userId: userId,
-                                        title: `Draft for ${source.title}`,
+                                        title: source.title || `Draft for ${sourceId}`,
                                         content: draftContent
                                     }
                                 }),
@@ -210,7 +210,7 @@ export async function POST(request: Request) {
         prisma.draft.create({
             data: {
                 userId: userId,
-                title: `Draft for ${source.title}`,
+                title: source.title || `Draft for ${sourceId}`,
                 content: result.data || result
             }
         }),

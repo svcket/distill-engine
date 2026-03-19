@@ -7,14 +7,17 @@ export interface SourceCandidate {
     url: string;
     duration: string;
     published: string;
+    createdAt: string;
     status: Status;
     score: number;
+    dqmScore?: number;
+    type?: string;
     source_type?: string;
     thumbnail?: string;
     completedStages?: string[];
     processedAt?: string;
-    transcriptStatus?: 'pending' | 'available' | 'unavailable' | 'transcribed' | 'rescued_text';
-    transcript_status?: 'pending' | 'available' | 'unavailable' | 'transcribed' | 'rescued_text';
+    transcriptStatus?: 'pending' | 'available' | 'unavailable' | 'transcribed' | 'rescued_text' | 'failed';
+    transcript_status?: 'pending' | 'available' | 'unavailable' | 'transcribed' | 'rescued_text' | 'failed';
 }
 
 export interface LibraryInsight {
@@ -50,6 +53,7 @@ export const recentSources: SourceCandidate[] = [
         url: 'https://youtube.com/watch?v=1',
         duration: '1:02:14',
         published: '3 days ago',
+        createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
         status: 'done',
         score: 9.4,
     },
@@ -60,6 +64,7 @@ export const recentSources: SourceCandidate[] = [
         url: 'https://youtube.com/watch?v=1',
         duration: '45:00',
         published: '1 day ago',
+        createdAt: new Date(Date.now() - 86400000).toISOString(),
         status: 'processing',
         score: 8.8,
     },
@@ -70,6 +75,7 @@ export const recentSources: SourceCandidate[] = [
         url: 'https://youtube.com/watch?v=1',
         duration: '22:10',
         published: '5 days ago',
+        createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
         status: 'pending',
         score: 7.2,
     },
@@ -80,6 +86,7 @@ export const recentSources: SourceCandidate[] = [
         url: 'https://youtube.com/watch?v=1',
         duration: '1:15:30',
         published: '2 weeks ago',
+        createdAt: new Date(Date.now() - 86400000 * 14).toISOString(),
         status: 'rejected',
         score: 4.5,
     },

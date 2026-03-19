@@ -8,7 +8,7 @@ import { SourceCandidate } from "@/lib/mockData"
 import Link from "next/link"
 import {
     Plus, Search, ChevronDown,
-    Play, Grid, List, Trash2, ArrowRight, ChevronRight
+    Play, Grid, List, Trash2
 } from "lucide-react"
 import { UnifiedSourceInput } from "@/components/workspace/UnifiedSourceInput"
 import { cn } from "@/lib/utils"
@@ -22,9 +22,11 @@ type Tab = "processed" | "processing" | "unprocessed"
 type ViewMode = "grid" | "list"
 
 function getTab(source: SourceCandidate): Tab {
-    const completed = source.completedStages || []
-    if (completed.includes("export")) return "processed"
-    if (source.status === "processing" || (completed.length > 1 && !completed.includes("export"))) return "processing"
+    const completedArr = source.completedStages || []
+    // Processed: Either explicitly marked 'done' or has the final 'qa'/'export' stages completed
+    if (source.status === "done" || completedArr.includes("qa") || completedArr.includes("export")) return "processed"
+    // Processing: Either explicitly 'processing' or has some stages started
+    if (source.status === "processing" || (completedArr.length > 0 && !completedArr.includes("qa"))) return "processing"
     return "unprocessed"
 }
 
@@ -37,20 +39,38 @@ function scoreBorder(s: number) {
 
 function getPlatformBadge(platform: string) {
     const p = (platform || "").toLowerCase()
-    if (p.includes("youtube")) return "bg-red-50 text-red-700 border-red-100"
-    if (p.includes("twitter") || p.includes("x.com")) return "bg-sky-50 text-sky-700 border-sky-100"
-    if (p.includes("web") || p.includes("article") || p.includes("rss")) return "bg-emerald-50 text-emerald-700 border-emerald-100"
-    if (p.includes("podcast") || p.includes("spotify") || p.includes("apple")) return "bg-purple-50 text-purple-700 border-purple-100"
-    return "bg-slate-50 text-slate-700 border-slate-100"
+    
+    // 1. Check for specific high-priority platforms first to avoid Youtube false positives
+    if (p.includes("x.com") || p.includes("twitter.com") || p.includes("t.co")) return "bg-sky-50 text-sky-700 border-sky-100 dark:bg-sky-500/10 dark:text-sky-400 dark:border-sky-500/20"
+    if (p.includes("substack.com") || p.includes("substack")) return "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
+    if (p.includes("podcast") || p.includes("spotify") || p.includes("apple.com") || p.includes("audio")) return "bg-purple-50 text-purple-700 border-purple-100 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20"
+    
+    // 2. Youtube detection
+    if (p.includes("youtube.com") || p.includes("youtu.be")) return "bg-red-50 text-red-700 border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20"
+    
+    // 3. General web/articles
+    if (p.includes("http") || p.includes("web") || p.includes("article")) return "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
+    
+    return "bg-slate-50 text-slate-700 border-slate-100 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
 }
 
 function formatDisplayDate(dateStr: string) {
-    if (!dateStr || dateStr === "—" || dateStr === "Recently" || dateStr === "Today") return dateStr
+    if (!dateStr || dateStr === "—" || dateStr === "Recently" || dateStr === "Today") {
+        return "Just now"
+    }
     try {
         const date = parseISO(dateStr)
+        const now = new Date()
+        const diff = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+        if (diff < 60) return "Just now"
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+        if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`
+        
         return formatDate(date, "MMM dd, yyyy")
     } catch {
-        return dateStr
+        return "Just now"
     }
 }
 
@@ -115,7 +135,7 @@ export default function SourcesPage() {
 
     const filteredSources = sources.filter(s => {
         const matchTab = getTab(s) === activeTab
-        const sType = (s.source_type || s.type || "Unknown").toLowerCase()
+        const sType = (s.source_type || "Unknown").toLowerCase()
         
         let matchPlatform = platformFilter === "All"
         if (!matchPlatform) {
@@ -145,36 +165,51 @@ export default function SourcesPage() {
         }
     }
 
-    const handleFileSelect = (file: File) => {
-        const isAudio = file.type.startsWith('audio');
-        const typeLabel = isAudio ? "Audio" : "Video";
-        
+    const handleFileSelect = async (file: File) => {
+        setIsIngesting(true);
         setIngestStatus({
             type: 'success',
-            message: `Importing local ${typeLabel.toLowerCase()} file: ${file.name}...`
+            message: `Uploading ${file.name}...`
         });
         
-        // Simulate adding to list
-        const newId = `local-${Date.now()}`;
-        const mockSource: SourceCandidate = {
-            id: newId,
-            title: file.name.split('.')[0],
-            channel: "Local Device",
-            url: "file://local-import",
-            published: formatDate(new Date(), "MMM dd, yyyy"),
-            duration: "Processing...",
-            status: "processing",
-            score: 0,
-            completedStages: ["judge"]
-        };
-        
-        setSources(prev => [mockSource, ...prev]);
-        
-        // Auto-clear status
-        setTimeout(() => setIngestStatus(null), 3000);
-        
-        // Navigate to detail after a short delay
-        setTimeout(() => router.push(`/sources/${newId}`), 1000);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            // 1. Upload
+            const uploadRes = await fetch("/api/sources/upload", {
+                method: "POST",
+                body: formData
+            });
+            const uploadData = await uploadRes.json();
+            
+            if (!uploadRes.ok) throw new Error(uploadData.error || "Upload failed");
+            
+            // 2. Ingest
+            setIngestStatus({ type: 'success', message: "Processing file metadata..." });
+            const ingestRes = await fetch("/api/sources/ingest", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: uploadData.url })
+            });
+            const ingestData = await ingestRes.json();
+            
+            if (!ingestRes.ok) throw new Error(ingestData.error || "Ingest failed");
+            
+            // 3. Redirect
+            if (ingestData.result?.id) {
+                router.push(`/sources/${ingestData.result.id}`);
+            }
+        } catch (err: unknown) {
+            console.error("Local import failed:", err);
+            setIngestStatus({ 
+                type: 'error', 
+                message: err instanceof Error ? err.message : "Failed to import local file." 
+            });
+        } finally {
+            setIsIngesting(false);
+            setTimeout(() => setIngestStatus(null), 5000);
+        }
     }
 
     return (
@@ -392,23 +427,23 @@ export default function SourcesPage() {
                                         
                                         <div className="flex items-center gap-2 mb-4">
                                             <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center overflow-hidden text-[8px]">
-                                                <img src={`https://www.google.com/s2/favicons?domain=${(source.source_type || "youtube").toLowerCase()}.com&sz=32`} alt="" className="w-3 h-3" />
+                                                <img src={`https://www.google.com/s2/favicons?domain=${(source.source_type || source.type || "youtube").toLowerCase()}.com&sz=32`} alt="" className="w-3 h-3" />
                                             </div>
-                                            <span className="text-xs font-medium text-muted-foreground">{source.channel}</span>
+                                            <span className="text-xs font-medium text-muted-foreground">{source.channel || (source.source_type || source.type || "Source")}</span>
                                         </div>
                                     </div>
                                 </Link>
 
                                 <div className="px-5 pb-5 mt-auto pt-4 border-t border-border/50 flex flex-col gap-2">
                                     <div className="flex items-center justify-between">
-                                        <div className={cn("px-2 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider", scoreBorder(source.score), scoreColor(source.score))}>
-                                            QUAL SCORE: {source.score > 0 ? `${source.score}/10` : "--"}
+                                        <div className={cn("px-2 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider", scoreBorder(source.dqmScore || source.score || 0), scoreColor(source.dqmScore || source.score || 0))}>
+                                            DQM Score: {source.dqmScore || source.score ? `${source.dqmScore || source.score}/100` : "--"}
                                         </div>
                                     </div>
                                     <div className="flex flex-col gap-1">
                                         <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-serif font-medium uppercase tracking-tight">
-                                            <span className="opacity-60">{t("dateAdded")}:</span>
-                                            <span className="text-foreground/70">{formatDisplayDate(source.processedAt || source.published) || "Today"}</span>
+                                            <span className="opacity-60">DISTILLED:</span>
+                                            <span className="text-muted-foreground mr-1.5">{formatDisplayDate(source.createdAt)}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -424,16 +459,15 @@ export default function SourcesPage() {
                         ))}
                     </div>
                 ) : (
-                    <div className="border border-border rounded-xl bg-card overflow-hidden animate-in fade-in duration-500 text-slate-900 shadow-sleek">
+                    <div className="border border-border rounded-xl bg-transparent overflow-hidden animate-in fade-in duration-500 shadow-sleek">
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-muted/10 border-b border-border/50">
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest font-serif">{t("source")}</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest text-center font-serif">Platform</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest text-center font-serif">QUAL SCORE</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest text-center font-serif">{t("dateAdded")}</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest text-right font-serif">View</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest text-right font-serif">{t("actions")}</th>
+                                    <th className="px-6 py-4 text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">{t("source")}</th>
+                                    <th className="px-6 py-4 text-[11px] font-bold text-foreground/80 uppercase tracking-widest text-center font-serif">Platform</th>
+                                    <th className="px-6 py-4 text-[11px] font-bold text-foreground/80 uppercase tracking-widest text-center font-serif">Duration</th>
+                                    <th className="px-6 py-4 text-[11px] font-bold text-foreground/80 uppercase tracking-widest text-center font-serif">DQM Score</th>
+                                    <th className="px-6 py-4 text-[11px] font-bold text-foreground/80 uppercase tracking-widest text-right font-serif">{t("actions")}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border/50">
@@ -441,7 +475,7 @@ export default function SourcesPage() {
                                     <tr 
                                         key={source.id} 
                                         onClick={() => router.push(`/sources/${source.id}`)}
-                                        className="group hover:bg-muted/20 transition-colors cursor-pointer"
+                                        className="group hover:bg-muted/5 transition-colors cursor-pointer"
                                     >
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-4">
@@ -449,32 +483,31 @@ export default function SourcesPage() {
                                                     {source.thumbnail ? <img src={source.thumbnail} alt="" className="w-full h-full object-cover" /> : <Play className="w-4 h-4 m-auto text-muted-foreground/20 mt-2" />}
                                                 </div>
                                                 <div className="min-w-0">
+                                                <div className="flex flex-col">
                                                     <Link href={`/sources/${source.id}`} className="text-sm font-medium text-foreground hover:text-brand transition-colors block truncate pr-4">
                                                         {source.title}
                                                     </Link>
-                                                    <p className="text-xs text-muted-foreground truncate">{source.channel}</p>
+                                                    <span className="text-[10px] text-muted-foreground tabular-nums uppercase tracking-tight">
+                                                        {formatDisplayDate(source.createdAt)}
+                                                    </span>
+                                                </div>
                                                 </div>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-center">
-                                            <Badge variant="outline" className={cn("text-[10px] font-bold uppercase tracking-wider h-5 shadow-micro", getPlatformBadge(source.type || source.source_type || "YouTube"))}>
-                                                {source.type || source.source_type || "YouTube"}
+                                            <Badge variant="outline" className={cn("text-[10px] font-bold uppercase tracking-wider h-5 shadow-micro", getPlatformBadge(source.source_type || source.type || "unknown"))}>
+                                                {source.source_type || source.type || "unknown"}
                                             </Badge>
                                         </td>
                                         <td className="px-6 py-4 text-center">
-                                            <span className={cn("text-sm font-serif font-bold italic", scoreColor(source.score))}>
-                                                {source.score > 0 ? `${source.score}/10` : "--"}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex flex-col items-center gap-1">
-                                                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                                    <span className="opacity-60">{t("dateAdded")}:</span>
-                                                    <span className="font-medium text-foreground/70">{formatDisplayDate(source.processedAt || source.published) || "Today"}</span>
-                                                </div>
+                                            <div className="text-sm font-medium text-muted-foreground tabular-nums">
+                                                {source.duration || "--"}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-right">
+                                        <td className="px-6 py-4 text-center">
+                                            <div className={cn("text-sm font-bold tabular-nums", !source.dqmScore && !source.score ? "text-muted-foreground/30" : scoreColor(source.dqmScore || source.score || 0))}>
+                                                {source.dqmScore || source.score ? `${source.dqmScore || source.score}/100` : "--"}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end">

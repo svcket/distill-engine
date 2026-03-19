@@ -280,12 +280,17 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
     except Exception:
         pass
 
-    # 1. NEW: Check if the URL is actually a local file (e.g. from RecordingAdapter)
-    # MOVE this to top to avoid yt-dlp/subtitle logic for local files
+    # 1. NEW: Check if the URL is actually a local file or upload:// URI
     audio_file_path = None
-    if os.path.exists(source_url) and os.path.isfile(source_url):
-        print(f"[{source_id}] Source is a local file: {source_url}. Skipping download logic.")
-        audio_file_path = source_url
+    
+    # Resolve upload:// protocol
+    resolved_url = source_url
+    if source_url.startswith("upload://"):
+        resolved_url = source_url.replace("upload://", "")
+        
+    if os.path.exists(resolved_url) and os.path.isfile(resolved_url):
+        print(f"[{source_id}] Source is a local file: {resolved_url}. Skipping download logic.")
+        audio_file_path = resolved_url
         is_local_source = True
     else:
         is_local_source = False
@@ -301,10 +306,11 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
         # 1. NEW: Try to fetch native subtitles first (Lightening Speed)
         sub_path_template = os.path.join(output_dir, f"{source_id}_subs")
         # Normalize Vimeo URLs to player-embed if it's a standard link to avoid login walls
-        if "vimeo.com" in source_url and "/video/" not in source_url and "player.vimeo.com" not in source_url:
-            v_id = extract_video_id(source_url)
-            if v_id:
-                source_url = f"https://player.vimeo.com/video/{v_id}"
+        # Use a more robust extraction to handle hidden/private videos if possible
+        if "vimeo.com" in source_url:
+            v_match = re.search(r"vimeo\.com/(?:video/)?(\d+)", source_url)
+            if v_match:
+                source_url = f"https://player.vimeo.com/video/{v_match.group(1)}"
 
         sub_cmd = [
             "python3", "-m", "yt_dlp",
@@ -312,8 +318,6 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
             "--no-check-certificates",
             "--prefer-free-formats",
             "--no-warnings",
-            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "--add-header", "Referer:https://vimeo.com/",
             "--write-subs",
             "--sub-langs", "en.*,.*-en.*",
             "--sub-format", "vtt/srt/best",
@@ -322,7 +326,14 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
         ]
         
         try:
-            subprocess.run(sub_cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+            # Add Referer for Vimeo especially
+            headers = [
+                "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "--add-header", "Referer:https://vimeo.com/",
+                "--add-header", "Origin:https://vimeo.com/"
+            ]
+            
+            subprocess.run(sub_cmd + headers, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
             # Look for downloaded subs
             sub_files = glob.glob(f"{sub_path_template}.*.vtt") + glob.glob(f"{sub_path_template}.*.srt")
             if sub_files:
