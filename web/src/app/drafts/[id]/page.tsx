@@ -313,8 +313,10 @@ export default function DraftStudioPage() {
 
                     <Card className="border-border">
                         <CardHeader className="border-b bg-muted/20">
-                            <CardTitle className="font-serif text-xl">{draft.title}</CardTitle>
-                            <CardDescription>{draft.word_count} Words</CardDescription>
+                            <CardDescription className="flex items-center gap-2">
+                                <FileText className="w-4 h-4" />
+                                <span>{draft.word_count || (draft.content?.split(/\s+/).length || 0)} Words</span>
+                            </CardDescription>
                         </CardHeader>
                         <CardContent className="p-8 prose prose-zinc max-w-none">
                             <div className="whitespace-pre-wrap font-serif text-foreground/90 leading-relaxed">

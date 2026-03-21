@@ -74,6 +74,12 @@ model UserPreferences {
   autoStartPipeline Boolean @default(false)
   generateSummaries Boolean @default(true)
   
+  // Notifications
+  notifyInApp       Boolean  @default(true)
+  notifyEmailDigest String   @default("daily")
+  notifyPush        Boolean  @default(false)
+  notifyCritical    Boolean  @default(true)
+  
   updatedAt        DateTime @updatedAt
 }
 

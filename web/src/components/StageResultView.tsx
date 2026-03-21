@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/Badge"
 import { cn } from "@/lib/utils"
-import { BarChart3, BookOpen, Lightbulb, MessageSquareQuote, Target, Zap } from "lucide-react"
+import { Loader2, AlertCircle, CheckCircle2, FileText, FastForward, Cpu, Target, PenTool, Layout, Box, Share2 as ShareIcon, Copy, Check, Download, Lightbulb, Zap, BookOpen, MessageSquareQuote, BarChart3, ChevronDown, ChevronUp } from "lucide-react"
 import DQMCard, { DQMData } from "./DQMCard"
 
-type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "export"
+type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "socialise" | "export"
 
 interface StageResultViewProps {
     stageId: StageId
@@ -341,9 +341,15 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
-                <Badge className="bg-brand/10 text-brand border-brand/20">{displayFormat}</Badge>
+                <Badge className="bg-brand/10 text-brand border-brand/20 flex items-center gap-1.5">
+                    {displayFormat}
+                    <ChevronDown className="w-3 h-3 opacity-60" />
+                </Badge>
                 {secondaryFormats.map((f, i) => (
-                    <Badge key={i} variant="secondary">{String(f).replace(/_/g, " ")}</Badge>
+                    <Badge key={i} variant="secondary" className="flex items-center gap-1.5">
+                        {String(f).replace(/_/g, " ")}
+                        <ChevronDown className="w-3 h-3 opacity-40" />
+                    </Badge>
                 ))}
             </div>
 
@@ -357,7 +363,10 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
             {audience && (
                 <div>
                     <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif mb-1">Target Audience</div>
-                    <p className="text-sm text-foreground/70">{audience}</p>
+                    <div className="flex items-center gap-2">
+                        <p className="text-sm text-foreground/70">{audience}</p>
+                        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground opacity-50" />
+                    </div>
                 </div>
             )}
 
@@ -384,84 +393,117 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
 
 
 
-function DraftResult({ data, isGenerating }: { data: any, isGenerating: boolean }) {
-    const [displayedContent, setDisplayedContent] = useState("")
+function DraftResult({ data, isGenerating = false, compact = false }: { data: Record<string, unknown>, isGenerating?: boolean, compact?: boolean }) {
+    const [displayedContent, setDisplayedContent] = useState(() => {
+        const d = (data?.result || data?.data || data) as Record<string, unknown>
+        const text = typeof d === 'string' ? d : (getStr(d, "content") || getStr(d, "text") || "")
+        return text
+    })
     
-    // Support both structured data from generate API and raw results from other stages
-    const d = (data?.result || data?.data || data) as any
-    const fullText = typeof d === 'string' ? d : (d?.content || d?.text || "")
-    const title = d?.title || ""
-    const wordCount = d?.word_count || 0
+    const d = (data?.result || data?.data || data) as Record<string, unknown>
+    const fullText = typeof d === 'string' ? d : (getStr(d, "content") || getStr(d, "text") || "")
+    const title = getStr(d, "title")
+    const wordCount = getNum(d, "word_count")
+
+    const stripHtml = (text: string) => {
+        if (!text) return '';
+        return text
+            .replace(/<[^>]*>?/gm, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .trim();
+    };
+
+    const cleanTitle = stripHtml(title || "");
     
     useEffect(() => {
-        if (!isGenerating) {
-            setDisplayedContent(fullText)
-            return
-        }
-
-        // If we are generating, catch up to current fullText but don't reset everything
-        // We'll use a simpler interval that just adds words as they arrive if needed
-        // but for high-fidelity we want a smooth rhythm
+        if (!isGenerating) return;
         const words = fullText.split(" ")
         const displayedWords = displayedContent.split(" ")
         
         if (words.length > displayedWords.length) {
             const nextWord = words[displayedWords.length]
             const timeout = setTimeout(() => {
-                setDisplayedContent(prev => prev + (prev ? " " : "") + nextWord)
+                setDisplayedContent((prev: string) => prev + (prev ? " " : "") + nextWord)
             }, 30)
             return () => clearTimeout(timeout)
         }
     }, [fullText, isGenerating, displayedContent])
 
-    if (!data) return null
+    if (!data) return <div className="p-8 text-center text-muted-foreground italic">No draft content available.</div>
+
+    const contentToDisplay = isGenerating ? displayedContent : fullText;
+    const blocks = contentToDisplay.split(/\n\n|\n(?=[A-Z][^:]+: [A-Z])/);
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-700">
-            {title && (
+            {cleanTitle && !compact && (
                 <div className="border-b border-border/40 pb-4 mb-2">
                     <h1 className="text-2xl font-bold text-foreground font-serif tracking-tight leading-tight">
-                        {title}
+                        {cleanTitle}
                     </h1>
                     <div className="flex items-center gap-2 mt-2">
                         <Badge variant="success" className="bg-brand/10 text-brand border-brand/20">Draft Article</Badge>
-                        {wordCount > 0 && <span className="text-xs text-muted-foreground font-medium">{wordCount} words</span>}
                         {isGenerating && <span className="text-xs text-brand animate-pulse">Drafting...</span>}
                     </div>
                 </div>
             )}
             
             <div className="prose prose-invert max-w-none prose-p:text-foreground/90 prose-p:leading-relaxed prose-headings:font-serif prose-headings:text-white relative">
-                {displayedContent.split("\n\n").map((line, i) => {
-                    const trimmed = line.trim()
+                {blocks.map((line: string, i: number) => {
+                    const originalTrimmed = line.trim()
+                    const trimmed = stripHtml(originalTrimmed)
                     if (!trimmed) return null
+
+                    const labelHeaderMatch = originalTrimmed.match(/^([A-Z][A-Za-z\s]+): ([A-Z].+)$/)
                     
-                    const isLastLine = i === displayedContent.split("\n\n").length - 1
+                    const cleanLine = trimmed.replace(/^#+\s+/, '').replace(/^title:\s*/i, '').trim();
+                    if (i === 0 && (cleanLine.toLowerCase() === cleanTitle.toLowerCase() || cleanLine.toLowerCase() === stripHtml(title || "").replace(/^#+\s+/, '').toLowerCase().trim())) {
+                        return null
+                    }
+
+                    if (originalTrimmed.startsWith("# ")) {
+                        return (
+                            <h1 key={i} className="text-2xl font-bold text-foreground mt-8 mb-4 font-serif tracking-tight border-b-2 border-brand/20 pb-2">
+                                {stripHtml(originalTrimmed.slice(2))}
+                            </h1>
+                        )
+                    }
+                    if (originalTrimmed.startsWith("## ")) {
+                        return (
+                            <h2 key={i} className="text-xl font-bold text-white mt-7 mb-3 font-serif tracking-tight border-b border-border/40 pb-1">
+                                {stripHtml(originalTrimmed.slice(3))}
+                            </h2>
+                        )
+                    }
+                    if (originalTrimmed.startsWith("### ")) {
+                        return (
+                            <h3 key={i} className="text-lg font-bold text-white mt-6 mb-2 font-serif tracking-tight">
+                                {stripHtml(originalTrimmed.slice(4))}
+                            </h3>
+                        )
+                    }
+                    if (labelHeaderMatch) {
+                        return (
+                            <div key={i} className="mt-8 mb-4">
+                                <h3 className="text-lg font-bold text-white font-serif tracking-tight border-l-4 border-brand pl-4 py-1 rounded-r-lg">
+                                    <span className="text-brand/60 text-xs font-sans uppercase tracking-[0.2em] block mb-0.5">{labelHeaderMatch[1]}</span>
+                                    {labelHeaderMatch[2]}
+                                </h3>
+                            </div>
+                        )
+                    }
+
+                    
+                    const isLastLine = i === blocks.length - 1
                     
                     return (
                         <div key={i} className="mb-4 relative">
-                            {trimmed.startsWith("# ") ? (
-                                <h1 className="text-2xl font-bold text-foreground mt-8 mb-4 font-serif tracking-tight border-b-2 border-brand/20 pb-2">
-                                    {trimmed.slice(2)}
-                                </h1>
-                            ) : trimmed.startsWith("## ") ? (
-                                <h2 className="text-xl font-bold text-white mt-7 mb-3 font-serif tracking-tight border-b border-border/40 pb-1">
-                                    {trimmed.slice(3)}
-                                </h2>
-                            ) : trimmed.startsWith("### ") ? (
-                                <h3 className="text-lg font-bold text-white mt-6 mb-2 font-serif tracking-tight">
-                                    {trimmed.slice(4)}
-                                </h3>
-                            ) : trimmed.startsWith("- ") ? (
-                                <ul className="list-disc ml-6 my-2">
-                                    <li className="text-sm text-foreground/90 marker:text-brand/50 pl-1">{trimmed.slice(2)}</li>
-                                </ul>
-                            ) : (
-                                <p className="text-base leading-relaxed">{trimmed}</p>
-                            )}
-                            
-                            {isGenerating && isLastLine && (
-                                <span className="inline-block w-2 h-5 bg-brand/60 ml-1 animate-pulse align-middle" />
+                            <p className="m-0">{trimmed}</p>
+                            {isLastLine && isGenerating && (
+                                <span className="inline-block w-1 h-4 bg-brand ml-1 animate-pulse" />
                             )}
                         </div>
                     )
@@ -513,23 +555,60 @@ function VisualResult({ data, compact }: { data: Record<string, unknown>; compac
     return (
         <div className="space-y-4">
             <p className="text-sm text-muted-foreground mb-4">
-                The visual planner has scanned the draft and determined optimal breakpoints for visual hooks. 
+                The **Visual Curator** has analyzed your draft and prepared suggested AI prompts for your visuals. Use these descriptions to generate high-impact graphics for your final write-up.
             </p>
-            <div className="space-y-3">
+            <div className="grid gap-3">
                 {suggestions.map((s, i) => {
                     const sg = s as Record<string, unknown>
                     const type = getStr(sg, "type").replace("_", " ").toUpperCase()
                     const desc = getStr(sg, "description")
+                    const engine = getStr(sg, "engine") || "dalle-3"
+                    const reasoning = getStr(sg, "reasoning")
+                    const prompt = getStr(sg, "prompt")
+                    
+                    const isNano = engine === "nano-banana"
+
                     return (
-                        <div key={i} className="p-3 rounded-xl border border-border/50 bg-muted/20 relative overflow-hidden group">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-brand/30" />
-                            <div className="pl-2">
-                                <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground/60 mb-1">{type}</p>
-                                <p className="text-sm font-medium text-foreground">{String(desc)}</p>
-                                {!!sg.content && (
-                                    <p className="text-xs text-muted-foreground mt-2 italic border-l-2 border-border/50 pl-2">
-                                        &quot;{String(sg.content)}&quot;
+                        <div key={i} className="p-4 rounded-xl border border-border/50 bg-muted/20 relative overflow-hidden group transition-all hover:bg-muted/30">
+                            <div className={cn(
+                                "absolute top-0 left-0 w-1 h-full",
+                                isNano ? "bg-amber-500/50" : "bg-brand/50"
+                            )} />
+                            <div className="pl-2 space-y-2">
+                                <div className="flex items-center justify-between gap-4">
+                                    <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground/60">{type}</p>
+                                    <Badge 
+                                        variant="secondary" 
+                                        className={cn(
+                                            "font-mono text-[9px] uppercase tracking-wider",
+                                            isNano ? "bg-amber-500/10 text-amber-500 border-amber-500/20" : "bg-brand/10 text-brand border-brand/20"
+                                        )}
+                                    >
+                                        {String(engine)}
+                                    </Badge>
+                                </div>
+                                <p className="text-sm font-semibold text-foreground">{String(desc)}</p>
+                                
+                                {Boolean(sg.image_url) && (
+                                    <div className="mt-4 rounded-lg overflow-hidden border border-border/40 shadow-sm transition-transform hover:scale-[1.01]">
+                                        <img 
+                                            src={String(sg.image_url)} 
+                                            alt={String(desc)}
+                                            className="w-full h-auto object-cover max-h-[400px]"
+                                        />
+                                    </div>
+                                )}
+
+                                {reasoning && (
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                        <span className="text-foreground/40 italic">Logic:</span> {String(reasoning)}
                                     </p>
+                                )}
+
+                                {prompt && !compact && (
+                                    <div className="mt-3 p-2 rounded-lg bg-black/20 border border-white/5 text-[10px] text-muted-foreground/80 font-mono leading-tight">
+                                        {prompt}
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -539,6 +618,72 @@ function VisualResult({ data, compact }: { data: Record<string, unknown>; compac
             {note && (
                 <p className="text-xs text-muted-foreground/60 italic pt-2">{note}</p>
             )}
+        </div>
+    )
+}
+ 
+function SocialiseResult({ data }: { data: Record<string, unknown> }) {
+    const d = (data.result || data.data || data) as Record<string, unknown>
+    const hook = getStr(d, "hook")
+    const thread = getArr(d, "thread")
+    const cta = getStr(d, "cta")
+
+    const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+
+    const copyToClipboard = (text: string, index: number) => {
+        navigator.clipboard.writeText(text)
+        setCopiedIndex(index)
+        setTimeout(() => setCopiedIndex(null), 2000)
+    }
+
+    const allTweets = [hook, ...thread, cta].filter(Boolean)
+
+    if (allTweets.length === 0) {
+        return <div className="p-4 text-xs text-muted-foreground italic">No thread content generated yet.</div>
+    }
+
+    return (
+        <div className="space-y-6 pb-12">
+            <div className="flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">X (Twitter) Thread</p>
+                    <p className="text-xs text-muted-foreground lowercase">Derived from main draft & source context</p>
+                </div>
+                <Badge variant="success" className="bg-brand/10 text-brand border-brand/20 shrink-0">Socialise</Badge>
+            </div>
+
+            <div className="space-y-4 relative before:absolute before:left-6 before:top-8 before:bottom-8 before:w-0.5 before:bg-border/30">
+                {allTweets.map((tweet, i) => (
+                    <div key={i} className="relative pl-12 group">
+                        {/* Thread Circle */}
+                        <div className="absolute left-4 top-1 w-4 h-4 rounded-full border-2 border-brand bg-background z-10" />
+                        
+                        <div className="p-4 rounded-xl border border-border/50 bg-muted/20 hover:bg-muted/30 transition-all relative">
+                            <div className="flex justify-between items-start gap-4 mb-2">
+                                <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
+                                    {i === 0 ? "The Hook" : i === allTweets.length - 1 ? "The Conclusion" : `Post ${i + 1}`}
+                                </span>
+                                <button 
+                                    onClick={() => copyToClipboard(String(tweet), i)}
+                                    className="p-1.5 rounded-md hover:bg-background/50 text-muted-foreground transition-colors"
+                                    title="Copy content"
+                                >
+                                    {copiedIndex === i ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                                </button>
+                            </div>
+                            <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                                {String(tweet)}
+                            </p>
+                            <div className="mt-3 flex items-center gap-4 text-[10px] text-muted-foreground/40 font-mono">
+                                <span>{String(tweet).length}/280 characters</span>
+                                {String(tweet).length > 280 && (
+                                    <span className="text-red-500/60 font-bold uppercase tracking-tighter animate-pulse">Exceeds Limit</span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
     )
 }
@@ -572,6 +717,10 @@ function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: 
 export function StageResultView({ stageId, data, compact = false }: StageResultViewProps) {
     const d = (typeof data === 'string' ? data : data as Record<string, unknown>) || {}
 
+    const isFallback = typeof d === 'object' && d !== null && d.status === "Stage complete" && typeof d.message === "string";
+    if (isFallback) {
+        return <GenericResult data={d as Record<string, unknown>} />
+    }
 
     switch (stageId) {
         case "judge":
@@ -589,11 +738,13 @@ export function StageResultView({ stageId, data, compact = false }: StageResultV
         case "angle":
             return <AngleResult data={d as Record<string, unknown>} />
         case "draft":
-            return <DraftResult data={d as Record<string, unknown>} compact={compact} />
+            return <DraftResult data={d as Record<string, unknown>} isGenerating={false} compact={compact} />
         case "visual":
             return <VisualResult data={d as Record<string, unknown>} compact={compact} />
         case "qa":
             return <QaResult data={d as Record<string, unknown>} compact={compact} />
+        case "socialise":
+            return <SocialiseResult data={d as Record<string, unknown>} />
         default:
             return <GenericResult data={typeof d === 'string' ? { message: d } : (d as Record<string, unknown>)} />
     }
@@ -602,7 +753,11 @@ export function StageResultView({ stageId, data, compact = false }: StageResultV
 
 // Export for use in Inspect panel with full detail
 export function StageResultPanel({ stageId, data }: { stageId: StageId; data: Record<string, unknown> }) {
-    const wordCount = stageId === "draft" ? getNum((data.data as Record<string, unknown>) || data, "word_count") : null;
+    const d = (data.data as Record<string, unknown>) || data.result || data;
+    const wordCount = stageId === "draft" 
+        ? (getNum(d as Record<string, unknown>, "word_count") || 
+           getStr(d as Record<string, unknown>, "content", "").trim().split(/\s+/).filter(Boolean).length) 
+        : null;
 
     return (
         <div className="space-y-6">

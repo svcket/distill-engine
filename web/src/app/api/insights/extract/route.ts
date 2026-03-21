@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { runPythonScript } from '@/lib/python-runner'
-import { adaptInsightResponse } from '@/lib/adapters'
+import { spawn } from 'child_process'
 import path from 'path'
 
 export async function POST(request: Request) {
@@ -11,20 +10,50 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
         }
 
-        // We pass the packet path instead of just video-id since insight_extractor expects --input
         const executionDir = path.resolve(process.cwd(), '../execution')
+        const scriptPath = path.join(executionDir, 'insight_extractor.py')
         const packetPath = path.join(executionDir, '.tmp', 'insight_packets', `${transcriptId}_packet.json`)
 
-        const { success, error, rawOutput } = await runPythonScript("insight_extractor.py", ["--input", packetPath])
+        const encoder = new TextEncoder()
+        
+        const stream = new ReadableStream({
+            start(controller) {
+                const pyProcess = spawn('python3', [scriptPath, '--input', packetPath], {
+                    cwd: executionDir,
+                    env: { ...process.env, PYTHONPATH: executionDir }
+                })
 
-        if (!success) {
-            return NextResponse.json({ error: "Failed to extract insights with LLM", details: error }, { status: 500 })
-        }
+                pyProcess.stdout.on('data', (data) => {
+                    const lines = data.toString().split('\n')
+                    for (const line of lines) {
+                        if (line.trim()) {
+                            controller.enqueue(encoder.encode(line + '\n'))
+                        }
+                    }
+                })
 
-        // We can reuse adaptInsightResponse or define a new one, but let's parse the JSON directly
-        const result = adaptInsightResponse(rawOutput || "")
+                pyProcess.stderr.on('data', (data) => {
+                    console.error(`[Insight API] Python Stderr: ${data}`)
+                    // Optional: expose errors to the stream
+                    // controller.enqueue(encoder.encode(JSON.stringify({ type: "error", message: data.toString() }) + "\n"))
+                })
 
-        return NextResponse.json({ result, message: `Extracted generative insights for: ${transcriptId}` })
+                pyProcess.on('close', (code) => {
+                    if (code !== 0) {
+                        controller.enqueue(encoder.encode(JSON.stringify({ type: "error", message: `Script exited with code ${code}` }) + "\n"))
+                    }
+                    controller.close()
+                })
+            }
+        })
+
+        return new Response(stream, {
+            headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+            },
+        })
 
     } catch (err: any) {
         return NextResponse.json({ error: err.message }, { status: 500 })

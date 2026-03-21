@@ -8,17 +8,51 @@ import { SourceCandidate } from "@/lib/mockData"
 import {
     ArrowLeft, ExternalLink, Calendar, Clock, BarChart3,
     Loader2, FileText, Bot, Sparkles, Target, Edit3,
-    X, Trash2, ShieldCheck,
-    RefreshCw, Play, MoreHorizontal
+    X, Trash2, ShieldCheck, Check, ChevronDown,
+    RefreshCw, Play, MoreHorizontal, Share2
 } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
 import DQMCard, { DQMData } from "@/components/DQMCard"
 
-// ─── Workflow Stage Definitions ────────────────────────────────────────
-type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "export"
+type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insights" | "angle" | "draft" | "qa" | "socialise" | "export"
 type StageStatus = "completed" | "active" | "locked"
+
+interface StagePayload {
+    status?: string;
+    result?: any; 
+    data?: any;
+    payload?: any;
+    summary?: string;
+    scores?: {
+        publishability?: number;
+    };
+    total_score?: number;
+    score?: number;
+    duration?: number | string;
+    title?: string;
+    channel?: string;
+    url?: string;
+    error?: string;
+    message?: string;
+    type?: string;
+    text?: string;
+}
+
+interface StreamChunk {
+    type: "status" | "chunk" | "error" | "success";
+    text?: string;
+    status?: string;
+    message?: string;
+    data?: any;
+}
+
+interface ScoreData {
+    publishability?: number;
+    total_score?: number;
+    score?: number;
+}
 
 interface WorkflowStage {
     id: StageId
@@ -40,8 +74,8 @@ const STAGES: WorkflowStage[] = [
     { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (id) => ({ transcriptId: id }) },
     { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
-    { id: "visual", label: "Visual Curation", description: "Suggested diagrams, charts, and quote cards", icon: Sparkles, apiEndpoint: "/api/visual", apiBody: (id) => ({ sourceId: id }) },
     { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
+    { id: "socialise", label: "Socialize content", description: "Generate X threads, LinkedIn posts, and distribution assets", icon: Share2, apiEndpoint: "/api/socialise", apiBody: (id) => ({ sourceId: id }) },
 ]
 
 const INTENT_DESCRIPTIONS: Record<string, string> = {
@@ -78,6 +112,9 @@ const validateStageGating = (stageId: StageId, results: Record<string, unknown>)
         case "qa":
             if (!results.draft && !results.WrittenDraft) return { valid: false, missing: "Draft Content", type: "error" };
             break;
+        case "socialise":
+            if (!results.draft && !results.WrittenDraft) return { valid: false, missing: "Draft Content", type: "error" };
+            break;
     }
     return { valid: true };
 };
@@ -108,9 +145,10 @@ export default function SourceMissionControl() {
     useEffect(() => {
         // 1. Sync Score
         if (stageResults.qa) {
-            const qa = stageResults.qa as any
-            const dqmPayload = qa.payload || qa.data || qa.result || qa;
-            const score = dqmPayload?.scores?.publishability || dqmPayload?.publishability || dqmPayload?.total_score || dqmPayload?.score;
+            const qa = stageResults.qa as Record<string, unknown>
+            const dqmPayload = (qa.payload || qa.data || qa.result || qa) as Record<string, unknown>;
+            const scores = (dqmPayload?.scores || dqmPayload) as Record<string, number | undefined>;
+            const score = scores?.publishability || scores?.total_score || scores?.score;
             if (score && score !== source.score) {
                 setSource(s => ({ ...s, score }));
             }
@@ -118,8 +156,9 @@ export default function SourceMissionControl() {
         
         // 2. Sync Duration
         if (stageResults.transcript) {
-            const ts = stageResults.transcript as any
-            const duration = ts.duration || ts.result?.duration || ts.metadata?.duration;
+            const ts = stageResults.transcript as Record<string, unknown>
+            const rawDuration = (ts.duration as number) || (ts.result as Record<string, any>)?.duration || (ts.metadata as Record<string, any>)?.duration;
+            const duration = typeof rawDuration === 'number' ? `${Math.floor(rawDuration / 60)}:${String(rawDuration % 60).padStart(2, '0')}` : undefined;
             if (duration && duration !== source.duration) {
                 setSource(s => ({ ...s, duration }));
             }
@@ -228,27 +267,26 @@ export default function SourceMissionControl() {
                 }
 
                 // Load actual stage result data from disk
-                const resultsRes = await fetch(`/api/store/results?sourceId=${id}`)
-                if (resultsRes.ok) {
-                    const { results } = await resultsRes.json()
-                    if (results && Object.keys(results).length > 0) {
-                        setStageResults(results)
-
-                        // ════ TRUTH AUDIT ════
-                        // If a stage is marked completed in DB but has no artifact on disk,
-                        // remove it from the local completion set to allow a re-run.
-                        setCompletedStages(prev => {
-                            const validated = new Set(Array.from(prev))
-                            const criticalArtifactStages: StageId[] = ["insights", "angle", "draft", "qa"]
-                            
-                            criticalArtifactStages.forEach(sid => {
-                                if (prev.has(sid) && !results[sid]) {
-                                    validated.delete(sid)
-                                }
-                            })
-                            return validated
+                const res = await fetch(`/api/sources/${id}/results`);
+                const data = await res.json();
+                if (data && data.results) {
+                    setStageResults(data.results);
+                }
+                // ════ TRUTH AUDIT ════
+                // If a stage is marked completed in DB but has no artifact on disk,
+                // remove it from the local completion set to allow a re-run.
+                if (data && data.results) {
+                    setCompletedStages(prev => {
+                        const validated = new Set(Array.from(prev))
+                        const criticalArtifactStages: StageId[] = ["transcript", "summary", "insights", "angle", "draft", "qa", "socialise"]
+                        
+                        criticalArtifactStages.forEach(sid => {
+                            if (prev.has(sid) && !data.results[sid]) {
+                                validated.delete(sid)
+                            }
                         })
-                    }
+                        return validated
+                    })
                 }
 
                 // Caching enhancement: try loading from localStorage first for immediate UI
@@ -276,15 +314,24 @@ export default function SourceMissionControl() {
         return () => document.removeEventListener("mousedown", handler)
     }, [isExportOpen])
 
-    // Determine current active stage
-    const getActiveStageIndex = (): number => {
+    // Determine the absolute next stage for the pipeline loop (including hidden)
+    const getFirstIncompleteIndex = (): number => {
         for (let i = 0; i < STAGES.length; i++) {
             if (!completedStages.has(STAGES[i].id)) return i
         }
-        return STAGES.length // All done
+        return STAGES.length
     }
 
-    const activeIndex = getActiveStageIndex()
+    // Determine the stage currently interactive in the UI (visible only)
+    const getActiveVisibleIndex = (): number => {
+        for (let i = 0; i < STAGES.length; i++) {
+            if (!completedStages.has(STAGES[i].id) && !STAGES[i].hidden) return i
+        }
+        return STAGES.length
+    }
+
+    const activeIndex = getFirstIncompleteIndex()
+    const activeVisibleIndex = getActiveVisibleIndex()
 
     const getStageStatus = (index: number): StageStatus => {
         const stage = STAGES[index]
@@ -301,7 +348,12 @@ export default function SourceMissionControl() {
             return "locked"
         }
 
-        if (index === activeIndex) return "active"
+        // A stage is active if it's the next visible thing to do
+        if (index === activeVisibleIndex) return "active"
+        
+        // If it's a hidden stage but it's the absolute next step, it's also effectively "active" (processing)
+        if (index === activeIndex && stage.hidden) return "active"
+
         return "locked"
     }
 
@@ -356,7 +408,6 @@ export default function SourceMissionControl() {
                 if (stage.id === "insights") mockData = { result: { core_argument: "Local data is critical for strategic decision making.", key_claims: ["High security", "Fast processing"], memorable_quotes: ["Data is the new oil."] } }
                 if (stage.id === "angle") mockData = { result: { recommended_format: "Podcast", framing_angle: "The future of local computing", working_titles: ["Local First Strategy"] } }
                 if (stage.id === "draft") mockData = { result: { title: "Local Impact Analysis", content: "# Local Impact Analysis\n\nThis is a generated draft based on your local import.\n\n## Key Findings\n- Local files are processed faster.\n- Privacy is maintained." } }
-                if (stage.id === "visual") mockData = { result: { visual_suggestions: [{ type: "chart", description: "Storage usage over time" }] } }
                 
                 const data = mockData
                 // Store result
@@ -389,10 +440,10 @@ export default function SourceMissionControl() {
                 body: JSON.stringify(bodyPayload)
             })
 
-            let data: Record<string, any> | null = null;
+            let data: any = null;
             
-            // Handle streaming for Draft stage
-            if (stage.id === "draft" && res.body) {
+            // Handle streaming for Draft & Insights stages
+            if ((stage.id === "draft" || stage.id === "insights") && res.body) {
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
                 let fullContent = "";
@@ -407,13 +458,14 @@ export default function SourceMissionControl() {
                     buffer = lines.pop() || "";
 
                     for (const line of lines) {
-                        if (!line.trim()) continue;
+                        const trimmed = line.trim();
+                        if (!trimmed) continue;
                         try {
-                            const parsed = JSON.parse(line);
+                            const parsed = JSON.parse(trimmed);
                             if (parsed.type === "status") {
-                                setLogs(prev => [{ event: parsed.text, time: "Just now", status: "info" }, ...prev]);
-                            } else if (parsed.type === "chunk" && parsed.text) {
-                                fullContent += parsed.text;
+                                setLogs(prev => [{ event: parsed.text, time: "Just now", status: "info" as const }, ...prev]);
+                            } else if (parsed.type === "chunk" && (parsed as StreamChunk).text) {
+                                fullContent += (parsed as StreamChunk).text as string;
                                 setStageResults(prev => ({ 
                                     ...prev, 
                                     [stage.id]: { 
@@ -430,16 +482,22 @@ export default function SourceMissionControl() {
                                 setLogs(prev => [{ event: `${stage.label} failed: ${parsed.message}`, time: "Just now", status: "error" }, ...prev]);
                                 setExecutingStage(null);
                                 return; // Stop execution
+                            } else if (parsed.status === "success" || (parsed as StagePayload).data) {
+                                // Capture final payload from insights or other status:success scripts
+                                data = parsed as StagePayload;
                             }
-                        } catch (e) {
-                            console.error("Error parsing stream chunk:", e, line);
+                        } catch {
+                            // Minor parse issues during stream are ignored
                         }
                     }
                 }
-                data = { status: "success", result: { content: fullContent } };
+                if (!data && fullContent) {
+                    data = { status: "success", result: { content: fullContent } };
+                }
             } else {
-                data = await res.json()
-                if (!res.ok) throw new Error(data.error || "Execution failed")
+                const responseData = await res.json()
+                if (!res.ok) throw new Error(responseData.error || "Execution failed")
+                data = responseData as StagePayload
             }
 
             // Store result
@@ -448,39 +506,34 @@ export default function SourceMissionControl() {
             // Mark completed
             setCompletedStages(prev => new Set([...prev, stage.id]))
 
-            // ════ AUTO-OPEN SIDE PANEL ON VISUAL ════
-            if (stage.id === "visual") {
-                const visualData = data?.result || data;
-                setPanelContent({ 
-                    title: "Visual Curation", 
-                    stageId: "visual", 
-                    data: visualData
-                })
-                // Force persist result metadata
-                setStageResults(prev => ({ ...prev, [stage.id]: visualData }))
-            }
-
             // Sync score if available
-            if (data && (data.result?.score !== undefined || data.result?.total_score !== undefined)) {
-                const newScore = data.result.total_score || data.result.score;
-                setSource(s => ({
-                    ...s,
-                    score: newScore,
-                    status: newScore >= 6 ? "done" : s.status,
-                }))
-                localStorage.setItem(`dqm_${id}`, JSON.stringify(data.result))
+            if (data && typeof data === 'object') {
+                const resObj = (data as Record<string, any>).result || data;
+                if (resObj && (resObj.score !== undefined || resObj.total_score !== undefined)) {
+                    const score = resObj.total_score ?? resObj.score;
+                    setSource(s => ({
+                        ...s,
+                        score: score,
+                        status: score >= 6 ? "done" : s.status,
+                    }))
+                    localStorage.setItem(`dqm_${id}`, JSON.stringify(resObj))
+                }
             }
-            if (data && data.result) {
-                if (stage.id === "transcript" && data.result.duration && source.duration === "—") {
-                    setSource(s => ({ ...s, duration: data.result.duration }));
+            if (data && typeof data === 'object') {
+                if (stage.id === "transcript") {
+                    const tsData = (data as StagePayload).result || data;
+                    if (tsData && tsData.duration) {
+                        setSource(s => ({ ...s, duration: String(tsData.duration) }));
+                    }
                 }
 
                 if (stage.id === "judge") {
+                    const judgeData = (data as Record<string, any>).result || data;
                     // If judge updates title/channel/url
                     const updatedSource = {
-                        title: data.result.title || source.title,
-                        channel: data.result.channel || source.channel,
-                        url: data.result.url || source.url,
+                        title: (judgeData as Record<string, any>).title || source.title,
+                        channel: (judgeData as Record<string, any>).channel || source.channel,
+                        url: (judgeData as Record<string, any>).url || source.url,
                     }
                     setSource(s => ({
                         ...s,
@@ -552,8 +605,8 @@ export default function SourceMissionControl() {
         setIsRunningAll(true)
         setError(null)
 
-        const startIndex = getActiveStageIndex()
-        const currentResults: Record<string, any> = { ...stageResults }; // Local mutable copy for gating checks
+        const startIndex = getFirstIncompleteIndex()
+        const currentResults: Record<string, unknown> = { ...stageResults }; // Local mutable copy for gating checks
 
         for (let i = startIndex; i < STAGES.length; i++) {
             const stage = STAGES[i]
@@ -585,7 +638,6 @@ export default function SourceMissionControl() {
                 if (stage.id === "insights") mockData = { result: { core_argument: "Local data insights.", key_claims: ["Analysis ready"], memorable_quotes: ["Direct from source."] } }
                 if (stage.id === "angle") mockData = { result: { recommended_format: "Article", framing_angle: "Local focus", working_titles: ["The Local Edge"] } }
                 if (stage.id === "draft") mockData = { result: { title: "Draft from Local", content: "# Local Draft\n\nGenerated for local media." } }
-                if (stage.id === "visual") mockData = { result: { visual_suggestions: [] } }
                 if (stage.id === "qa") mockData = { 
                     result: { 
                         total_score: 82, 
@@ -596,7 +648,7 @@ export default function SourceMissionControl() {
                     } 
                 }
 
-                const data = mockData as any
+                const data = mockData as Record<string, unknown>
                 const resValue = data.result || data
                 setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
                 currentResults[stage.id] = resValue
@@ -608,9 +660,11 @@ export default function SourceMissionControl() {
                 localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: resValue }));
                 
                 if (stage.id === "qa") {
-                     localStorage.setItem(`dqm_${id}`, JSON.stringify(resValue))
-                     const score = resValue.total_score || resValue.scores?.publishability || 0;
-                     setSource(s => ({ ...s!, score }));
+                    const resObj = (data as Record<string, any>).result || data;
+                    if (resObj && (resObj.total_score !== undefined || resObj.scores)) {
+                        const scoreValue = resObj.total_score ?? (resObj.scores as StagePayload["scores"])?.publishability;
+                        setSource(s => ({ ...s!, score: scoreValue }));
+                    }
                 }
 
                 setLogs(prev => [{ event: `${stage.label} (Local Mode) completed`, time: "Just now", status: "success" }, ...prev])
@@ -660,8 +714,8 @@ export default function SourceMissionControl() {
                     body: JSON.stringify(bodyPayload)
                 })
 
-                let data: Record<string, any> | null = null;
-                if (stage.id === "draft" && res.body) {
+                let data: any = null;
+                if ((stage.id === "draft" || stage.id === "insights") && res.body) {
                     const reader = res.body.getReader();
                     const decoder = new TextDecoder();
                     let fullContent = "";
@@ -680,9 +734,9 @@ export default function SourceMissionControl() {
                             try {
                                 const parsed = JSON.parse(line);
                                 if (parsed.type === "status") {
-                                    setLogs(prev => [{ event: parsed.text, time: "Just now", status: "info" }, ...prev]);
-                                } else if (parsed.type === "chunk" && parsed.text) {
-                                    fullContent += parsed.text;
+                                    setLogs(prev => [{ event: parsed.text, time: "Just now", status: "info" as const }, ...prev]);
+                                } else if (parsed.type === "chunk" && (parsed as StreamChunk).text) {
+                                    fullContent += (parsed as StreamChunk).text as string;
                                     const wordCount = fullContent.trim().split(/\s+/).filter(Boolean).length;
                                     setStageResults(prev => {
                                         const updated = { 
@@ -705,19 +759,19 @@ export default function SourceMissionControl() {
                                         return updated;
                                     });
                                 } else if (parsed.type === "error") {
-                                    // CRITICAL: Stop the stream and the loop on explicit backend error
-                                    setError({ message: parsed.message, type: "error" });
-                                    setLogs(prev => [{ event: `${stage.label} failed: ${parsed.message}`, time: "Just now", status: "error" }, ...prev]);
-                                    setIsRunningAll(false);
-                                    setExecutingStage(null);
                                     return; // Break the runFullPipeline loop
+                                } else if (parsed.status === "success" || (parsed as StagePayload).data || parsed.result) {
+                                    // Capture final payload for structured stages like insights
+                                    data = parsed as StagePayload;
                                 }
                             } catch (e) {
                                 console.error("Error parsing stream chunk:", e, line);
                             }
                         }
                     }
-                    data = { status: "success", result: { content: fullContent } };
+                    if (!data && fullContent) {
+                        data = { status: "success", result: { content: fullContent } };
+                    }
                 } else {
                     data = await res.json()
                     if (!res.ok) throw new Error(data.error || "Execution failed")
@@ -725,16 +779,19 @@ export default function SourceMissionControl() {
 
                 // Store result
                 const resValue = data?.result || data
-                setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
-                currentResults[stage.id] = resValue // Update local copy for gating
+                if (resValue) {
+                    setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
+                    currentResults[stage.id] = resValue // Update local copy for gating
+                }
 
                 // Mark completed
                 setCompletedStages(prev => new Set([...prev, stage.id]))
 
                 // Update UI metadata
-                if (stage.id === "qa" && data?.result?.score !== undefined) {
-                    const dqmPayload = data.result?.payload || data.result || data;
-                    const scoreValue = dqmPayload?.scores?.publishability || dqmPayload?.publishability;
+                if (stage.id === "qa" && data && typeof data === 'object') {
+                    const resObj = (data as Record<string, any>).result || data;
+                    const dqmPayload = (resObj.payload || resObj) as Record<string, any>;
+                    const scoreValue = dqmPayload?.scores?.publishability || dqmPayload?.publishability || dqmPayload?.score;
                     
                     if (scoreValue !== undefined) {
                         setSource(s => ({
@@ -748,10 +805,11 @@ export default function SourceMissionControl() {
                 
                 if (data && data.result) {
                     if (stage.id === "judge") {
+                        const judgeData = (data as StagePayload).result || data;
                         const updatedSource = {
-                            title: data.result.title || source.title,
-                            channel: data.result.channel || source.channel,
-                            url: data.result.url || source.url,
+                            title: (judgeData as Record<string, any>).title || source.title,
+                            channel: (judgeData as Record<string, any>).channel || source.channel,
+                            url: (judgeData as Record<string, any>).url || source.url,
                         }
                         setSource(s => ({
                             ...s,
@@ -769,7 +827,8 @@ export default function SourceMissionControl() {
                         } catch { /* silently fail */ }
                     }
                     if (stage.id === "transcript") {
-                        const duration = data.duration || (data.result && data.result.duration) || (data.data && data.data.duration);
+                        const d = data as any;
+                        const duration = d.duration || (d.result && d.result.duration) || (d.data && d.data.duration);
                         if (duration) {
                             setSource(s => ({ ...s!, duration }));
                         }
@@ -810,11 +869,18 @@ export default function SourceMissionControl() {
             // Summary stage might have nested result (e.g., { summary: "..." })
             // Unified handling for standard response wrappers
             const displayData = stage.id === "summary" 
-                ? ((data as any).summary || (data as any).result || (data as any).payload || data) 
-                : (data as any).result || (data as any).payload || data
+                ? ((data as StagePayload).summary || (data as StagePayload).result || (data as StagePayload).payload || data) 
+                : ((data as StagePayload).result || (data as StagePayload).payload || data)
             setPanelContent({ title: stage.label, stageId: stage.id, data: displayData })
+        } else {
+            // Open the panel with a fallback message if it was marked complete but no local payload is found
+            setPanelContent({ title: stage.label, stageId: stage.id, data: { status: "Stage complete", message: "No local result data to display." } })
         }
     }
+
+    // Pipeline stage filtering & status calculation
+    const visibleStages = STAGES.filter(s => !s.hidden);
+    const currentActiveVisibleIndex = STAGES.findIndex(s => getStageStatus(STAGES.indexOf(s)) === "active");
 
 
     return (
@@ -900,23 +966,6 @@ export default function SourceMissionControl() {
                                 </div>
                             </div>
 
-                            <button
-                                onClick={runFullPipeline}
-                                disabled={isRunningAll || activeIndex >= STAGES.length}
-                                className={cn(
-                                    "h-10 px-6 rounded-full flex items-center gap-2 text-sm font-bold shadow-lg transition-all active:scale-95",
-                                    activeIndex >= STAGES.length
-                                        ? "bg-muted text-muted-foreground cursor-not-allowed border border-border/20"
-                                        : "bg-zinc-900 dark:bg-zinc-950 text-zinc-100 shadow-zinc-500/10 hover:shadow-zinc-500/20 border border-zinc-800"
-                                )}
-                            >
-                                {isRunningAll ? (
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                    <Play className="w-4 h-4 fill-current" />
-                                )}
-                                {isRunningAll ? "Processing..." : activeIndex >= STAGES.length ? "Processed" : t("startAnalyze")}
-                            </button>
                         </div>
                     </div>
 
@@ -1031,29 +1080,26 @@ export default function SourceMissionControl() {
                                         <Button
                                             variant="default"
                                             size="sm"
-                                            className="gap-1.5 h-8 text-[12px] rounded-lg font-bold bg-zinc-900 dark:bg-zinc-100 text-zinc-100 dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-lg shadow-zinc-500/10 transition-all duration-200"
+                                            className="gap-1.5 h-8 text-[12px] rounded-lg font-bold bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/10 transition-all duration-200 border-none"
                                             onClick={runFullPipeline}
                                             disabled={isRunningAll || !!executingStage}
                                         >
                                             {isRunningAll ? (
                                                 <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {t("processing")}...</>
                                             ) : (
-                                                <><Play className="w-3.5 h-3.5 fill-current" /> {t("run")} {t("all")}</>
+                                                 <><Play className="w-3 h-3 fill-current" /> {t("runRemaining")}</>
                                             )}
                                         </Button>
                                     )}
                                 </div>
 
                                 <div className="space-y-0 relative">
-                                    {(() => {
-                                        const renderedStages = STAGES.map((s, i) => ({ ...s, originalIndex: i })).filter(s => !s.hidden);
-                                        return renderedStages.map((stage, i) => {
-                                            const status = getStageStatus(stage.originalIndex)
+                                    {visibleStages.map((stage, i) => {
+                                        const status = getStageStatus(STAGES.findIndex(s => s.id === stage.id))
                                         const isExecuting = executingStage === stage.id
                                         const isCompleted = status === "completed"
                                         const isActive = status === "active"
                                         const isLocked = status === "locked"
-                                        const hasResult = !!stageResults[stage.id]
 
                                         return (
                                             <div key={stage.id} className="group/stage relative flex">
@@ -1061,28 +1107,19 @@ export default function SourceMissionControl() {
                                                 <div className="flex flex-col items-center w-10 shrink-0 relative">
                                                     {/* Vertical Connector Lines */}
                                                     <div className={cn(
-                                                        "absolute w-0.5 transition-colors duration-500",
-                                                        i === 0 ? "top-[13px] h-[calc(100%-13px)]" : i === renderedStages.length - 1 ? "top-0 h-[13px]" : "top-0 h-full",
-                                                        isCompleted ? "bg-emerald-500" : "bg-border/30"
+                                                        "absolute left-[19px] w-[2px] transition-colors duration-500",
+                                                        i === 0 ? "top-[12px] h-[calc(100%-12px)]" : i === visibleStages.length - 1 ? "top-0 h-[12px]" : "top-0 h-full",
+                                                        (isCompleted || isActive) ? "bg-emerald-500/30" : "bg-border/40"
                                                     )} />
                                                     
-                                                    {/* Stage Node (Circle Indicator) */}
+                                                    {/* Status Circle */}
                                                     <div className={cn(
-                                                        "relative z-10 w-[26px] h-[26px] rounded-full flex items-center justify-center transition-all duration-300 bg-background border-2 mt-3",
-                                                        isCompleted && "bg-emerald-500 border-emerald-500 text-white shadow-sm shadow-emerald-500/20",
-                                                        isActive && "bg-background border-emerald-500 text-emerald-500 ring-4 ring-emerald-500/10 ring-offset-0",
-                                                        isLocked && "bg-background border-border/60 text-muted-foreground/30",
-                                                        isExecuting && "animate-pulse"
+                                                        "w-6 h-6 rounded-full border-2 flex items-center justify-center bg-background z-10 transition-all duration-500",
+                                                        isCompleted ? "border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)]" : 
+                                                        isActive ? "border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)]" : "border-border/60"
                                                     )}>
-                                                        {isCompleted ? (
-                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                                <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                                            </svg>
-                                                        ) : isExecuting ? (
-                                                            <Loader2 className="w-3 h-3 animate-spin" />
-                                                        ) : (
-                                                            <div className={cn("w-1.5 h-1.5 rounded-full", isLocked ? "bg-muted-foreground/20" : "bg-emerald-500")} />
-                                                        )}
+                                                        {isCompleted ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : 
+                                                         isActive ? <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> : null}
                                                     </div>
                                                 </div>
 
@@ -1092,7 +1129,7 @@ export default function SourceMissionControl() {
                                                     isLocked && "opacity-50"
                                                 )}>
                                                     <div className="flex items-start justify-between group/row">
-                                                        <div className="space-y-1 pt-3.5">
+                                                        <div className="space-y-1">
                                                             <h3 className={cn(
                                                                 "text-[15px] font-medium transition-colors",
                                                                 isCompleted || isActive ? "text-foreground" : "text-muted-foreground"
@@ -1110,40 +1147,46 @@ export default function SourceMissionControl() {
                                                                 </p>
                                                             </div>
 
-                                                        <div className="flex items-center gap-4 pt-3.5">
-                                                            {isActive && stage.apiEndpoint && (
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); executeStage(stage) }}
-                                                                    disabled={isExecuting || (stage.id === "transcript" && source.transcriptStatus === "unavailable")}
-                                                                    className={cn(
-                                                                        "text-[13px] flex items-center gap-1.5 font-medium transition-all",
-                                                                        (stage.id === "transcript" && source.transcriptStatus === "unavailable")
-                                                                            ? "text-red-500 cursor-not-allowed"
-                                                                            : "text-brand hover:underline"
-                                                                    )}
-                                                                >
-                                                                    {isExecuting ? <><Loader2 className="w-3 h-3 animate-spin" /><span>Executing...</span></> : 
-                                                                     (stage.id === "transcript" && source.transcriptStatus === "unavailable") ? 
-                                                                     <span>Unavailable</span> : <span>Execute stage</span>}
-                                                                </button>
-                                                            )}
-                                                            
-                                                            {Boolean((isCompleted || (isActive && hasResult)) && (stage.id !== 'draft' || !!stageResults.draft)) && (
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); openPanel(stage) }}
-                                                                    title="View stage results"
-                                                                    className="px-4 py-1.5 rounded-full border border-border/40 bg-zinc-900/5 dark:bg-zinc-100/10 text-[13px] font-medium text-foreground hover:bg-zinc-900/10 dark:hover:bg-zinc-100/20 hover:shadow-[0_0_15px_rgba(0,0,0,0.05)] dark:hover:shadow-[0_0_15px_rgba(255,255,255,0.05)] transition-all"
-                                                                >
-                                                                    View
-                                                                </button>
-                                                            )}
+                                                        {/* Primary Action Button Cluster */}
+                                                        <div className="flex items-center gap-4">
+                                                            {/* View Button (Primary for completed stages) */}
+                                                             {isCompleted && (
+                                                                 <Button
+                                                                     variant="outline"
+                                                                     size="sm"
+                                                                     onClick={(e) => { e.stopPropagation(); openPanel(stage) }}
+                                                                     title="View stage results"
+                                                                     className="h-8 px-4 border-emerald-500/30 bg-emerald-500/5 text-[12px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/50 transition-all rounded-lg"
+                                                                 >
+                                                                     View
+                                                                 </Button>
+                                                             )}
 
+                                                            {/* Execute Button */}
+                                                             {isActive && !isCompleted && stage.apiEndpoint && (
+                                                                 <button
+                                                                     onClick={(e) => { e.stopPropagation(); executeStage(stage) }}
+                                                                     disabled={isExecuting || (stage.id === "transcript" && source.transcriptStatus === "unavailable")}
+                                                                     className={cn(
+                                                                         "px-4 py-1.5 rounded-full text-[13px] font-medium transition-all flex items-center gap-1.5",
+                                                                         (stage.id === "transcript" && source.transcriptStatus === "unavailable")
+                                                                             ? "border border-red-500/20 bg-red-500/5 text-red-500 cursor-not-allowed"
+                                                                             : isExecuting 
+                                                                                 ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                                                                                 : "bg-emerald-500/5 text-emerald-500 border border-emerald-500/40 hover:bg-emerald-500/10 hover:shadow-[0_0_15px_rgba(16,185,129,0.1)] shadow-micro"
+                                                                     )}
+                                                                 >
+                                                                     {isExecuting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Executing...</span></> : 
+                                                                      (stage.id === "transcript" && source.transcriptStatus === "unavailable") ? 
+                                                                      <span>Unavailable</span> : <span>Execute</span>}
+                                                                 </button>
+                                                             )}
                                                         </div>
                                                     </div>
 
                                                     {/* Writing Intent Setup moved to Angle Stage Checkpoint - Always visible when stage is selected or done */}
                                                     {stage.id === "angle" && isActive && (
-                                                        <div className="mt-4 p-6 rounded-2xl bg-card border border-border/80 shadow-soft animate-in fade-in slide-in-from-top-2 flex flex-col gap-4 max-w-2xl" onClick={e => e.stopPropagation()}>
+                                                        <div className="mt-8 p-8 rounded-[2rem] bg-card border border-border/80 shadow-soft animate-in fade-in slide-in-from-top-2 flex flex-col gap-6 w-full lg:max-w-3xl" onClick={e => e.stopPropagation()}>
                                                             <div className="flex items-center gap-2 mb-1">
                                                                 <Bot className="w-4 h-4 text-brand" />
                                                                 <h4 className="text-[12px] font-bold text-foreground uppercase tracking-wider font-serif">Writing Intent Strategy</h4>
@@ -1152,48 +1195,63 @@ export default function SourceMissionControl() {
                                                                 {/* Content Type */}
                                                                 <div className="space-y-1.5">
                                                                     <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Format</label>
-                                                                    <select
-                                                                        value={intentType}
-                                                                        onChange={(e) => { setIntentType(e.target.value); invalidateStrategy(); }}
-                                                                        title="Select content format"
-                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-no-repeat bg-[right_0.5rem_center]"
-                                                                    >
-                                                                        <option value="technical_explainer">Technical Explainer</option>
-                                                                        <option value="blog_article">Blog Article</option>
-                                                                        <option value="essay">Thematic Essay</option>
-                                                                        <option value="technical_breakdown">Technical Breakdown</option>
-                                                                        <option value="explainer">Explainer</option>
-                                                                        <option value="thought_leadership">Thought Leadership</option>
-                                                                    </select>
+                                                                    <div className="relative">
+                                                                        <select
+                                                                            value={intentType}
+                                                                            onChange={(e) => { setIntentType(e.target.value); invalidateStrategy(); }}
+                                                                            title="Select content format"
+                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none"
+                                                                        >
+                                                                            <option value="technical_explainer">Technical Explainer</option>
+                                                                            <option value="blog_article">Blog Article</option>
+                                                                            <option value="essay">Thematic Essay</option>
+                                                                            <option value="technical_breakdown">Technical Breakdown</option>
+                                                                            <option value="explainer">Explainer</option>
+                                                                            <option value="thought_leadership">Thought Leadership</option>
+                                                                        </select>
+                                                                        <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                                                                            <ChevronDown className="h-4 w-4 text-brand opacity-90" />
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                                 <div className="space-y-1.5">
                                                                     <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Audience</label>
-                                                                    <select
-                                                                        value={intentAudience}
-                                                                        onChange={(e) => { setIntentAudience(e.target.value); invalidateStrategy(); }}
-                                                                        title="Select target audience"
-                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-no-repeat bg-[right_0.5rem_center]"
-                                                                    >
-                                                                        <option value="general_reader">General Reader</option>
-                                                                        <option value="beginner">Beginner</option>
-                                                                        <option value="professional">Professional / Peer</option>
-                                                                        <option value="founder">Founder / Operator</option>
-                                                                        <option value="technical">Technical Engineer</option>
-                                                                    </select>
+                                                                    <div className="relative">
+                                                                        <select
+                                                                            value={intentAudience}
+                                                                            onChange={(e) => { setIntentAudience(e.target.value); invalidateStrategy(); }}
+                                                                            title="Select target audience"
+                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none"
+                                                                        >
+                                                                            <option value="general_reader">General Reader</option>
+                                                                            <option value="beginner">Beginner</option>
+                                                                            <option value="professional">Professional / Peer</option>
+                                                                            <option value="founder">Founder / Operator</option>
+                                                                            <option value="technical">Technical Engineer</option>
+                                                                        </select>
+                                                                        <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                                                                            <ChevronDown className="h-4 w-4 text-brand opacity-90" />
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                                 <div className="space-y-1.5">
                                                                     <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Tone</label>
-                                                                    <select
-                                                                        value={intentTone}
-                                                                        onChange={(e) => { setIntentTone(e.target.value); invalidateStrategy(); }}
-                                                                        title="Select voice and tone"
-                                                                        className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-no-repeat bg-[right_0.5rem_center]"
-                                                                    >
-                                                                        <option value="conversational_editorial">Conversational</option>
-                                                                        <option value="formal_authoritative">Formal</option>
-                                                                        <option value="reflective_essay">Reflective</option>
-                                                                        <option value="dense_information">Direct</option>
-                                                                    </select>
+                                                                    <div className="relative">
+                                                                        <select
+                                                                            value={intentTone}
+                                                                            onChange={(e) => { setIntentTone(e.target.value); invalidateStrategy(); }}
+                                                                            title="Select voice and tone"
+                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none"
+                                                                        >
+                                                                            <option value="conversational_editorial">Conversational</option>
+                                                                            <option value="formal_authoritative">Formal</option>
+                                                                            <option value="reflective_essay">Reflective</option>
+                                                                            <option value="dense_information">Direct</option>
+                                                                        </select>
+                                                                        <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                                                                            <ChevronDown className="h-4 w-4 text-brand opacity-90" />
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                             <div className="flex items-center justify-between mt-1 pt-4 border-t border-border/50">
@@ -1203,12 +1261,12 @@ export default function SourceMissionControl() {
                                                                 </p>
                                                                 <Button 
                                                                     size="sm" 
-                                                                    className="h-8 px-4 rounded-xl gap-2 font-semibold shadow-brand/20 shadow-lg active:translate-y-0.5 transition-all"
-                                                                    onClick={(e) => { e.stopPropagation(); runFullPipeline(); }}
-                                                                    disabled={isRunningAll || !!executingStage}
-                                                                >
-                                                                    {isRunningAll || executingStage === "angle" ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Play className="w-3.5 h-3.5 fill-current"/>}
-                                                                    Continue Pipeline
+                                                                    className="h-8 px-5 rounded-full font-semibold bg-white text-zinc-900 shadow-sm hover:bg-zinc-100 transition-all flex items-center gap-1.5 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                                                                     onClick={(e) => { e.stopPropagation(); runFullPipeline(); }}
+                                                                     disabled={isRunningAll || !!executingStage}
+                                                                 >
+                                                                     {isRunningAll || executingStage === "angle" ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Play className="w-3.5 h-3.5 fill-current"/>}
+                                                                     Continue Pipeline
                                                                 </Button>
                                                             </div>
                                                         </div>
@@ -1216,8 +1274,7 @@ export default function SourceMissionControl() {
                                                 </div>
                                             </div>
                                         )
-                                        })
-                                    })()}
+                                    })}
                                 </div>
 
                                 {activeIndex >= STAGES.length && (
@@ -1261,12 +1318,21 @@ export default function SourceMissionControl() {
                                                 <div className={cn(
                                                     "w-[6px] h-[6px] rounded-full mt-1.5 shrink-0 transition-transform group-hover/log:scale-125",
                                                     log.status === "success" && "bg-emerald-500",
-                                                    log.status === "info" && "bg-blue-400",
-                                                    log.status === "error" && "bg-red-500"
+                                                    log.status === "error" && "bg-red-500",
+                                                    log.status === "info" && "bg-brand/60"
                                                 )} />
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-[13px] font-medium text-foreground leading-snug">{log.event}</p>
-                                                    <p className="text-[11px] text-muted-foreground/60 mt-0.5">{log.time}</p>
+                                                <div className="flex-1 space-y-0.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-tight leading-none">
+                                                            {log.status.toUpperCase()}
+                                                        </span>
+                                                        <span className="text-[9px] text-muted-foreground/40 font-mono">
+                                                            {log.time}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[12px] text-foreground/90 font-medium leading-tight">
+                                                        {log.event}
+                                                    </p>
                                                 </div>
                                             </div>
                                         ))}
@@ -1274,12 +1340,9 @@ export default function SourceMissionControl() {
                                 </div>
                             </div>
 
-                            {/* Info Card / Secondary Actions Placeholder */}
-                            <div className="p-5 rounded-xl bg-muted/30 border border-border/60 space-y-3">
-                                <div className="flex items-center gap-2">
-                                    <ShieldCheck className="w-4 h-4 text-muted-foreground/30" />
-                                    <h4 className="text-[11px] font-bold text-muted-foreground/40 uppercase tracking-widest font-serif">Pipeline Governance</h4>
-                                </div>
+                            {/* Info Card / Helpful Context — Minimal and clean */}
+                            <div className="p-6 rounded-2xl bg-muted/20 border border-border/40 space-y-3">
+                                <h3 className="text-[11px] font-bold text-muted-foreground/50 uppercase tracking-widest font-serif">Mission Intelligence</h3>
                                 <p className="text-[12px] text-muted-foreground leading-relaxed">
                                     Distill Engine handles parallel fetching and OpenAI-powered transcription. Quality checks are run at the Analysis Matrix stage.
                                 </p>
@@ -1299,7 +1362,9 @@ export default function SourceMissionControl() {
                         </button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6">
-                        <StageResultPanel stageId={panelContent.stageId} data={panelContent.data as Record<string, unknown>} />
+                        {panelContent.stageId && (
+                            <StageResultPanel stageId={panelContent.stageId} data={panelContent.data as Record<string, unknown>} />
+                        )}
                     </div>
                 </div>
             )}

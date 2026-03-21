@@ -13,6 +13,19 @@ export async function GET() {
             where: { userId: session.user.id }
         })
 
+        // SELF-HEALING: Recreate user if lost during migration/reset
+        let user = await prisma.user.findUnique({ where: { id: session.user.id } })
+        if (!user) {
+            user = await prisma.user.create({
+                data: {
+                    id: session.user.id,
+                    name: session.user.name,
+                    email: session.user.email,
+                    image: session.user.image,
+                }
+            })
+        }
+
         // Initialize if doesn't exist
         if (!preferences) {
             preferences = await prisma.userPreferences.create({
@@ -34,6 +47,19 @@ export async function PATCH(request: Request) {
     }
 
     try {
+        // SELF-HEALING: Recreate user if lost during migration/reset
+        let user = await prisma.user.findUnique({ where: { id: session.user.id } })
+        if (!user) {
+            user = await prisma.user.create({
+                data: {
+                    id: session.user.id,
+                    name: session.user.name,
+                    email: session.user.email,
+                    image: session.user.image,
+                }
+            })
+        }
+
         const body = await request.json()
         
         const preferences = await prisma.userPreferences.upsert({

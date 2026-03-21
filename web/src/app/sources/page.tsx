@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
 import { format as formatDate, parseISO } from "date-fns"
 import { Badge } from "@/components/ui/Badge"
+import Image from "next/image"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ function getPlatformBadge(platform: string) {
     if (p.includes("x.com") || p.includes("twitter.com") || p.includes("t.co")) return "bg-sky-50 text-sky-700 border-sky-100 dark:bg-sky-500/10 dark:text-sky-400 dark:border-sky-500/20"
     if (p.includes("substack.com") || p.includes("substack")) return "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
     if (p.includes("podcast") || p.includes("spotify") || p.includes("apple.com") || p.includes("audio")) return "bg-purple-50 text-purple-700 border-purple-100 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20"
+    if (p.includes("document") || p.includes("pdf") || p.includes("docx") || p.includes("txt")) return "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20"
     
     // 2. Youtube detection
     if (p.includes("youtube.com") || p.includes("youtu.be")) return "bg-red-50 text-red-700 border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20"
@@ -94,6 +96,8 @@ export default function SourcesPage() {
     const [sources, setSources] = useState<SourceCandidate[]>([])
     const [platformFilter, setPlatformFilter] = useState("All")
     const [dateFilter, setDateFilter] = useState("All")
+    const [dqmFilter, setDqmFilter] = useState("All")
+    const [statusFilter, setStatusFilter] = useState("All")
     const [showFilters, setShowFilters] = useState(false)
     const [isIngesting, setIsIngesting] = useState(false)
     const [ingestStatus, setIngestStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null)
@@ -136,11 +140,14 @@ export default function SourcesPage() {
     const filteredSources = sources.filter(s => {
         const matchTab = getTab(s) === activeTab
         const sType = (s.source_type || "Unknown").toLowerCase()
+        const score = s.dqmScore || s.score || 0
+        const status = s.status || "idle"
         
         let matchPlatform = platformFilter === "All"
         if (!matchPlatform) {
             const filter = platformFilter.toLowerCase()
             if (filter === "web articles") matchPlatform = sType === "rss" || sType === "article" || sType === "web"
+            else if (filter === "documents") matchPlatform = sType === "document" || sType === "pdf" || sType === "upload" && s.url?.endsWith(".pdf")
             else matchPlatform = sType.includes(filter)
         }
         
@@ -154,9 +161,38 @@ export default function SourcesPage() {
             else if (dateFilter === "Yesterday") matchDate = diffDays === 1
             else if (dateFilter === "Last 7 Days") matchDate = diffDays <= 7
         }
+
+        let matchDqm = dqmFilter === "All"
+        if (!matchDqm) {
+            if (dqmFilter === "High") matchDqm = score >= 8
+            else if (dqmFilter === "Standard") matchDqm = score >= 6 && score < 8
+            else if (dqmFilter === "Low") matchDqm = score < 6
+        }
+
+        let matchStatus = statusFilter === "All"
+        if (!matchStatus) {
+            const filter = statusFilter.toLowerCase()
+            if (filter === "harvesting") matchStatus = status === "processing" || status === "pending"
+            else if (filter === "transcribed") matchStatus = s.transcriptStatus === "transcribed" || s.transcriptStatus === "available"
+            else matchStatus = status === filter
+        }
         
-        return matchTab && matchPlatform && matchDate
+        return matchTab && matchPlatform && matchDate && matchDqm && matchStatus
     })
+
+    const activeFiltersCount = [
+        platformFilter !== "All",
+        dateFilter !== "All",
+        dqmFilter !== "All",
+        statusFilter !== "All"
+    ].filter(Boolean).length
+
+    const handleClearFilters = () => {
+        setPlatformFilter("All")
+        setDateFilter("All")
+        setDqmFilter("All")
+        setStatusFilter("All")
+    }
 
     const handleDelete = async (id: string) => {
         if (confirm("Delete this source?")) {
@@ -285,17 +321,20 @@ export default function SourcesPage() {
 
                 <div className="flex items-center gap-3">
                     <div className="relative shrink-0" ref={filterRef}>
-                        <Button variant="outline" className={cn("gap-2 h-12 px-6 font-serif font-medium shadow-micro rounded-xl border-border", platformFilter !== "All" && "border-brand text-brand bg-brand/5")} onClick={() => setShowFilters(!showFilters)} type="button">
+                        <Button variant="outline" className={cn("gap-2 h-12 px-6 font-serif font-medium shadow-micro rounded-xl border-border", activeFiltersCount > 0 && "border-brand text-brand bg-brand/5")} onClick={() => setShowFilters(!showFilters)} type="button">
                             <ChevronDown className={cn("w-4 h-4 transition-transform", showFilters && "rotate-180")} /> 
-                            <span className="text-sm">{platformFilter === "All" ? t("filter") : platformFilter}</span>
+                            <span className="text-sm">{activeFiltersCount === 0 ? t("filter") : `${activeFiltersCount} ${activeFiltersCount === 1 ? 'Filter' : 'Filters'}`}</span>
                         </Button>
                         
                         {showFilters && (
-                            <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-border shadow-soft rounded-xl p-1 z-50 animate-in fade-in slide-in-from-top-2">
+                            <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-border shadow-soft rounded-xl p-1 z-50 animate-in fade-in slide-in-from-top-2 overflow-y-auto max-h-[80vh]">
                                 <div className="p-2">
-                                    <p className="px-2 py-1 text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{t("platform")}</p>
+                                    <div className="flex items-center justify-between px-2 mb-1">
+                                        <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{t("platform")}</p>
+                                        {platformFilter !== "All" && <button onClick={() => setPlatformFilter("All")} className="text-[9px] font-bold text-brand uppercase">Reset</button>}
+                                    </div>
                                     <div className="space-y-0.5">
-                                        {["All", "YouTube", "Twitter", "Web Articles"].map(p => (
+                                        {["All", "YouTube", "Twitter", "Web Articles", "Documents"].map(p => (
                                             <button 
                                                 key={p} 
                                                 className={cn(
@@ -310,8 +349,67 @@ export default function SourcesPage() {
                                         ))}
                                     </div>
                                 </div>
+
                                 <div className="border-t border-border/50 p-2">
-                                    <p className="px-2 py-1 text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{t("dateAdded")}</p>
+                                    <div className="flex items-center justify-between px-2 mb-1">
+                                        <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{t("highQuality")}</p>
+                                        {dqmFilter !== "All" && <button onClick={() => setDqmFilter("All")} className="text-[9px] font-bold text-brand uppercase">Reset</button>}
+                                    </div>
+                                    <div className="space-y-0.5">
+                                        {[
+                                            { key: "All", label: t("anyQuality") },
+                                            { key: "High", label: t("highQuality") },
+                                            { key: "Standard", label: t("standardQuality") },
+                                            { key: "Low", label: t("lowQuality") }
+                                        ].map(q => (
+                                            <button 
+                                                key={q.key} 
+                                                className={cn(
+                                                    "w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center justify-between",
+                                                    dqmFilter === q.key ? "bg-brand/5 text-brand font-medium" : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                                                )}
+                                                onClick={() => setDqmFilter(q.key)}
+                                            >
+                                                {q.label}
+                                                {dqmFilter === q.key && <div className="w-1.5 h-1.5 rounded-full bg-brand" />}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="border-t border-border/50 p-2">
+                                    <div className="flex items-center justify-between px-2 mb-1">
+                                        <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{t("pipelineStatus")}</p>
+                                        {statusFilter !== "All" && <button onClick={() => setStatusFilter("All")} className="text-[9px] font-bold text-brand uppercase">Reset</button>}
+                                    </div>
+                                    <div className="space-y-0.5">
+                                        {[
+                                            { key: "All", label: t("all") },
+                                            { key: "Transcribed", label: t("transcribed") },
+                                            { key: "Harvesting", label: t("harvesting") },
+                                            { key: "Failed", label: t("failed") },
+                                            { key: "Rejected", label: t("rejected") }
+                                        ].map(s => (
+                                            <button 
+                                                key={s.key} 
+                                                className={cn(
+                                                    "w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center justify-between",
+                                                    statusFilter === s.key ? "bg-brand/5 text-brand font-medium" : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                                                )}
+                                                onClick={() => setStatusFilter(s.key)}
+                                            >
+                                                {s.label}
+                                                {statusFilter === s.key && <div className="w-1.5 h-1.5 rounded-full bg-brand" />}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="border-t border-border/50 p-2">
+                                    <div className="flex items-center justify-between px-2 mb-1">
+                                        <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{t("dateAdded")}</p>
+                                        {dateFilter !== "All" && <button onClick={() => setDateFilter("All")} className="text-[9px] font-bold text-brand uppercase">Reset</button>}
+                                    </div>
                                     <div className="space-y-0.5">
                                         {[
                                             { key: "All", label: t("all") },
@@ -333,6 +431,17 @@ export default function SourcesPage() {
                                         ))}
                                     </div>
                                 </div>
+
+                                {activeFiltersCount > 0 && (
+                                    <div className="p-2 bg-muted/20 border-t border-border/50">
+                                        <button 
+                                            onClick={handleClearFilters}
+                                            className="w-full py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                        >
+                                            Clear All Filters
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -408,7 +517,12 @@ export default function SourcesPage() {
                                 <Link href={`/sources/${source.id}`} className="flex-1 flex flex-col">
                                     <div className="aspect-video relative overflow-hidden bg-muted">
                                         {source.thumbnail ? (
-                                            <img src={source.thumbnail} alt={source.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                            <Image 
+                                                src={source.thumbnail} 
+                                                alt={source.title} 
+                                                fill
+                                                className="object-cover transition-transform duration-500 group-hover:scale-105" 
+                                            />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center">
                                                 <Play className="w-10 h-10 text-muted-foreground/20" />
@@ -426,8 +540,14 @@ export default function SourcesPage() {
                                         </div>
                                         
                                         <div className="flex items-center gap-2 mb-4">
-                                            <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center overflow-hidden text-[8px]">
-                                                <img src={`https://www.google.com/s2/favicons?domain=${(source.source_type || source.type || "youtube").toLowerCase()}.com&sz=32`} alt="" className="w-3 h-3" />
+                                            <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center overflow-hidden text-[8px] relative">
+                                                <Image 
+                                                    src={`https://www.google.com/s2/favicons?domain=${(source.source_type || source.type || "youtube").toLowerCase()}.com&sz=32`} 
+                                                    alt="" 
+                                                    width={12}
+                                                    height={12}
+                                                    className="w-3 h-3" 
+                                                />
                                             </div>
                                             <span className="text-xs font-medium text-muted-foreground">{source.channel || (source.source_type || source.type || "Source")}</span>
                                         </div>
@@ -479,8 +599,17 @@ export default function SourcesPage() {
                                     >
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-12 h-8 rounded bg-muted overflow-hidden shrink-0">
-                                                    {source.thumbnail ? <img src={source.thumbnail} alt="" className="w-full h-full object-cover" /> : <Play className="w-4 h-4 m-auto text-muted-foreground/20 mt-2" />}
+                                                <div className="w-12 h-8 rounded bg-muted overflow-hidden shrink-0 relative">
+                                                    {source.thumbnail ? (
+                                                        <Image 
+                                                            src={source.thumbnail} 
+                                                            alt="" 
+                                                            fill
+                                                            className="object-cover" 
+                                                        />
+                                                    ) : (
+                                                        <Play className="w-4 h-4 m-auto text-muted-foreground/20 mt-2" />
+                                                    )}
                                                 </div>
                                                 <div className="min-w-0">
                                                 <div className="flex flex-col">

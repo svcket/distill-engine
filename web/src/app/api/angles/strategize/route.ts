@@ -19,7 +19,9 @@ export async function POST(request: Request) {
         if (audience) args.push("--audience", audience)
         if (tone) args.push("--tone", tone)
 
-        const { success, error, rawOutput } = await runPythonScript("angle_strategist.py", args)
+        const { success, error, rawOutput } = await runPythonScript("angle_strategist.py", args, {
+            expectedArtifact: `.tmp/angles/${transcriptId}_angle.json`
+        })
 
         if (!success) {
             return NextResponse.json({ error: "Failed to generate angles with LLM", details: error }, { status: 500 })

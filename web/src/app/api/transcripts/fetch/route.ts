@@ -36,7 +36,9 @@ export async function POST(request: Request) {
         if (activeSourceType) args.push('--source-type', activeSourceType)
 
         // Synchronously run for direct pipeline stability
-        const { success, data, error: scriptError } = await runPythonScript<any>('transcript_harvester.py', args)
+        const { success, data, error: scriptError } = await runPythonScript<any>('transcript_harvester.py', args, {
+            expectedArtifact: `.tmp/transcripts/${sourceId}/${sourceId}_raw.json`
+        })
         
         if (success && data) {
             // Update the source record to indicate transcription is ready

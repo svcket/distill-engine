@@ -4,17 +4,19 @@ import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import {
-    Settings,
-    ChevronDown,
-    SquarePen,
-    LayoutGrid,
-    LogOut
+import { 
+    Settings, 
+    ChevronDown, 
+    SquarePen, 
+    LayoutGrid, 
+    LogOut, 
 } from "lucide-react"
-import { signOut } from "next-auth/react"
+import { signOut, useSession } from "next-auth/react"
+import Image from "next/image"
 import { useLanguage, Language } from "@/context/LanguageContext"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+    const { data: session } = useSession()
     const pathname = usePathname()
     const { lang, setLang, t } = useLanguage()
     const [isLangOpen, setIsLangOpen] = useState(false)
@@ -79,13 +81,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                         key={item.href}
                                         href={item.href}
                                         className={cn(
-                                            "flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 group relative",
+                                            "flex items-center gap-3 rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-200 group relative",
                                             isActive
-                                                ? "bg-zinc-950 text-white shadow-sleek dark:bg-white dark:text-black dark:shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+                                                ? "bg-zinc-950 text-white shadow-sleek dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-l-2 dark:border-emerald-500 shadow-none"
                                                 : "text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
                                         )}
                                     >
-                                        <item.icon className={cn("h-4 w-4", isActive ? "text-white dark:text-black" : "text-muted-foreground/70 group-hover:text-foreground")} />
+                                        <item.icon className={cn("h-4 w-4", isActive ? "text-white dark:text-emerald-500" : "text-muted-foreground/70 group-hover:text-foreground")} />
                                         {item.name}
                                     </Link>
                                 )
@@ -101,13 +103,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                         key={item.href}
                                         href={item.href}
                                         className={cn(
-                                            "flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 group relative",
+                                            "flex items-center gap-3 rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-200 group relative",
                                             isActive
-                                                ? "bg-zinc-950 text-white shadow-sleek dark:bg-white dark:text-black dark:shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+                                                ? "bg-zinc-950 text-white shadow-sleek dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-l-2 dark:border-emerald-500 shadow-none"
                                                 : "text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
                                         )}
                                     >
-                                        <item.icon className={cn("h-4 w-4", isActive ? "text-white dark:text-black" : "text-muted-foreground/70")} />
+                                        <item.icon className={cn("h-4 w-4", isActive ? "text-white dark:text-emerald-500" : "text-muted-foreground/70 group-hover:text-foreground")} />
                                         {item.name}
                                     </Link>
                                 )
@@ -123,16 +125,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         </div>
                     </div>
 
-                    <div className="p-4 border-t border-border">
-                        <div className="flex items-center gap-3 px-2 py-2">
-                            <div className="h-8 w-8 rounded-full bg-border flex items-center justify-center text-xs font-medium">
-                                OP
+                    <div className="p-4 border-t border-border bg-card/50">
+                        <Link 
+                            href="/settings"
+                            className="flex items-center gap-3 p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all group"
+                        >
+                            <div className="w-9 h-9 rounded-full bg-brand/10 flex items-center justify-center overflow-hidden border border-brand/20 relative shadow-inner group-hover:scale-105 transition-transform">
+                                {session?.user?.image ? (
+                                    <Image 
+                                        src={session.user.image} 
+                                        alt={session.user.name || "Profile"} 
+                                        fill
+                                        className="object-cover"
+                                    />
+                                ) : (
+                                    <span className="text-xs font-bold text-brand uppercase">{(session?.user?.name?.[0] || "?")}</span>
+                                )}
                             </div>
-                            <div className="flex flex-col">
-                                <span className="text-sm font-medium leading-none">Operator</span>
-                                <span className="text-xs text-muted-foreground mt-1">System Active</span>
+                            <div className="flex flex-col min-w-0">
+                                <span className="text-sm font-bold text-foreground truncate">{session?.user?.name || "Member"}</span>
+                                <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Pro Plan</span>
                             </div>
-                        </div>
+                        </Link>
                     </div>
                 </aside>
             )}

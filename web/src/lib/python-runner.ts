@@ -35,7 +35,8 @@ function loadEnvLocal(): Record<string, string> {
  */
 export async function runPythonScript<T = unknown>(
     scriptName: string,
-    args: string[] = []
+    args: string[] = [],
+    options: { expectedArtifact?: string } = {}
 ): Promise<{ success: boolean; data?: T; error?: string; rawOutput?: string }> {
     try {
         const executionDir = path.resolve(process.cwd(), '../execution')
@@ -50,7 +51,6 @@ export async function runPythonScript<T = unknown>(
         if (apiKey === 'mock') apiKey = undefined
         
         console.log(`[Python Runner] Using OPENAI_API_KEY: ${apiKey ? apiKey.substring(0, 8) + '...' : 'MISSING'}`)
-
         console.log(`[Python Runner] Executing: python3 ${scriptName} ${args.join(' ')}`)
 
         const childEnv: Record<string, string | undefined> = { 
@@ -68,7 +68,7 @@ export async function runPythonScript<T = unknown>(
         const { stdout, stderr } = await execFileAsync('python3', [scriptPath, ...args], {
             cwd: executionDir,
             timeout: 600000, // 600 second timeout
-            env: childEnv as Record<string, string>, 
+            env: childEnv as any, 
         })
 
         if (stderr && stderr.trim() !== '') {
@@ -78,14 +78,33 @@ export async function runPythonScript<T = unknown>(
 
         const output = stdout.trim()
 
+        // TRUTH CHECK: If an artifact is expected, verify it exists and is not empty
+        if (options.expectedArtifact) {
+            const artifactPath = path.isAbsolute(options.expectedArtifact) 
+                ? options.expectedArtifact 
+                : path.join(executionDir, options.expectedArtifact)
+            
+            if (!fs.existsSync(artifactPath)) {
+                return { 
+                    success: false, 
+                    error: `Pipeline Stage Failed: Expected artifact missing at ${options.expectedArtifact}`,
+                    rawOutput: output 
+                }
+            }
+            
+            const stats = fs.statSync(artifactPath)
+            if (stats.size === 0) {
+                return { 
+                    success: false, 
+                    error: `Pipeline Stage Failed: Produced artifact is empty at ${options.expectedArtifact}`,
+                    rawOutput: output 
+                }
+            }
+        }
+
         // The scripts currently just print status messages (e.g. "Scouting for... (Not implemented)").
         // If they returned valid JSON, we would parse it here.
-        // Let's try to parse it, but if it fails, just return the raw string.
         try {
-            // Find the last line that looks like JSON or just try parsing the whole thing
-            // since the Python scripts print diagnostic text before the JSON payload 
-            // in production we should ensure scripts ONLY print JSON to stdout.
-
             const lines = output.split('\n')
             // Reversing so if there are multiple JSON-like lines (e.g. warnings), we get the actual final output payload
             const possibleJson = [...lines].reverse().find(l => l.trim().startsWith('{') || l.trim().startsWith('['))
@@ -100,8 +119,6 @@ export async function runPythonScript<T = unknown>(
             return { success: true, data, rawOutput: output }
 
         } catch {
-            // Scripts currently just print strings.
-            // E.g.: "Scouting for 'query' (max 5 results)... (Not implemented)"
             return { success: true, data: undefined, rawOutput: output }
         }
 

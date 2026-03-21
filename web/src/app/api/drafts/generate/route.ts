@@ -177,7 +177,9 @@ export async function POST(request: Request) {
     if (audience) briefArgs.push('--audience', audience)
     if (tone) briefArgs.push('--tone', tone)
 
-    const briefResult = await runBatch('content_brief_builder.py', briefArgs)
+    const briefResult = await runBatch('content_brief_builder.py', briefArgs, {
+        expectedArtifact: `.tmp/briefs/${sourceId}_brief.json`
+    })
     if (!briefResult.success) {
         return NextResponse.json({ error: 'Failed to generate Content Brief', details: briefResult.error }, { status: 500 })
     }
@@ -186,7 +188,9 @@ export async function POST(request: Request) {
     const architectResult = await runBatch('article_architect.py', [
         '--angle_input', anglePath,
         '--insights_input', insightsPath,
-    ])
+    ], {
+        expectedArtifact: `.tmp/outlines/${sourceId}_outline.json`
+    })
 
     if (!architectResult.success) {
         return NextResponse.json({ error: 'Failed to generate outline', details: architectResult.error }, { status: 500 })
@@ -197,7 +201,9 @@ export async function POST(request: Request) {
         '--insights_input', insightsPath,
         '--packet_input', packetPath,
         '--brief_input', briefPath,
-    ])
+    ], {
+        expectedArtifact: `.tmp/drafts/${sourceId}_draft.json`
+    })
 
     if (!success) {
         return NextResponse.json({ error: 'Draft generation failed', details: error }, { status: 500 })
@@ -224,7 +230,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ result: result.data || result })
 }
 
-function runBatch(script: string, args: string[]): Promise<{ success: boolean; rawOutput?: string; error?: string }> {
+function runBatch(script: string, args: string[], options: { expectedArtifact?: string } = {}): Promise<{ success: boolean; rawOutput?: string; error?: string }> {
     return new Promise((resolve) => {
         const proc = spawn(PYTHON, [path.join(EXECUTION_DIR, script), ...args], {
             cwd: EXECUTION_DIR,
@@ -234,9 +240,30 @@ function runBatch(script: string, args: string[]): Promise<{ success: boolean; r
         proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
         proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
         proc.on('close', (code: number) => {
+            if (code !== 0) {
+                 resolve({ success: false, error: stderr.trim() || `Script exited with code ${code}` })
+                 return
+            }
+
+            // TRUTH CHECK: Verify artifact if expected
+            if (options.expectedArtifact) {
+                const artifactPath = path.isAbsolute(options.expectedArtifact)
+                    ? options.expectedArtifact
+                    : path.join(EXECUTION_DIR, options.expectedArtifact)
+
+                if (!fs.existsSync(artifactPath)) {
+                    resolve({ success: false, error: `Pipeline Truth Error: Artifact missing at ${options.expectedArtifact}` })
+                    return
+                }
+                if (fs.statSync(artifactPath).size === 0) {
+                    resolve({ success: false, error: `Pipeline Truth Error: Artifact is empty at ${options.expectedArtifact}` })
+                    return
+                }
+            }
+
             const out = stdout.trim(); const lines = out.split('\n')
             const possibleJson = [...lines].reverse().find(l => l.trim().startsWith('{') || l.trim().startsWith('['))
-            resolve({ success: code === 0, rawOutput: possibleJson || out, error: stderr.trim() })
+            resolve({ success: true, rawOutput: possibleJson || out })
         })
         proc.on('error', (err: Error) => { resolve({ success: false, error: err.message }) })
     })

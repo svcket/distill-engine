@@ -87,10 +87,6 @@
 /* Explainer: Clear chunking, instructional */
 .editorial-explainer h2 {
   color: var(--foreground);
-  background: var(--muted);
-  padding: 8px 12px;
-  border-radius: 6px;
-  margin-left: -12px;
 }
 
 /* Technical Breakdown: Tight hierarchy, technical feel */

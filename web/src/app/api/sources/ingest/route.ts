@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import path from 'path'
+import fs from 'fs'
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -29,6 +30,25 @@ export async function POST(request: Request) {
 
         const result = JSON.parse(rawOutput || '{}')
         
+        // TRUTH CHECK: Verify artifact existence manually since ID was dynamic
+        const artifactPath = path.resolve(executionDir, `.tmp/sources/${result.source_id}.json`)
+        if (!fs.existsSync(artifactPath)) {
+            return NextResponse.json({ error: 'Pipeline Truth Error: Ingest reported success but artifact is missing.', id: result.source_id }, { status: 500 })
+        }
+        
+        // SELF-HEALING: Recreate user if deleted during migration but session persists
+        const userExists = await prisma.user.findUnique({ where: { id: session.user.id } })
+        if (!userExists) {
+            await prisma.user.create({
+                data: {
+                    id: session.user.id,
+                    name: session.user.name,
+                    email: session.user.email,
+                    image: session.user.image,
+                }
+            })
+        }
+
         // Persist the source to Postgres scoped to the user
         const source = await prisma.source.upsert({
             where: { id: result.source_id },

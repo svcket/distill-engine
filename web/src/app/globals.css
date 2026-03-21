@@ -42,8 +42,8 @@
   --page-bg: #0d1117;
   --card: #161b22; /* GitHub Dark Card */
   --card-foreground: #f0f6fc;
-  --brand: #f0f6fc;
-  --brand-foreground: #0d1117;
+  --brand: #10b981; /* Emerald 500 */
+  --brand-foreground: #ffffff;
   --radius: 0.75rem;
 }
 
@@ -85,7 +85,24 @@
 
 @layer utilities {
   .text-balance {
-    text-wrap: balance;
+    /* text-wrap: balance; (unsupported in older browsers) */
+  }
+
+  .active-scale-95:active {
+    transform: scale(0.96);
+  }
+
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+  }
+
+  .shadow-inner-glow {
+    box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.05);
   }
 }
 

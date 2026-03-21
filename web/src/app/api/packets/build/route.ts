@@ -10,7 +10,9 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
         }
 
-        const { success, error, rawOutput } = await runPythonScript("build_insight_packet.py", [`--video-id=${transcriptId}`])
+        const { success, error, rawOutput } = await runPythonScript("build_insight_packet.py", [`--video-id=${transcriptId}`], {
+            expectedArtifact: `.tmp/insight_packets/${transcriptId}_packet.json`
+        })
 
         if (!success) {
             return NextResponse.json({ error: "Failed to execute insight extractor", details: error }, { status: 500 })

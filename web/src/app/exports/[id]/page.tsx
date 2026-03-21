@@ -105,11 +105,11 @@ export default function DraftWorkspacePage() {
             StarterKit,
         ],
         content: "",
-        immediatelyRender: false,
+        immediatelyRender: true,
         editorProps: {
             attributes: {
                 class: cn(
-                    'wysiwyg-editor min-h-[600px] text-foreground bg-transparent font-serif outline-none prose prose-slate dark:prose-invert max-w-none',
+                    'wysiwyg-editor min-h-[600px] text-foreground bg-transparent font-serif outline-none prose prose-slate dark:prose-invert max-w-none cursor-text',
                     draft?.format && `editorial-${draft.format.toLowerCase().replace(/[\s\-_]+/g, '-')}`
                 ),
             },

@@ -15,6 +15,7 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
     const { t } = useLanguage()
     const [value, setValue] = useState("")
     const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'processing'>('idle')
+    const [isDictating, setIsDictating] = useState(false)
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const audioChunksRef = useRef<Blob[]>([])
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -42,7 +43,11 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
         
             mediaRecorder.onstop = async () => {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-                await handleAudioUpload(audioBlob)
+                if (isDictating) {
+                    await handleWhisperTranscription(audioBlob)
+                } else {
+                    await handleAudioUpload(audioBlob)
+                }
                 // Stop all tracks to release the microphone
                 stream.getTracks().forEach(track => track.stop())
             }
@@ -52,6 +57,7 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
         } catch (err) {
             console.error("Microphone access denied:", err)
             setRecordingState('idle')
+            setIsDictating(false)
         }
     }
         
@@ -62,6 +68,27 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
         }
     }
         
+    const handleWhisperTranscription = async (blob: Blob) => {
+        const formData = new FormData()
+        formData.append('audio', blob)
+        
+        try {
+            const res = await fetch('/api/whisper', {
+                method: 'POST',
+                body: formData
+            })
+            const data = await res.json()
+            if (data.transcript) {
+                setValue(prev => prev ? `${prev} ${data.transcript}` : data.transcript)
+            }
+        } catch (err) {
+            console.error("Whisper transcription failed:", err)
+        } finally {
+            setRecordingState('idle')
+            setIsDictating(false)
+        }
+    }
+
     const handleAudioUpload = async (blob: Blob) => {
         const formData = new FormData()
         formData.append('audio', blob)
@@ -84,6 +111,7 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
         
     const handleVoiceInput = () => {
         if (recordingState === 'idle') {
+            setIsDictating(true)
             startRecording()
         } else if (recordingState === 'recording') {
             stopRecording()
@@ -94,6 +122,31 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
         fileInputRef.current?.click()
     }
 
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        const formData = new FormData()
+        formData.append('file', file)
+
+        try {
+            setRecordingState('processing') // Use processing state for upload too
+            const res = await fetch('/api/sources/upload', {
+                method: 'POST',
+                body: formData
+            })
+            const data = await res.json()
+            if (data.url) {
+                await onIngest(data.url)
+            }
+        } catch (err) {
+            console.error("File upload failed:", err)
+        } finally {
+            setRecordingState('idle')
+            if (fileInputRef.current) fileInputRef.current.value = ""
+        }
+    }
+
     return (
         <div className="w-full max-w-3xl mx-auto">
             <input 
@@ -101,7 +154,8 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
                 ref={fileInputRef} 
                 className="hidden" 
                 aria-label="Upload source file"
-                onChange={(e) => console.log("File selected:", e.target.files?.[0])}
+                onChange={handleFileChange}
+                accept="audio/*,video/*"
             />
             
             <div className={cn(
@@ -152,18 +206,22 @@ export function WorkspaceComposer({ onIngest, isIngesting }: WorkspaceComposerPr
                             size="icon" 
                             onClick={handleVoiceInput}
                             className={cn(
-                                "w-10 h-10 rounded-full transition-all focus-visible:ring-0 focus:ring-0",
-                                recordingState === 'recording' ? "text-red-500 animate-pulse bg-red-50" : 
-                                recordingState === 'processing' ? "text-black bg-black/5" :
+                                "w-10 h-10 rounded-full transition-all focus-visible:ring-0 focus:ring-0 relative",
+                                recordingState === 'recording' ? "text-red-500 bg-red-50 ring-2 ring-red-500/20" : 
+                                recordingState === 'processing' ? "text-brand bg-brand/5 shadow-inner" :
                                 "text-black/40 hover:text-black hover:bg-black/5"
                             )}
-                            title={recordingState === 'recording' ? "Stop recording" : "Record audio"}
+                            title={recordingState === 'recording' ? "Stop dictation" : "Voice dictation"}
                             disabled={recordingState === 'processing' || isIngesting}
                         >
+                            {recordingState === 'recording' && (
+                                <span className="absolute inset-0 rounded-full bg-red-500/10 animate-ping pointer-events-none" />
+                            )}
+                            
                             {recordingState === 'processing' ? (
-                                <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                                <div className="w-4 h-4 border-2 border-brand/20 border-t-brand rounded-full animate-spin" />
                             ) : (
-                                <Mic className={cn("w-5 h-5", recordingState === 'recording' && "fill-current")} />
+                                <Mic className={cn("w-5 h-5 z-10", recordingState === 'recording' && "fill-current")} />
                             )}
                         </Button>
                     </div>
