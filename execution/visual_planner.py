@@ -11,9 +11,24 @@ import sys
 import argparse
 import json
 import os
+import requests
+from pydantic import BaseModel, Field
+from openai import OpenAI
 
 
-def plan_visuals(source_id: str, draft_path: str = None):
+class VisualSuggestion(BaseModel):
+    type: str = Field(description="The type of visual (cover_image, atmospheric_divider, technical_diagram, quote_card).")
+    description: str = Field(description="A brief description for the user.")
+    prompt: str = Field(description="The highly detailed prompt for the generation engine.")
+    engine: str = Field(description="The chosen engine: 'dalle-3' for atmospheric/artistic, 'nano-banana' for technical/diagrammatic/structured.")
+    reasoning: str = Field(description="Why this engine was chosen for this hook.")
+    image_url: str = Field(default=None, description="The local URL of the generated image.")
+
+class VisualManifest(BaseModel):
+    suggestions: list[VisualSuggestion]
+
+
+def plan_visuals(source_id: str, draft_path: str = None, execute: bool = False):
     base = os.path.dirname(__file__)
 
     # Load draft if available
@@ -28,51 +43,128 @@ def plan_visuals(source_id: str, draft_path: str = None):
                 draft = json.load(f)
 
     draft_data = draft.get("data", {})
-    title = draft_data.get("title", "")
+    title = draft_data.get("title", "Untitled Draft")
     content = draft_data.get("content", "")
 
-    # Extract candidate visual moments from content
-    # (Future: LLM-powered visual hook extraction)
-    sections = [line.strip() for line in content.split("\n") if line.startswith("## ")]
-    quotes = [line.strip().lstrip("> ") for line in content.split("\n") if line.startswith("> ")]
+    visual_suggestions = []
+
+    if os.environ.get("OPENAI_API_KEY"):
+        try:
+            client = OpenAI()
+            system_prompt = """You are a Visual Director for Distill, a premium editorial engine.
+Your goal is to identify high-impact visual hooks in a text draft.
+
+ASSIGNMENT RULES:
+1. **DALL-E 3**: Use for 'cover_image', 'atmospheric_divider', and 'creative_hero'. These should be artistic, cinematic, and evocative.
+2. **Nano Banana**: Use for 'technical_diagram', 'logical_flow', 'ui_mockup', or 'structured_infographic'. These require precision, specific labels, and logical relationships.
+
+ Identify 4-6 compelling hooks:
+- One core 'cover_image' (Description: "Suggested AI Prompt for Hero Image").
+- 2-3 'section_dividers' (Description: "Suggested AI Prompt for Section Visual").
+- 1 'technical_diagram' (Description: "Suggested AI Prompt for Technical Diagram").
+- 1 'quote_card' (Description: "Suggested AI Prompt for Quote Graphic").
+
+The 'description' field MUST explicitly inform the user that these are suggested prompts for image generation.
+The 'prompt' field should be a highly detailed, self-contained description suitable for direct input into DALL-E 3 or Nano Banana.
+
+Output strictly in the required JSON format."""
+
+            user_prompt = f"DRAFT TITLE: {title}\n\nDRAFT CONTENT:\n{content}"
+
+            completion = client.beta.chat.completions.parse(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format=VisualManifest,
+            )
+            manifest = completion.choices[0].message.parsed
+            visual_suggestions = [s.model_dump() for s in manifest.suggestions]
+        except Exception as e:
+            print(f"LLM Visual Planning failed: {e}", file=sys.stderr)
+            # Fallback to heuristic
+    
+    if not visual_suggestions:
+        # Heuristic-based fallback (Supports both Markdown and HTML)
+        sections = []
+        for line in content.split("\n"):
+            line = line.strip()
+            if line.startswith("## "):
+                sections.append(line.replace("## ", ""))
+            elif line.startswith("<h2>") and "</h2>" in line:
+                sections.append(line.replace("<h2>", "").replace("</h2>", ""))
+        
+        # Simple heuristic: If section title contains "tech", "system", "how", "process" -> nano-banana
+        def get_engine(text: str):
+            tech_keywords = ["how", "process", "system", "architecture", "structure", "data", "technical", "logic", "reasoning", "steps"]
+            if any(k in text.lower() for k in tech_keywords):
+                return "nano-banana"
+            return "dalle-3"
+
+        visual_suggestions = [
+            {
+                "type": "cover_image",
+                "description": f"Suggested AI Prompt for {title} Hero Image",
+                "prompt": f"A cinematic, premium editorial cover image representing {title}. High resolution, minimalist aesthetic, professional photography style.",
+                "engine": "dalle-3",
+                "reasoning": "Standard hero imagery is best handled by DALL-E."
+            }
+        ]
+        
+        if sections:
+            for s in sections[:4]:
+                engine = get_engine(s)
+                visual_suggestions.append({
+                    "type": "section_divider",
+                    "description": f"Suggested AI Prompt for {s} Visual",
+                    "prompt": f"A sophisticated {engine} visualization of '{s}'. Focus on professional clarity, minimalist design, and editorial aesthetic.",
+                    "engine": engine,
+                    "reasoning": f"Heuristic selection based on '{s}' content."
+                })
 
     visual_plan = {
         "source_id": source_id,
-        "status": "stub",  # Not yet automated — marks readiness for future layer
-        "visual_suggestions": [
-            {
-                "type": "cover_image",
-                "description": f"Full-width hero image representing: {title}",
-                "prompt_hint": title,
-                "ready": False,
-            },
-            *[
-                {
-                    "type": "section_divider",
-                    "description": f"Visual break for section: {s}",
-                    "prompt_hint": s,
-                    "ready": False,
-                }
-                for s in sections[:3]
-            ],
-            *[
-                {
-                    "type": "quote_card",
-                    "description": f"Pull quote card",
-                    "content": q[:120],
-                    "ready": False,
-                }
-                for q in quotes[:2]
-            ],
-            {
-                "type": "diagram",
-                "description": "Explanatory diagram for core concept — to be defined from insights.",
-                "ready": False,
-            }
-        ],
-        "automation_status": "pending",
-        "note": "Visual automation not yet implemented. This stub ensures the pipeline slot exists for future integration.",
+        "status": "planned" if not execute else "generated",
+        "visual_suggestions": visual_suggestions,
+        "automation_status": "ready" if not execute else "completed",
+        "note": "Visual hooks extracted and mapped to prioritized engines (DALL-E vs Nano Banana)." if not execute else "Visual assets generated and stored locally.",
     }
+
+    # EXECUTION LOGIC
+    if execute and os.environ.get("OPENAI_API_KEY"):
+        client = OpenAI()
+        public_dir = os.path.join(base, "..", "web", "public", "visuals", source_id)
+        os.makedirs(public_dir, exist_ok=True)
+        
+        print(f"Executing generation for {len(visual_suggestions)} hooks...", file=sys.stderr)
+        
+        for i, suggestion in enumerate(visual_suggestions):
+            if suggestion.get("engine") == "dalle-3" and suggestion.get("prompt"):
+                try:
+                    print(f"Generating image {i+1}/{len(visual_suggestions)}: {suggestion['type']}...", file=sys.stderr)
+                    response = client.images.generate(
+                        model="dall-e-3",
+                        prompt=suggestion["prompt"],
+                        size="1024x1024",
+                        quality="standard",
+                        n=1,
+                    )
+                    image_url = response.data[0].url
+                    
+                    # Download and save
+                    img_data = requests.get(image_url).content
+                    filename = f"visual_{i}.png"
+                    file_path = os.path.join(public_dir, filename)
+                    
+                    with open(file_path, 'wb') as handler:
+                        handler.write(img_data)
+                    
+                    suggestion["image_url"] = f"/visuals/{source_id}/{filename}"
+                    print(f"Saved to {suggestion['image_url']}", file=sys.stderr)
+                    
+                except Exception as e:
+                    print(f"Failed to generate image for hook {i}: {e}", file=sys.stderr)
 
     out_dir = os.path.join(base, ".tmp", "visual_plans")
     os.makedirs(out_dir, exist_ok=True)
@@ -85,6 +177,7 @@ def plan_visuals(source_id: str, draft_path: str = None):
         "status": "success",
         "source_id": source_id,
         "plan_path": out_path,
+        "result": visual_plan,
         "suggestion_count": len(visual_plan["visual_suggestions"]),
         "automation_status": "pending",
     }))
@@ -94,5 +187,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate visual planning stub for a draft.")
     parser.add_argument("--source-id", required=True)
     parser.add_argument("--draft-path", default=None)
+    parser.add_argument("--execute", action="store_true", help="Actually generate images via API.")
     args = parser.parse_args()
-    plan_visuals(args.source_id, args.draft_path)
+    plan_visuals(args.source_id, args.draft_path, args.execute)

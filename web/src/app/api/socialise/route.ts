@@ -3,10 +3,9 @@ import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import path from 'path'
 import fs from 'fs'
-import { spawn } from 'child_process'
+import { runPythonScript } from '@/lib/python-runner'
 
 const EXECUTION_DIR = path.resolve(process.cwd(), '../execution')
-const PYTHON = process.env.PYTHON_PATH || 'python3'
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -14,10 +13,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { sourceId } = await request.json()
+    const { transcriptId } = await request.json()
+    const sourceId = transcriptId
 
     if (!sourceId) {
-        return NextResponse.json({ error: "Missing 'sourceId' parameter." }, { status: 400 })
+        return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
     }
 
     // 1. Verify source ownership
@@ -29,15 +29,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Source not found or access denied" }, { status: 404 })
     }
 
-    // Find the latest draft for this source
+    // Find the latest draft for this source to ensure we have content to socialise
     const draft = await prisma.draft.findFirst({
         where: { userId: session.user.id },
         orderBy: { createdAt: 'desc' }
     })
 
-    // Fallback to searching on disk if not in DB (common for local imports)
     const draftPath = path.join(EXECUTION_DIR, '.tmp', 'drafts', `${sourceId}_draft.json`)
-    const summaryPath = path.join(EXECUTION_DIR, '.tmp', 'summaries', `${sourceId}_summary.json`)
+    const summaryPath = path.join(EXECUTION_DIR, '.tmp', 'summaries', sourceId, `${sourceId}_summary.json`)
     const outputDir = path.join(EXECUTION_DIR, '.tmp', 'socialise')
     const outputPath = path.join(outputDir, `${sourceId}_thread.json`)
 
@@ -45,59 +44,48 @@ export async function POST(request: Request) {
         fs.mkdirSync(outputDir, { recursive: true })
     }
 
-    let draftContent = draft?.content || ""
-    let summaryContent = ""
-
-    if (!draftContent && fs.existsSync(draftPath)) {
-        const draftData = JSON.parse(fs.readFileSync(draftPath, 'utf-8'))
-        draftContent = draftData.content || draftData.text || draftData.data || ""
+    // Pre-flight check: ensure the required files exist for the Python script
+    // We prefer the artifacts on disk over DB content to ensure consistency with what the script expects
+    if (!fs.existsSync(draftPath)) {
+        // If draft artifact is missing but we have it in DB, write it back to disk to satisfy the script
+        if (draft?.content) {
+            const draftsDir = path.join(EXECUTION_DIR, '.tmp', 'drafts')
+            if (!fs.existsSync(draftsDir)) fs.mkdirSync(draftsDir, { recursive: true })
+            fs.writeFileSync(draftPath, JSON.stringify({ content: draft.content, sourceId }))
+        } else {
+            return NextResponse.json({ error: "No draft artifact found. Please generate a draft first." }, { status: 102 })
+        }
     }
 
-    if (fs.existsSync(summaryPath)) {
-        const summaryData = JSON.parse(fs.readFileSync(summaryPath, 'utf-8'))
-        summaryContent = summaryData.summary || summaryData.text || ""
-    }
-
-    if (!draftContent) {
-        return NextResponse.json({ error: "No draft content found. Please generate a draft first." }, { status: 400 })
+    if (!fs.existsSync(summaryPath)) {
+        return NextResponse.json({ error: "No summary artifact found. Please generate a summary first." }, { status: 102 })
     }
 
     try {
-        const result = await runBatch('thread_architect.py', [
-            '--draft', draftContent,
-            '--transcript', summaryContent,
+        const { success, error, data } = await runPythonScript<{
+            hook: string;
+            thread: string[];
+            cta: string;
+        }>('thread_architect.py', [
+            '--draft', draftPath,
+            '--transcript', summaryPath,
             '--url', source.url || "",
             '--output', outputPath
-        ])
+        ], {
+            expectedArtifact: `.tmp/socialise/${sourceId}_thread.json`
+        })
 
-        if (!result.success) {
-            return NextResponse.json({ error: "Thread generation failed", details: result.error }, { status: 500 })
+        if (!success) {
+            return NextResponse.json({ error: "Thread generation failed", details: error }, { status: 500 })
         }
 
-        const threadData = JSON.parse(fs.readFileSync(outputPath, 'utf-8'))
-        return NextResponse.json({ result: threadData })
+        return NextResponse.json({ 
+            result: data,
+            message: "Socialised assets generated successfully."
+        })
 
-    } catch (err: any) {
-        return NextResponse.json({ error: err.message }, { status: 500 })
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        return NextResponse.json({ error: msg }, { status: 500 })
     }
-}
-
-function runBatch(script: string, args: string[]): Promise<{ success: boolean; rawOutput?: string; error?: string }> {
-    return new Promise((resolve) => {
-        const proc = spawn(PYTHON, [path.join(EXECUTION_DIR, script), ...args], {
-            cwd: EXECUTION_DIR,
-            env: { ...process.env },
-        })
-        let stdout = ''; let stderr = ''
-        proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
-        proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
-        proc.on('close', (code: number) => {
-            if (code !== 0) {
-                 resolve({ success: false, error: stderr.trim() || `Script exited with code ${code}` })
-                 return
-            }
-            resolve({ success: true, rawOutput: stdout.trim() })
-        })
-        proc.on('error', (err: Error) => { resolve({ success: false, error: err.message }) })
-    })
 }

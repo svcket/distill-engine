@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/Button"
 import { PricingCard } from "@/components/ui/pricing"
+import { payWithPaystack } from "@/lib/paystack"
 import { 
     Card, 
     CardContent, 
@@ -25,12 +26,14 @@ import {
     CardHeader, 
     CardTitle 
 } from "@/components/ui/Card"
+import { motion, AnimatePresence } from "framer-motion"
 
 type SettingsCategory = "account" | "engine" | "processing" | "notifications" | "billing" | "privacy"
 
 interface Preferences {
     writingStyle: string
     preferredTone: string
+    defaultLength: string
     autoStartPipeline: boolean
     generateSummaries: boolean
     notifyInApp: boolean
@@ -76,6 +79,7 @@ export default function SettingsPage() {
         fetchData()
     }, [])
 
+
     const updatePreference = async (updates: Partial<Preferences>) => {
         if (!preferences) return
         setSaving(true)
@@ -94,6 +98,32 @@ export default function SettingsPage() {
         } catch (err) {
             setPreferences(previous)
             console.error(err)
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const handleReset = async () => {
+        if (!window.confirm("Are you absolutely sure? This will delete all your sources and drafts permanently.")) {
+            return
+        }
+
+        setSaving(true)
+        try {
+            const res = await fetch("/api/user/reset", { method: "POST" })
+            if (!res.ok) throw new Error("Reset failed")
+            
+            // Refresh usage stats
+            const usageRes = await fetch("/api/user/usage")
+            if (usageRes.ok) {
+                const usageData = await usageRes.json()
+                setUsage(usageData)
+            }
+
+            alert("System reset successful. Your data has been cleared.")
+        } catch (err) {
+            console.error(err)
+            alert("Failed to perform system reset.")
         } finally {
             setSaving(false)
         }
@@ -143,41 +173,81 @@ export default function SettingsPage() {
 
                 {/* Main Content Area: Grouped Lists */}
                 <main className="flex-1 max-w-2xl min-h-[600px]">
-                    <div className="animate-in fade-in slide-in-from-right-4 duration-500">
-                        {activeCategory === "account" && (
-                            <Card className="border-border/40 bg-card/60 shadow-sm">
-                                <CardHeader className="pb-8">
-                                    <CardTitle className="text-lg font-serif">My Profile</CardTitle>
-                                    <CardDescription>Your engine-identifying credentials and subscription tier.</CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="flex items-center gap-4 py-2">
-                                        <div className="w-16 h-16 rounded-full bg-brand/10 flex items-center justify-center overflow-hidden relative shadow-inner border border-brand/20">
-                                            {session?.user?.image ? (
-                                                <Image 
-                                                    src={session.user.image} 
-                                                    alt={session.user.name || "Profile"} 
-                                                    fill
-                                                    className="object-cover"
-                                                />
-                                            ) : (
-                                                <span className="text-lg font-medium text-brand uppercase tracking-tight">
-                                                    {(session?.user?.name || "NE").split(" ").map(n => n[0]).join("")}
-                                                </span>
-                                            )}
+                    <AnimatePresence mode="wait">
+                        <motion.div
+                            key={activeCategory}
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            transition={{ duration: 0.3, ease: "easeOut" }}
+                            className="space-y-6"
+                        >
+                            {activeCategory === "account" && (
+                                <Card className="border-border/40 bg-card/60 shadow-sm">
+                                    <CardHeader className="pb-8">
+                                        <CardTitle className="text-lg font-serif">My Profile</CardTitle>
+                                        <CardDescription>Your engine-identifying credentials managed by your auth provider.</CardDescription>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="space-y-8">
+                                            {/* Avatar Row */}
+                                            <div className="flex items-center gap-6 pb-2">
+                                                <div className="w-20 h-20 rounded-full bg-brand/10 flex items-center justify-center overflow-hidden relative shadow-inner border border-brand/20">
+                                                    {session?.user?.image ? (
+                                                        <Image 
+                                                            src={session.user.image} 
+                                                            alt="Profile" 
+                                                            fill
+                                                            className="object-cover"
+                                                        />
+                                                    ) : (
+                                                        <span className="text-2xl font-medium text-brand uppercase tracking-tight">
+                                                            {(session?.user?.name || "NE").split(" ").map(n => n[0]).join("")}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 space-y-1">
+                                                    <p className="text-sm font-semibold">Avatar Image</p>
+                                                    <p className="text-xs text-muted-foreground">Managed by your Google or Magic Link account.</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Fields */}
+                                            <div className="grid grid-cols-1 gap-6">
+                                                <div className="space-y-2">
+                                                    <label className="text-[11px] uppercase tracking-widest text-muted-foreground/60 font-bold ml-1">Full Name</label>
+                                                    <div className="bg-accent/10 border border-border/20 rounded-xl h-11 flex items-center px-4 text-sm font-medium text-foreground/80">
+                                                        {session?.user?.name || "No name set"}
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <label className="text-[11px] uppercase tracking-widest text-muted-foreground/60 font-bold ml-1">Email Connection</label>
+                                                    <div className="bg-accent/10 border border-border/20 rounded-xl h-11 flex items-center px-4 text-sm font-medium text-foreground/80">
+                                                        {session?.user?.email || "No email set"}
+                                                    </div>
+                                                </div>
+
+                                                <div className="p-4 rounded-xl bg-orange-500/5 border border-orange-500/10">
+                                                    <p className="text-xs text-orange-600/80 font-medium leading-relaxed">
+                                                        Profile details are established via your authentication provider. 
+                                                        To update your name or avatar, please modify your settings at the source (e.g., Google Account).
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <div className="pt-4 flex items-center justify-between border-t border-border/40">
+                                                <div className="text-xs font-medium text-muted-foreground">
+                                                    {usage?.currentPlan || "Starter"} Plan Membership
+                                                </div>
+                                                <div className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/40">
+                                                    Verified Authentication
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="flex flex-col">
-                                            <span className="text-xl font-medium text-foreground tracking-tight">
-                                                {session?.user?.name || "Member"}
-                                            </span>
-                                            <span className="text-sm text-muted-foreground mt-1">
-                                                {usage?.currentPlan || "Starter"} Plan
-                                            </span>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        )}
+                                    </CardContent>
+                                </Card>
+                            )}
 
                         {activeCategory === "engine" && (
                             <div className="space-y-6">
@@ -204,7 +274,7 @@ export default function SettingsPage() {
                                             </select>
                                         </div>
 
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex items-center justify-between pb-4 border-b border-border/40">
                                             <div className="space-y-1">
                                                 <p className="text-sm font-semibold">Preferred Tone</p>
                                                 <p className="text-xs text-muted-foreground">Choose how your engine should address its audience.</p>
@@ -219,6 +289,23 @@ export default function SettingsPage() {
                                                 <option value="technical">Technical</option>
                                                 <option value="casual">Conversational</option>
                                                 <option value="witty">Sharp & Witty</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <div className="space-y-1">
+                                                <p className="text-sm font-semibold">Standard Output Length</p>
+                                                <p className="text-xs text-muted-foreground">Default size for generated drafts and briefs.</p>
+                                            </div>
+                                            <select
+                                                aria-label="Default Length"
+                                                value={preferences?.defaultLength || "medium"}
+                                                onChange={(e) => updatePreference({ defaultLength: e.target.value })}
+                                                className="bg-accent/40 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border/40 outline-none h-9 w-32"
+                                            >
+                                                <option value="short">Short</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="long">Long</option>
                                             </select>
                                         </div>
                                     </CardContent>
@@ -313,7 +400,7 @@ export default function SettingsPage() {
                                             </button>
                                         </div>
 
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex items-center justify-between pb-4 border-b border-border/40">
                                             <div className="space-y-1">
                                                 <p className="text-sm font-semibold">Push Notifications</p>
                                                 <p className="text-xs text-muted-foreground">Receive real-time mobile alerts for critical events.</p>
@@ -332,6 +419,29 @@ export default function SettingsPage() {
                                                 <div className={cn(
                                                     "w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-300",
                                                     preferences?.notifyPush ? "translate-x-5 shadow-emerald-900/40" : "translate-x-0"
+                                                )} />
+                                            </button>
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <div className="space-y-1">
+                                                <p className="text-sm font-semibold">Critical System Alerts</p>
+                                                <p className="text-xs text-muted-foreground">Immediate alerts for pipeline failures or storage limits.</p>
+                                            </div>
+                                            <button 
+                                                aria-label="Toggle Critical Alerts"
+                                                onClick={() => {
+                                                    if (!preferences) return
+                                                    updatePreference({ notifyCritical: !preferences.notifyCritical })
+                                                }}
+                                                className={cn(
+                                                    "w-11 h-6 rounded-full transition-all duration-300 relative border ring-1 ring-border shadow-inner p-1",
+                                                    preferences?.notifyCritical ? "bg-emerald-500 border-emerald-400" : "bg-zinc-300 dark:bg-zinc-700 border-border"
+                                                )}
+                                            >
+                                                <div className={cn(
+                                                    "w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-300",
+                                                    preferences?.notifyCritical ? "translate-x-5 shadow-emerald-900/40" : "translate-x-0"
                                                 )} />
                                             </button>
                                         </div>
@@ -409,6 +519,11 @@ export default function SettingsPage() {
                                                 description="Advanced research and export depth."
                                                 buttonVariant="default"
                                                 highlight
+                                                onClick={() => payWithPaystack({
+                                                    email: session?.user?.email || "",
+                                                    amount: 3000000, // 30,000 NGN (approx $19)
+                                                    metadata: { plan: 'pro' }
+                                                })}
                                                 features={["Unlimited Accounts", "Smart Labels", "Priority Support"]}
                                             />
                                         </div>
@@ -431,7 +546,12 @@ export default function SettingsPage() {
                                             <p className="text-sm font-semibold text-red-600">Danger Zone</p>
                                             <p className="text-xs text-red-600/60 font-normal">This action cannot be undone.</p>
                                         </div>
-                                        <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-500/10 rounded-xl px-6 font-bold h-11 gap-2">
+                                        <Button 
+                                            variant="outline" 
+                                            onClick={handleReset}
+                                            disabled={saving}
+                                            className="text-red-600 border-red-200 hover:bg-red-500/10 rounded-xl px-6 font-bold h-11 gap-2"
+                                        >
                                             <Trash2 className="w-4 h-4" />
                                             Clear All Data
                                         </Button>
@@ -439,7 +559,8 @@ export default function SettingsPage() {
                                 </CardContent>
                             </Card>
                         )}
-                    </div>
+                        </motion.div>
+                    </AnimatePresence>
                 </main>
             </div>
 

@@ -14,9 +14,21 @@ import {
 import { signOut, useSession } from "next-auth/react"
 import Image from "next/image"
 import { useLanguage, Language } from "@/context/LanguageContext"
+import { payWithPaystack } from "@/lib/paystack"
+
+interface UserWithPlan {
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
+    id?: string;
+    role?: string;
+    plan?: string;
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
     const { data: session } = useSession()
+    const user = session?.user as UserWithPlan | undefined
+    const userPlan = user?.plan || "free"
     const pathname = usePathname()
     const { lang, setLang, t } = useLanguage()
     const [isLangOpen, setIsLangOpen] = useState(false)
@@ -125,26 +137,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         </div>
                     </div>
 
-                    <div className="p-4 border-t border-border bg-card/50">
+                    <div className="p-4 border-t border-border bg-card/50 space-y-3">
+                        {userPlan === "free" && (
+                            <button 
+                                onClick={() => payWithPaystack({
+                                    email: user?.email || "",
+                                    amount: 3000000, // 30,000 NGN (approx $19)
+                                    metadata: {
+                                        plan: 'pro'
+                                    }
+                                })}
+                                className="flex items-center justify-center gap-2 w-full py-2.5 bg-zinc-950 text-white dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl text-xs font-bold shadow-lg hover:scale-[1.02] active:scale-95 transition-all border border-zinc-800 dark:border-emerald-500/30"
+                            >
+                                <LayoutGrid className="w-3.5 h-3.5" />
+                                Upgrade (Launch Pro)
+                            </button>
+                        )}
                         <Link 
                             href="/settings"
                             className="flex items-center gap-3 p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all group"
                         >
                             <div className="w-9 h-9 rounded-full bg-brand/10 flex items-center justify-center overflow-hidden border border-brand/20 relative shadow-inner group-hover:scale-105 transition-transform">
-                                {session?.user?.image ? (
+                                {user?.image ? (
                                     <Image 
-                                        src={session.user.image} 
-                                        alt={session.user.name || "Profile"} 
+                                        src={user.image} 
+                                        alt={user.name || "Profile"} 
                                         fill
                                         className="object-cover"
                                     />
                                 ) : (
-                                    <span className="text-xs font-bold text-brand uppercase">{(session?.user?.name?.[0] || "?")}</span>
+                                    <span className="text-xs font-bold text-brand uppercase">{(user?.name?.[0] || "?")}</span>
                                 )}
                             </div>
                             <div className="flex flex-col min-w-0">
-                                <span className="text-sm font-bold text-foreground truncate">{session?.user?.name || "Member"}</span>
-                                <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Pro Plan</span>
+                                <span className="text-sm font-bold text-foreground truncate">{user?.name || "Member"}</span>
+                                <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">
+                                    {userPlan.toUpperCase()} PLAN
+                                </span>
                             </div>
                         </Link>
                     </div>

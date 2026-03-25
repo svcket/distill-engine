@@ -22,6 +22,8 @@ class RssAdapter(BaseAdapter):
         r"(?:https?://)?medium\.com/",
         r"(?:https?://)?substack\.com/",
         r"(?:https?://)?ghost\.org/",
+        r"(?:https?://)?(?:www\.)?x\.com/",
+        r"(?:https?://)?(?:www\.)?twitter\.com/",
     ]
 
     def detect(self, url: str) -> bool:
@@ -57,7 +59,7 @@ class RssAdapter(BaseAdapter):
         try:
             # 1. NEW: Try Newspaper3k for full article extraction
             if Article:
-                article = Article(url)
+                article = Article(url, fetch_images=False, request_timeout=5)
                 article.download()
                 article.parse()
                 if article.title: title = article.title

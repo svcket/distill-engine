@@ -623,7 +623,8 @@ function VisualResult({ data, compact }: { data: Record<string, unknown>; compac
 }
  
 function SocialiseResult({ data }: { data: Record<string, unknown> }) {
-    const d = (data.result || data.data || data) as Record<string, unknown>
+    // Aggressive normalization: catch nested result/data/payload structures
+    const d = (data.result || data.data || data.payload || data) as Record<string, unknown>
     const hook = getStr(d, "hook")
     const thread = getArr(d, "thread")
     const cta = getStr(d, "cta")

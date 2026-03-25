@@ -13,6 +13,8 @@ interface PricingCardProps {
   highlight?: boolean;
   highlightLabel?: string;
   buttonVariant?: "default" | "outline";
+  href?: string;
+  onClick?: () => void;
 }
 
 export function PricingCard({
@@ -22,6 +24,8 @@ export function PricingCard({
   features,
   highlight = false,
   buttonVariant = "outline",
+  href = "/checkout",
+  onClick,
 }: PricingCardProps) {
   return (
     <div
@@ -40,8 +44,17 @@ export function PricingCard({
           <p className="text-muted-foreground text-[13px] leading-relaxed line-clamp-2">{description}</p>
         </div>
 
-        <Button asChild className="w-full rounded-xl h-11 font-bold text-sm shadow-sm" variant={buttonVariant}>
-          <Link href="/checkout">Get Started</Link>
+        <Button 
+          asChild={!onClick} 
+          className="w-full rounded-xl h-11 font-bold text-sm shadow-sm" 
+          variant={buttonVariant}
+          onClick={onClick}
+        >
+          {onClick ? (
+            <span>Get Started</span>
+          ) : (
+            <Link href={href}>Get Started</Link>
+          )}
         </Button>
       </div>
 

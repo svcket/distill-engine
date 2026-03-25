@@ -36,7 +36,11 @@ def extract_insights(packet_path: str):
         sys.exit(1)
         
     packet = load_json(packet_path)
-    source_id = packet.get("source_id") or packet.get("video_id")
+    if not packet or not isinstance(packet, dict):
+        print(json.dumps({"status": "failed", "error": f"Invalid or empty packet at: {packet_path}"}), file=sys.stderr)
+        sys.exit(1)
+
+    source_id = packet.get("source_id") or packet.get("video_id") or "unknown"
     
     if "OPENAI_API_KEY" not in os.environ or not os.environ["OPENAI_API_KEY"]:
         # Mock fallback for UI testing without keys
@@ -72,6 +76,8 @@ def extract_insights(packet_path: str):
     transcript_text = "\n\n".join(
         [f"[{c.get('start', 0)}s]: {c.get('text', '')}" for c in packet.get("transcript_segments", [])]
     )
+
+    print(json.dumps({"type": "status", "text": "Analyzing transcript context and speaker signals..."}), flush=True)
     
     system_prompt = """
     You are the Insight Extractor—a research analyst for a premium editorial publication.
@@ -88,6 +94,7 @@ def extract_insights(packet_path: str):
     """
     
     try:
+        print(json.dumps({"type": "status", "text": "Extracting core arguments and frameworks..."}), flush=True)
         completion = client.beta.chat.completions.parse(
             model="gpt-4o-mini",
             messages=[
@@ -97,6 +104,7 @@ def extract_insights(packet_path: str):
             response_format=InsightExtraction,
         )
         
+        print(json.dumps({"type": "status", "text": "Finalizing synthesis and mapping implications..."}), flush=True)
         extracted_data = completion.choices[0].message.parsed
         
         out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "insights")

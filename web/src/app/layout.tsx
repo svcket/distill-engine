@@ -22,6 +22,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="antialiased" suppressHydrationWarning>
+      <head>
+        <script src="https://js.paystack.co/v1/inline.js" async></script>
+      </head>
       <body className={`${inter.variable} ${serif.variable} font-sans`}>
         <ThemeProvider
           attribute="class"

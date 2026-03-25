@@ -46,15 +46,37 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     })
   ],
   callbacks: {
+    async signIn({ user, account }) {
+      // 1. Always allow Developer Access bypass
+      if (user.email === "operator@distill.agency") return true
+
+      // 2. Check Whitelist for production email/google signups
+      if (account?.provider === "google" || account?.provider === "resend") {
+        const whitelisted = await (prisma as any).betaWhitelist.findUnique({
+          where: { email: user.email! }
+        })
+        if (!whitelisted) return false // Deny access
+      }
+      return true
+    },
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id
+        token.role = (user as { role?: string }).role || "USER"
+        
+        // Fetch plan
+        const usage = await prisma.usage.findUnique({
+          where: { userId: user.id }
+        })
+        token.plan = usage?.currentPlan || "free"
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
+        (session.user as { role?: string }).role = token.role as string
+        (session.user as { plan?: string }).plan = token.plan as string
       }
       return session
     },

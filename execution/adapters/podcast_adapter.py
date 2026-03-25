@@ -180,8 +180,9 @@ class PodcastAdapter(BaseAdapter):
         # Handle Spotify (Scrape title, search iTunes)
         if "spotify.com" in url:
             try:
-                # 1. Try different User-Agents
+                # 1. Try different User-Agents (including mobile to bypass some desktop interstitials)
                 user_agents = [
+                    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
                     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
                 ]
@@ -192,58 +193,67 @@ class PodcastAdapter(BaseAdapter):
                         req = urllib.request.Request(url, headers={"User-Agent": ua})
                         with urllib.request.urlopen(req, timeout=5) as resp:
                             html = resp.read().decode("utf-8", errors="ignore")
-                            if "og:title" in html: break
+                            if "og:title" in html or "<title>" in html: break
                     except Exception: continue
                 
-                # 2. Try Embed URL if main URL failed
-                if "og:title" not in html:
+                # 2. Try Embed URL if main URL failed to yield metadata
+                if "og:title" not in html or "Spotify \u2013 Web Player" in html:
                     try:
-                        embed_url = url.replace("open.spotify.com/episode/", "open.spotify.com/embed/episode/")
-                        req = urllib.request.Request(embed_url, headers={"User-Agent": user_agents[0]})
+                        embed_url = url.replace("open.spotify.com/episode/", "open.spotify.com/embed/episode/").split("?")[0]
+                        req = urllib.request.Request(embed_url, headers={"User-Agent": user_agents[1]})
                         with urllib.request.urlopen(req, timeout=5) as resp:
-                            html = resp.read().decode("utf-8", errors="ignore")
+                            embed_html = resp.read().decode("utf-8", errors="ignore")
+                            if "og:title" in embed_html:
+                                html = embed_html
                     except Exception: pass
                 
-                og_title = re.search(r'<meta property="og:title" content="(.*?)"', html)
-                if not og_title:
-                    # Fallback to <title> or other meta tags
+                og_title = re.search(r'property="og:title" content="(.*?)"', html)
+                if not og_title or "Spotify \u2013 Web Player" in og_title.group(1):
+                    # Try Twitter title
+                    og_title = re.search(r'name="twitter:title" content="(.*?)"', html)
+                
+                if not og_title or "Spotify \u2013 Web Player" in og_title.group(1):
+                    # Try direct <title>
                     og_title = re.search(r'<title>(.*?)</title>', html)
 
                 if og_title:
                     raw_title = og_title.group(1)
-                    clean_title = raw_title.split("|")[0].strip()
+                    # Correct title cleaning: split by platform separators first
+                    clean_target = raw_title.split("|")[0].split("\u2022")[0].strip()
                     
-                    # Remove "Episode [Number]" prefixes or similar
-                    clean_title = re.sub(r"^(?:Episode|Ep)\s*\d+[:\s-]*", "", clean_title, flags=re.IGNORECASE).strip()
-                    target_title = clean_title
+                    # Strip "Season X Episode Y" or "Episode 123" prefixes
+                    clean_target = re.sub(r"^(?:Season|Episode|Ep|S|E)?\s*\d+[:\s-]*(?:Episode|Ep|E)?\s*\d*[:\s-]*", "", clean_target, flags=re.IGNORECASE).strip()
+                    target_title = clean_target
                     
-                    parts = clean_title.split(" - ")
-                    show_name = parts[-1].strip() if len(parts) > 1 else clean_title
+                    parts = clean_target.split(" - ")
+                    show_name = parts[-1].strip() if len(parts) > 1 else clean_target
                     episode_name = parts[0].strip() if len(parts) > 1 else ""
                     
                     # Clean the episode name specifically for better searching
                     clean_episode = re.sub(r"Season\s*\d+", "", episode_name, flags=re.IGNORECASE).strip()
 
                     # Also try to find the creator/show name directly in meta
-                    show_m = re.search(r'property="music:musician" content="(.*?)"', html)
-                    if not show_m:
-                        show_m = re.search(r'property="og:description" content="(.*?)"', html)
-                    
-                    search_queries = [clean_title]
-                    if clean_episode and len(clean_episode) > 5:
-                        search_queries.append(clean_episode)
+                    # Also try to find the show name directly in meta description
+                    # Spotify descriptions often start with "Show Name · Episode"
+                    show_m = re.search(r'property="og:description" content="(.*?)(?: \xb7| \u2022| ·)', html)
+                    content_show = None
                     if show_m:
-                        content = show_m.group(1).split(" · ")[0]
-                        search_queries.append(content)
-                        # NEW: Try combining show name + episode name
-                        if clean_episode:
-                             search_queries.append(f"{content} {clean_episode}")
-                    if len(parts) > 1:
-                        search_queries.append(show_name)
+                        content_show = show_m.group(1).strip()
                     
-                    for query in search_queries:
-                        search_url = f"https://itunes.apple.com/search?term={urllib.parse.quote(query)}&entity=podcast"
-                        req2 = urllib.request.Request(search_url)
+                    # Build prioritized search queries
+                    queries = []
+                    best_show = show_name or content_show
+                    if episode_name and best_show:
+                        queries.append({"q": f"{episode_name} {best_show}", "ent": "podcastEpisode"})
+                    if len(episode_name) > 10:
+                        queries.append({"q": episode_name, "ent": "podcastEpisode"})
+                    if best_show:
+                        queries.append({"q": best_show, "ent": "podcast"})
+                    queries.append({"q": clean_target, "ent": "podcastEpisode"})
+                    
+                    for sq in queries:
+                        search_url = f"https://itunes.apple.com/search?term={urllib.parse.quote(sq['q'])}&entity={sq['ent']}&limit=10"
+                        req2 = urllib.request.Request(search_url, headers={"User-Agent": user_agents[1]})
                         try:
                             with urllib.request.urlopen(req2, timeout=5) as resp2:
                                 data = json.loads(resp2.read().decode())
@@ -319,10 +329,18 @@ class PodcastAdapter(BaseAdapter):
                     if t_m:
                         item_title = t_m.group(1).lower().strip()
                         
-                        # 1. Direct or substring match (Fast)
-                        if normalized_target in item_title or item_title in normalized_target:
+                        # 1. Direct or significant substring match (Priority)
+                        if normalized_target == item_title:
                             best_match = item_xml
+                            best_score = 1.0
                             break
+                        
+                        if normalized_target in item_title or item_title in normalized_target:
+                            # Higher score for substrings
+                            score = 0.9 if len(normalized_target) > 10 else 0.7
+                            if score > best_score:
+                                best_score = score
+                                best_match = item_xml
                         
                         # 2. Score word overlap (Fuzzy)
                         item_words = set(re.findall(r"\w+", item_title))
@@ -334,8 +352,8 @@ class PodcastAdapter(BaseAdapter):
                             best_score = score
                             best_match = item_xml
                 
-                # Use best fuzzy match if it meets a threshold (e.g. 50% words match)
-                if best_match and (best_score > 0.5 or not best_score):
+                # Use best fuzzy match if it meets a reasonable threshold (0.5)
+                if best_match and best_score >= 0.5:
                     target_item = best_match
 
             title_m = re.search(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>", target_item, re.DOTALL | re.IGNORECASE)

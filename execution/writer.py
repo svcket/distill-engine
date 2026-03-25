@@ -106,7 +106,8 @@ CRITICAL WRITING RULES:
 - **SPECIFICITY OVER ABSTRACTION**: Reference real tools, cases, dates, or systems. Instead of "People are carving out identities", write "Someone who once introduced themselves as 'John’s girlfriend' now introduces themselves as 'the one who just started ceramics classes'".
 - **NO AI CLICHÉS**: Strictly avoid: "In today's rapidly evolving world", "It is important to note", "As we move forward", "In conclusion", "Dive into", "Tapestry", "Delve", "Harness". These significantly reduce the human-quality score.
 - **PERSPECTIVE OVER COMMENTARY**: Provide a point of view. Explain *why* something matters to a builder or founder.
-- **Vary Sentence Rhythm**: Mix short, punchy sentences with longer exploratory ones.
+- **Structure & Spacing**: Use standard Markdown headers (# and ##). **CRITICAL**: Use double newlines (\n\n) between every paragraph and section.
+- **NO HTML**: Do NOT use <h1>, <p>, or other HTML tags. Use ONLY standard Markdown.
 
 TARGET AUDIENCE: {audience}
 CONTENT TYPE: {content_type}
@@ -115,7 +116,7 @@ GOAL: {goal}
 MUST INCLUDE:
 {chr(10).join([f"   - {item}" for item in must_include])}
 
-Format strictly in clean Markdown."""
+Format strictly in clean, pure Markdown with double newlines between blocks. Only use HTML if explicitly requested (rare)."""
 
     user_prompt = f"""Structure Blueprint:
 {json.dumps(outline_data, indent=2)}

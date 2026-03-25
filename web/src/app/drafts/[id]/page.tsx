@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/Card"
 import { Badge } from "@/components/ui/Badge"
 import { Button } from "@/components/ui/Button"
@@ -12,21 +12,59 @@ export default function DraftStudioPage() {
     const params = useParams()
     const id = params?.id as string
     const router = useRouter()
+    
+    // Hooks MUST be top-level
+    const [strategy, setStrategy] = useState<any>(null)
+    const [blueprint, setBlueprint] = useState<any>(null)
+    const [draft, setDraft] = useState<any>(null)
+    const [isLoading, setIsLoading] = useState(true)
+    const [isSaving, setIsSaving] = useState(false)
 
     // Angle Strategist State
-    const [strategy, setStrategy] = useState<any>(null)
     const [isStrategizing, setIsStrategizing] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     // Article Architect State
-    const [blueprint, setBlueprint] = useState<any>(null)
     const [isArchitecting, setIsArchitecting] = useState(false)
     const [architectError, setArchitectError] = useState<string | null>(null)
 
     // Writer State
-    const [draft, setDraft] = useState<any>(null)
     const [isWriting, setIsWriting] = useState(false)
     const [writeError, setWriteError] = useState<string | null>(null)
+
+    // Load existing data
+    useEffect(() => {
+        const loadData = async () => {
+            if (!id) return
+            try {
+                const res = await fetch(`/api/store?id=${id}`)
+                if (res.ok) {
+                    const data = await res.json()
+                    if (data.results) {
+                        if (data.results.angle) setStrategy(data.results.angle)
+                        if (data.results.blueprint) setBlueprint(data.results.blueprint)
+                        if (data.results.draft) setDraft(data.results.draft)
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load draft data:", e)
+            } finally {
+                setIsLoading(false)
+            }
+        }
+        loadData()
+    }, [id])
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-background">
+                <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground animate-pulse">Entering Studio...</p>
+                </div>
+            </div>
+        )
+    }
 
     const handleStrategize = async () => {
         setIsStrategizing(true)

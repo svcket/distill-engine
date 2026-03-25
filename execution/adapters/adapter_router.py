@@ -24,15 +24,19 @@ from adapters.podcast_adapter import PodcastAdapter
 from adapters.upload_adapter import UploadAdapter
 from adapters.rss_adapter import RssAdapter
 from adapters.recording_adapter import RecordingAdapter
+from adapters.twitter_adapter import TwitterAdapter
+from adapters.document_adapter import DocumentAdapter
 
 
 # Registry — order matters; more specific platforms first
 ADAPTERS = [
+    TwitterAdapter(),
+    DocumentAdapter(),
+    UploadAdapter(),
+    RecordingAdapter(),
     PodcastAdapter(),
     YouTubeAdapter(),
     VimeoAdapter(),
-    UploadAdapter(),
-    RecordingAdapter(),
     RssAdapter(), # Generic fallback
 ]
 

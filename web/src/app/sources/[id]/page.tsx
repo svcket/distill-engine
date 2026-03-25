@@ -6,24 +6,22 @@ import { Button } from "@/components/ui/Button"
 import { StageResultPanel } from "@/components/StageResultView"
 import { SourceCandidate } from "@/lib/mockData"
 import {
-    ArrowLeft, ExternalLink, Calendar, Clock, BarChart3,
-    Loader2, FileText, Bot, Sparkles, Target, Edit3,
-    X, Trash2, ShieldCheck, Check, ChevronDown,
-    RefreshCw, Play, MoreHorizontal, Share2
+    ArrowLeft, Loader2, FileText, Bot, Sparkles, Target, Edit3,
+    ShieldCheck, Check, ChevronDown, RefreshCw, Play, Share2,
+    ExternalLink, MoreHorizontal, Trash2, X, Calendar, Clock, BarChart3
 } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
-import DQMCard, { DQMData } from "@/components/DQMCard"
 
 type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insights" | "angle" | "draft" | "qa" | "socialise" | "export"
 type StageStatus = "completed" | "active" | "locked"
 
 interface StagePayload {
     status?: string;
-    result?: any; 
-    data?: any;
-    payload?: any;
+    result?: StageResultData; 
+    data?: StageResultData | null;
+    payload?: StageResultData | null;
     summary?: string;
     scores?: {
         publishability?: number;
@@ -45,14 +43,9 @@ interface StreamChunk {
     text?: string;
     status?: string;
     message?: string;
-    data?: any;
+    data?: StageResultData;
 }
 
-interface ScoreData {
-    publishability?: number;
-    total_score?: number;
-    score?: number;
-}
 
 interface WorkflowStage {
     id: StageId
@@ -65,6 +58,19 @@ interface WorkflowStage {
     hidden?: boolean // UX optimization: run in background but don't show to user
 }
 
+interface JudgeResult { score: number; status: string; rationale?: string; title?: string; channel?: string; url?: string; }
+interface TranscriptResult { segments: { start: number; text: string; duration?: number }[]; segment_count: number; status: string; duration?: number; }
+interface RefineResult { segments: { text: string }[]; segment_count: number; status: string; }
+interface SummaryResult { summary: string; status: string; }
+interface PacketResult { source_id: string; status: string; }
+interface InsightsResult { core_argument: string; key_claims: string[]; supporting_examples: string[]; frameworks: unknown[]; memorable_quotes: string[]; status: string; }
+interface StrategyResult { recommended_format: string; secondary_formats: string[]; target_audience: string; framing_angle: string; working_titles: string[]; rationale: string; status: string; }
+interface DraftResult { content: string; title: string; word_count: number; status: string; }
+interface QAResult { total_score: number; decision: string; scores: { publishability: number; seo: number; aeo: number }; dimensions: Record<string, number>; rationale: string; status: string; }
+interface SocialiseResult { hook?: string; hooks?: string[]; thread?: string[]; cta?: string; result?: { hook?: string; hooks?: string[]; thread?: string[]; cta?: string } }
+
+type StageResultData = JudgeResult | TranscriptResult | RefineResult | SummaryResult | PacketResult | InsightsResult | StrategyResult | DraftResult | QAResult | SocialiseResult | Record<string, unknown>;
+
 const STAGES: WorkflowStage[] = [
     { id: "judge", label: "Judge Alignment", description: "Enrich source metadata and evaluate against NorthStar Profile", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }), hidden: true },
     { id: "transcript", label: "Fetch Transcript", description: "Retrieve indexing data via Fast-Path or Whisper", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (id) => ({ sourceId: id }) },
@@ -75,7 +81,7 @@ const STAGES: WorkflowStage[] = [
     { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
-    { id: "socialise", label: "Socialize content", description: "Generate X threads, LinkedIn posts, and distribution assets", icon: Share2, apiEndpoint: "/api/socialise", apiBody: (id) => ({ sourceId: id }) },
+    { id: "socialise", label: "Socialize content", description: "Generate X threads, LinkedIn posts, and distribution assets", icon: Share2, apiEndpoint: "/api/socialise", apiBody: (id) => ({ transcriptId: id }) },
 ]
 
 const INTENT_DESCRIPTIONS: Record<string, string> = {
@@ -135,11 +141,12 @@ export default function SourceMissionControl() {
         status: "idle",
         score: 0,
         transcriptStatus: "pending",
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        completedStages: []
     })
 
     // Stage results stored by ID
-    const [stageResults, setStageResults] = useState<Record<string, unknown>>({})
+    const [stageResults, setStageResults] = useState<Record<string, StageResultData>>({})
 
     // Sync score & duration from results to source header
     useEffect(() => {
@@ -156,8 +163,9 @@ export default function SourceMissionControl() {
         
         // 2. Sync Duration
         if (stageResults.transcript) {
-            const ts = stageResults.transcript as Record<string, unknown>
-            const rawDuration = (ts.duration as number) || (ts.result as Record<string, any>)?.duration || (ts.metadata as Record<string, any>)?.duration;
+            const ts = stageResults.transcript as TranscriptResult
+            const tsRaw = ts as unknown as Record<string, Record<string, unknown>>;
+            const rawDuration = ts.duration || tsRaw?.result?.duration || tsRaw?.metadata?.duration;
             const duration = typeof rawDuration === 'number' ? `${Math.floor(rawDuration / 60)}:${String(rawDuration % 60).padStart(2, '0')}` : undefined;
             if (duration && duration !== source.duration) {
                 setSource(s => ({ ...s, duration }));
@@ -246,18 +254,12 @@ export default function SourceMissionControl() {
                 const storeRes = await fetch("/api/store")
                 if (storeRes.ok) {
                     const data = await storeRes.json()
-                    const stored = (data.sources || []).find((s: { id: string }) => s.id === id)
+                    const stored = (data.sources || []).find((s: Record<string, unknown>) => s.id === id)
                     if (stored) {
                         // Always restore source metadata from store
                         setSource(s => ({
                             ...s,
-                            title: stored.title || s.title,
-                            channel: stored.channel || s.channel,
-                            url: stored.url || s.url,
-                            score: stored.score || s.score,
-                            published: stored.published || s.published,
-                            duration: stored.duration || s.duration,
-                            status: stored.status || s.status,
+                            ...stored,
                             transcriptStatus: stored.transcript_status || stored.transcriptStatus || s.transcriptStatus,
                         }))
                         if (stored.completedStages && stored.completedStages.length > 0) {
@@ -411,7 +413,7 @@ export default function SourceMissionControl() {
                 
                 const data = mockData
                 // Store result
-                setStageResults(prev => ({ ...prev, [stage.id]: data.result || data }))
+                setStageResults(prev => ({ ...prev, [stage.id]: (data.result || data) as StageResultData }))
                 setCompletedStages(prev => new Set([...prev, stage.id]))
                 
                 // Persist to localStorage for local imports
@@ -440,7 +442,7 @@ export default function SourceMissionControl() {
                 body: JSON.stringify(bodyPayload)
             })
 
-            let data: any = null;
+            let data: StagePayload | null = null;
             
             // Handle streaming for Draft & Insights stages
             if ((stage.id === "draft" || stage.id === "insights") && res.body) {
@@ -501,16 +503,27 @@ export default function SourceMissionControl() {
             }
 
             // Store result
-            setStageResults(prev => ({ ...prev, [stage.id]: data?.result || data }))
+            const resValue = (data?.result || data) as StageResultData
+            setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
 
             // Mark completed
             setCompletedStages(prev => new Set([...prev, stage.id]))
 
+            // ─── REACTIVE PANEL SYNC ───
+            // If the panel is open for this stage, refresh it immediately
+            if (panelContent && panelContent.stageId === stage.id) {
+                setPanelContent({
+                    ...panelContent,
+                    data: resValue
+                });
+            }
+            // ───────────────────────────
+
             // Sync score if available
             if (data && typeof data === 'object') {
-                const resObj = (data as Record<string, any>).result || data;
+                const resObj = ((data as StagePayload).result || data) as Record<string, unknown>;
                 if (resObj && (resObj.score !== undefined || resObj.total_score !== undefined)) {
-                    const score = resObj.total_score ?? resObj.score;
+                    const score = (resObj.total_score ?? resObj.score) as number;
                     setSource(s => ({
                         ...s,
                         score: score,
@@ -521,19 +534,19 @@ export default function SourceMissionControl() {
             }
             if (data && typeof data === 'object') {
                 if (stage.id === "transcript") {
-                    const tsData = (data as StagePayload).result || data;
+                    const tsData = ((data as StagePayload).result || data) as Record<string, unknown>;
                     if (tsData && tsData.duration) {
                         setSource(s => ({ ...s, duration: String(tsData.duration) }));
                     }
                 }
 
                 if (stage.id === "judge") {
-                    const judgeData = (data as Record<string, any>).result || data;
+                    const judgeData = (data as StagePayload).result || data;
                     // If judge updates title/channel/url
                     const updatedSource = {
-                        title: (judgeData as Record<string, any>).title || source.title,
-                        channel: (judgeData as Record<string, any>).channel || source.channel,
-                        url: (judgeData as Record<string, any>).url || source.url,
+                        title: (judgeData as JudgeResult).title || source.title,
+                        channel: (judgeData as JudgeResult).channel || source.channel,
+                        url: (judgeData as JudgeResult).url || source.url,
                     }
                     setSource(s => ({
                         ...s,
@@ -606,7 +619,7 @@ export default function SourceMissionControl() {
         setError(null)
 
         const startIndex = getFirstIncompleteIndex()
-        const currentResults: Record<string, unknown> = { ...stageResults }; // Local mutable copy for gating checks
+        const currentResults: Record<string, StageResultData> = { ...stageResults }; // Local mutable copy for gating checks
 
         for (let i = startIndex; i < STAGES.length; i++) {
             const stage = STAGES[i]
@@ -649,7 +662,7 @@ export default function SourceMissionControl() {
                 }
 
                 const data = mockData as Record<string, unknown>
-                const resValue = data.result || data
+                const resValue = (data.result || data) as StageResultData
                 setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
                 currentResults[stage.id] = resValue
                 setCompletedStages(prev => new Set([...prev, stage.id]))
@@ -660,9 +673,9 @@ export default function SourceMissionControl() {
                 localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: resValue }));
                 
                 if (stage.id === "qa") {
-                    const resObj = (data as Record<string, any>).result || data;
-                    if (resObj && (resObj.total_score !== undefined || resObj.scores)) {
-                        const scoreValue = resObj.total_score ?? (resObj.scores as StagePayload["scores"])?.publishability;
+                    const resObj = (data as StagePayload).result || data;
+                    if (resObj && ((resObj as QAResult).total_score !== undefined || (resObj as QAResult).scores)) {
+                        const scoreValue = (resObj as QAResult).total_score ?? (resObj as QAResult).scores?.publishability;
                         setSource(s => ({ ...s!, score: scoreValue }));
                     }
                 }
@@ -689,7 +702,9 @@ export default function SourceMissionControl() {
 
             // 2. Pause at "angle" to allow user to review insights and configure intent before framing/generation
             // This ensures the pipeline doesn't just "blow past" the editorial strategy gate.
-            if (stage.id === "angle" && i !== startIndex) {
+            // We ONLY pause if we are running the full pipeline from an earlier stage.
+            // If the user manually clicks "Continue" or "Execute" on angle, we proceed.
+            if (stage.id === "angle" && i > startIndex) {
                 setLogs(prev => [{ event: `Pipeline paused for strategy review. Please configure Framing/Intent below.`, time: "Just now", status: "info" }, ...prev])
                 setError({ message: `Pipeline waiting for Editorial Strategy. Please confirm your intent options below.`, type: "info" })
                 setIsRunningAll(false)
@@ -714,7 +729,7 @@ export default function SourceMissionControl() {
                     body: JSON.stringify(bodyPayload)
                 })
 
-                let data: any = null;
+                let data: StagePayload | null = null;
                 if ((stage.id === "draft" || stage.id === "insights") && res.body) {
                     const reader = res.body.getReader();
                     const decoder = new TextDecoder();
@@ -774,14 +789,24 @@ export default function SourceMissionControl() {
                     }
                 } else {
                     data = await res.json()
-                    if (!res.ok) throw new Error(data.error || "Execution failed")
+                    if (!res.ok) throw new Error(data?.error || "Execution failed")
                 }
 
                 // Store result
-                const resValue = data?.result || data
+                const resValue = (data?.result || data) as StageResultData
                 if (resValue) {
                     setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
                     currentResults[stage.id] = resValue // Update local copy for gating
+
+                    // ─── REACTIVE PANEL SYNC ───
+                    // If the panel is open for this stage, refresh it immediately
+                    if (panelContent && panelContent.stageId === stage.id) {
+                        setPanelContent({
+                            ...panelContent,
+                            data: resValue
+                        });
+                    }
+                    // ───────────────────────────
                 }
 
                 // Mark completed
@@ -789,9 +814,9 @@ export default function SourceMissionControl() {
 
                 // Update UI metadata
                 if (stage.id === "qa" && data && typeof data === 'object') {
-                    const resObj = (data as Record<string, any>).result || data;
-                    const dqmPayload = (resObj.payload || resObj) as Record<string, any>;
-                    const scoreValue = dqmPayload?.scores?.publishability || dqmPayload?.publishability || dqmPayload?.score;
+                    const resObj = (data as StagePayload).result || data;
+                    const dqmPayload = (resObj as QAResult);
+                    const scoreValue = dqmPayload?.scores?.publishability || dqmPayload?.total_score;
                     
                     if (scoreValue !== undefined) {
                         setSource(s => ({
@@ -805,11 +830,11 @@ export default function SourceMissionControl() {
                 
                 if (data && data.result) {
                     if (stage.id === "judge") {
-                        const judgeData = (data as StagePayload).result || data;
+                        const judgeData = (data as StagePayload).result as JudgeResult || data;
                         const updatedSource = {
-                            title: (judgeData as Record<string, any>).title || source.title,
-                            channel: (judgeData as Record<string, any>).channel || source.channel,
-                            url: (judgeData as Record<string, any>).url || source.url,
+                            title: judgeData.title || source.title,
+                            channel: judgeData.channel || source.channel,
+                            url: judgeData.url || source.url,
                         }
                         setSource(s => ({
                             ...s,
@@ -827,10 +852,10 @@ export default function SourceMissionControl() {
                         } catch { /* silently fail */ }
                     }
                     if (stage.id === "transcript") {
-                        const d = data as any;
-                        const duration = d.duration || (d.result && d.result.duration) || (d.data && d.data.duration);
+                        const d = data as StagePayload;
+                        const duration = d.duration || (d.result as TranscriptResult)?.duration;
                         if (duration) {
-                            setSource(s => ({ ...s!, duration }));
+                            setSource(s => ({ ...s!, duration: typeof duration === 'number' ? `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')}` : duration }));
                         }
                     }
                 }
@@ -860,6 +885,30 @@ export default function SourceMissionControl() {
 
         setIsRunningAll(false)
         setLogs(prev => [{ event: "Full pipeline completed successfully", time: "Just now", status: "success" }, ...prev])
+
+        // ═══ FINAL METADATA REFRESH ═══
+        // Ensure the source metadata (score, status, etc.) is fully synced from the store
+        try {
+            const res = await fetch("/api/store")
+            if (res.ok) {
+                const data = await res.json()
+                const refreshed = (data.sources || []).find((s: Record<string, unknown>) => s.id === id)
+                if (refreshed) {
+                    setSource(s => ({ ...s, ...refreshed }))
+                    
+                    // Force refresh results if socialise was the last stage
+                    if (refreshed.completedStages?.includes("socialise")) {
+                        const resApi = await fetch(`/api/sources/${id}/results`);
+                        const resultData = await resApi.json();
+                        if (resultData?.results) {
+                            setStageResults(resultData.results);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Failed final metadata refresh:", e)
+        }
     }
 
 
@@ -880,7 +929,6 @@ export default function SourceMissionControl() {
 
     // Pipeline stage filtering & status calculation
     const visibleStages = STAGES.filter(s => !s.hidden);
-    const currentActiveVisibleIndex = STAGES.findIndex(s => getStageStatus(STAGES.indexOf(s)) === "active");
 
 
     return (
@@ -1000,42 +1048,7 @@ export default function SourceMissionControl() {
                             </h1>
                         </div>
 
-                        {/* ─── SOURCE SUMMARY OVERVIEW ─── */}
-                        {source.status === "done" && (!!stageResults.summary || !!stageResults.insights || !!stageResults.qa) && (
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-4 duration-700">
-                                <div className="lg:col-span-2 p-8 rounded-[2rem] bg-zinc-950 border border-zinc-900 shadow-2xl shadow-brand/5">
-                                    <div className="flex items-center gap-3 mb-6">
-                                        <div className="w-10 h-10 rounded-2xl bg-brand/10 flex items-center justify-center border border-brand/20">
-                                            <FileText className="w-5 h-5 text-brand" />
-                                        </div>
-                                        <div>
-                                            <h2 className="text-xl font-bold text-white font-serif tracking-tight">Source Summary</h2>
-                                            <p className="text-[11px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">Automated Intelligence Synthesis</p>
-                                        </div>
-                                    </div>
-                                    <div className="prose prose-invert prose-sm max-w-none">
-                                        {stageResults.summary ? (
-                                            <StageResultPanel stageId="summary" data={stageResults.summary as Record<string, unknown>} />
-                                        ) : stageResults.insights ? (
-                                             <StageResultPanel stageId="insights" data={stageResults.insights as Record<string, unknown>} />
-                                        ) : (
-                                            <p className="text-zinc-500 italic text-xs">Synthesis details arriving shortly...</p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="lg:col-span-1">
-                                    {stageResults.qa ? (
-                                        <DQMCard dqm={stageResults.qa as DQMData} variant="full" />
-                                    ) : (
-                                        <div className="h-full p-8 rounded-[2rem] bg-zinc-900/50 border border-zinc-800 flex flex-col items-center justify-center text-center gap-3">
-                                            <ShieldCheck className="w-8 h-8 text-zinc-700" />
-                                            <p className="text-xs text-zinc-500">Quality Matrix pending pipeline completion</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                        {/* ─── SOURCE SUMMARY OVERVIEW REMOVED (Redundant with panels) ─── */}
                     </div>
 
                     {/* Metadata Row — Now spans full width above the content grid */}
@@ -1339,6 +1352,35 @@ export default function SourceMissionControl() {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Social Assets Quick View — Appears when socialise stage is complete */}
+                            {stageResults.socialise && (
+                                <div className="p-6 rounded-2xl bg-brand/5 border border-brand/20 space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-[11px] font-bold text-brand uppercase tracking-widest font-serif">Social Assets</h3>
+                                        <Badge variant="success" className="bg-brand/10 text-brand border-brand/20">Ready</Badge>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <p className="text-sm font-medium text-foreground leading-relaxed italic">
+                                            &ldquo;{(() => {
+                                                const sr = stageResults.socialise as SocialiseResult;
+                                                return sr?.hook || sr?.hooks?.[0] || sr?.result?.hook || sr?.result?.hooks?.[0] || "Ready to socialize";
+                                            })()}&rdquo;
+                                        </p>
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
+                                            className="w-full text-[10px] h-8 uppercase tracking-widest font-bold"
+                                            onClick={() => {
+                                                const s = STAGES.find(st => st.id === 'socialise');
+                                                if (s) openPanel(s);
+                                            }}
+                                        >
+                                            View Full Thread
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Info Card / Helpful Context — Minimal and clean */}
                             <div className="p-6 rounded-2xl bg-muted/20 border border-border/40 space-y-3">

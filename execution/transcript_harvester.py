@@ -10,6 +10,7 @@ import json
 import os
 import re
 import datetime
+from typing import Optional
 
 def determine_transcript_strategy(source_id: str, metadata: dict) -> tuple[str, str]:
     """
@@ -47,7 +48,15 @@ def determine_transcript_strategy(source_id: str, metadata: dict) -> tuple[str, 
     if source_type == "rss":
         return "normalized_text", "rss_content"
 
-    # 5. Uploads / Recordings: Direct audio fallback
+    # 5. Twitter/X: Use rescued text if available (unrolled by adapter)
+    if source_type == "twitter":
+        return "normalized_text", "unrolled_thread"
+
+    # 6. Documents: Use rescued text if available (extracted by adapter)
+    if source_type == "document":
+        return "normalized_text", "doc_extraction"
+
+    # 7. Uploads / Recordings: Direct audio fallback
     if source_type in ("upload", "recording"):
         return "audio_fallback", "audio_whisper"
 
@@ -111,7 +120,60 @@ def load_source_metadata(source_id: str) -> dict:
     return {"source_id": source_id, "source_type": "youtube"}
 
 
-def fetch_youtube_transcript(source_id: str, output_dir: str) -> dict:
+def merge_segments(segments: list, max_segments: int) -> list:
+    """Merge adjacent segments to reach a target maximum count while preserving timing."""
+    if not segments or len(segments) <= max_segments:
+        return segments
+
+    # Calculate grouping size
+    total_segments = len(segments)
+    group_size = (total_segments + max_segments - 1) // max_segments
+    
+    merged = []
+    for i in range(0, total_segments, group_size):
+        group = segments[i:i + group_size]
+        if not group:
+            continue
+            
+        merged_text = " ".join(str(s.get("text", "")).strip() for s in group if s.get("text")).strip()
+        if not merged_text:
+            continue
+            
+        merged.append({
+            "text": merged_text,
+            "start": group[0].get("start", 0),
+            "duration": sum(s.get("duration", 0) for s in group)
+        })
+        
+    # Aggressive merging to reach target count
+    while len(merged) > max_segments:
+        # Find smallest pair
+        best_idx = -1
+        min_combined_duration = float('inf')
+        
+        for i in range(len(merged) - 1):
+            combined = merged[i]["duration"] + merged[i+1]["duration"]
+            if combined < min_combined_duration:
+                min_combined_duration = combined
+                best_idx = i
+        
+        if best_idx == -1: break # Should not happen if len(merged) > 1
+        
+        # Merge best_idx and best_idx + 1
+        m1 = merged[best_idx]
+        m2 = merged[best_idx + 1]
+        new_seg = {
+            "text": m1["text"] + " " + m2["text"],
+            "start": m1["start"],
+            "duration": m1["duration"] + m2["duration"]
+        }
+        # Replace the pair with the merged segment
+        merged[best_idx:best_idx+2] = [new_seg]
+        
+    return merged
+
+
+def fetch_youtube_transcript(source_id: str, output_dir: str, max_segments: int = 100) -> dict:
     """Fetch YouTube transcript via youtube_transcript_api with simple fallback."""
     from youtube_transcript_api import YouTubeTranscriptApi
     
@@ -134,6 +196,11 @@ def fetch_youtube_transcript(source_id: str, output_dir: str) -> dict:
             "start": getattr(chunk, "start", 0),
             "duration": getattr(chunk, "duration", 0),
         })
+
+    # NEW: Apply segment merging to hasten downstream processing
+    if max_segments and len(transcript_list) > max_segments:
+        print(f"[{source_id}] Merging {len(transcript_list)} segments into max {max_segments}...")
+        transcript_list = merge_segments(transcript_list, max_segments)
 
     json_path = os.path.join(output_dir, f"{source_id}_raw.json")
     txt_path = os.path.join(output_dir, f"{source_id}_raw.txt")
@@ -191,7 +258,7 @@ def resolve_apple_podcast_audio(url: str) -> str:
         print(f"iTunes Resolution failed: {e}")
     return url
 
-def resolve_spotify_via_itunes(title: str, show_name: str = None) -> str:
+def resolve_spotify_via_itunes(title: str, show_name: Optional[str] = None) -> Optional[str]:
     """Try to find a public Apple Podcast link for a Spotify episode via Title search."""
     import urllib.request
     import urllib.parse
@@ -199,67 +266,150 @@ def resolve_spotify_via_itunes(title: str, show_name: str = None) -> str:
     import re
     
     try:
-        # Sanitize title for search (Spotify titles often have dates or extra info like "(Pending...)")
-        # Remove anything in parentheses
-        clean_title = re.sub(r'\(.*?\)', '', title).strip()
-        # Remove common separators
-        clean_title = clean_title.split("|")[0].split("-")[0].split("•")[0].strip()
+        # 1. Improved Title Cleaning (Sync with adapter)
+        # Handle pipe and bullet separators
+        clean_title = title.split("|")[0].split("\u2022")[0].strip()
         
-        if not clean_title or len(clean_title) < 5:
-             # Title is too short or empty, try using show name directly if possible
-             return None
+        # Strip "Season X Episode Y" or "Episode 123" prefixes
+        clean_title = re.sub(r'^(?:Season|Episode|Ep|S|E)?\s*\d+[:\s-]*(?:Episode|Ep|E)?\s*\d*[:\s-]*', '', clean_title, flags=re.IGNORECASE).strip()
+        
+        # Fallback if too aggressive
+        if len(clean_title) < 5:
+             clean_title = title.split("|")[0].split("\u2022")[0].strip()
 
-        query = clean_title
-        if show_name: query += f" {show_name}"
+        # Derive episode vs show
+        # Most Spotify og:titles are "Episode Title - Show Name"
+        parts = clean_title.split(" - ")
+        derived_show = parts[-1].strip() if len(parts) > 1 else None
+        episode_name = " - ".join(parts[:-1]).strip() if len(parts) > 1 else clean_title
+
+        def itunes_search(q, entity="podcastEpisode"):
+            encoded_query = urllib.parse.quote(q)
+            search_url = f"https://itunes.apple.com/search?term={encoded_query}&entity={entity}&limit=10"
+            print(f"[Spotify-Resolver] Searching iTunes: {q} ({entity})")
+            req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.load(resp)
+            return data.get("results", [])
+
+        # Build prioritized search queries
+        queries = []
+        best_show = derived_show or show_name
         
-        encoded_query = urllib.parse.quote(query)
-        search_url = f"https://itunes.apple.com/search?term={encoded_query}&entity=podcastEpisode&limit=10"
-        
-        print(f"Searching iTunes for rescue: {query}")
-        req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.load(resp)
+        if episode_name and best_show:
+            queries.append({"q": f"{episode_name} {best_show}", "ent": "podcastEpisode"})
+        if len(episode_name) > 10:
+            queries.append({"q": episode_name, "ent": "podcastEpisode"})
+        if best_show:
+            queries.append({"q": best_show, "ent": "podcast"})
+        queries.append({"q": clean_title, "ent": "podcastEpisode"})
+
+        results = []
+        for q_obj in queries:
+            results = itunes_search(q_obj["q"], q_obj["ent"])
+            if results: break
+
+        # Matching Logic
+        if results:
+            best_match = None
+            best_score = 0
             
-        results = data.get("results", [])
-        
-        # Priority 1: Exact match with show name
-        if show_name:
+            target_t = episode_name.lower()
+            target_s = (best_show or "").lower()
+            
             for res in results:
-                res_title = res.get("trackName", "")
-                res_show = res.get("collectionName", "")
-                if clean_title.lower() in res_title.lower() and show_name.lower() in res_show.lower():
-                    found_url = res.get("episodeUrl") or res.get("previewUrl")
-                    if found_url:
-                        print(f"DRM RESCUE (Exact): Found match for '{clean_title}' in '{show_name}'")
-                        return found_url
+                res_t = res.get("trackName", "").lower()
+                res_s = res.get("collectionName", "").lower()
+                
+                # 1. Exact match (Priority)
+                if target_t == res_t:
+                    best_match = res
+                    best_score = 1.0
+                    break
+                
+                # 2. Substring or Score
+                score = 0
+                if target_t in res_t or res_t in target_t:
+                    score = 0.8
+                else:
+                    t_words = set(re.findall(r"\w+", target_t))
+                    r_words = set(re.findall(r"\w+", res_t))
+                    if t_words:
+                        score = len(t_words.intersection(r_words)) / len(t_words)
+                
+                # Boost if show matches
+                if target_s and target_s in res_s:
+                    score += 0.2
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = res
 
-        # Priority 2: Fuzzy match title
-        for res in results:
-            res_title = res.get("trackName", "")
-            # Basic fuzzy match: is one a subset of the other
-            if clean_title.lower() in res_title.lower() or res_title.lower() in clean_title.lower():
-                found_url = res.get("episodeUrl") or res.get("previewUrl")
+            if best_match and best_score >= 0.7:
+                found_url = best_match.get("episodeUrl") or best_match.get("previewUrl")
                 if found_url:
-                    print(f"DRM RESCUE (Fuzzy): Found match: {res_title}")
+                    print(f"[Spotify-Resolver] DRM RESCUE ({'Exact' if best_score == 1.0 else 'Fuzzy'}): {best_match.get('trackName')}")
                     return found_url
                     
     except Exception as e:
-        print(f"Spotify Search Fallback failed: {e}")
+        print(f"[Spotify-Resolver] Spotify Search Fallback failed: {e}")
     return None
 
-def extract_spotify_title(url: str) -> str:
-    """Very basic title extraction from Spotify page as a last resort."""
+def extract_spotify_title(url: str) -> Optional[str]:
+    """Robust title extraction from Spotify page using mobile UA and embed fallback."""
     try:
         import urllib.request
         import re
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            html = resp.read().decode('utf-8')
-            match = re.search(r'<title>(.*?)</title>', html)
-            if match:
-                # Spotify format: "Title | Podcast on Spotify" or "Title • Podcast"
-                title = match.group(1).split("|")[0].split("•")[0].strip()
-                return title
+        
+        user_agents = [
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        ]
+        
+        html = ""
+        for ua in user_agents:
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": ua})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    html = resp.read().decode('utf-8', errors='ignore')
+                    if "og:title" in html: break
+            except: continue
+            
+        # Try Embed URL if main URL failed to yield metadata in header
+        if "og:title" not in html or "Spotify \u2013 Web Player" in html:
+            try:
+                embed_url = url.replace("open.spotify.com/episode/", "open.spotify.com/embed/episode/").split("?")[0]
+                req = urllib.request.Request(embed_url, headers={"User-Agent": user_agents[1]})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    embed_html = resp.read().decode("utf-8", errors="ignore")
+                    if "og:title" in embed_html:
+                        html = embed_html
+            except: pass
+
+        og_title = re.search(r'property="og:title" content="(.*?)"', html)
+        if not og_title or "Spotify \u2013 Web Player" in og_title.group(1):
+            # Try Twitter title
+            og_title = re.search(r'name="twitter:title" content="(.*?)"', html)
+            
+        if not og_title or "Spotify \u2013 Web Player" in og_title.group(1):
+            # Try schema.json if available in raw html
+            schema_match = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.DOTALL)
+            if schema_match:
+                try:
+                    import json
+                    schema_data = json.loads(schema_match.group(1))
+                    if isinstance(schema_data, dict) and "name" in schema_data:
+                        return schema_data["name"]
+                except: pass
+
+            og_title = re.search(r'<title>(.*?)</title>', html)
+            
+        if og_title:
+            # Only split by pipes and bullets (platform separators)
+            title = og_title.group(1).split("|")[0].split("\u2022")[0].strip()
+            # If title is still generic, it's a failure
+            if "Spotify" in title and "Web Player" in title: return None
+            return title
     except:
         pass
     return None
@@ -283,10 +433,12 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
     # 1. NEW: Check if the URL is actually a local file or upload:// URI
     audio_file_path = None
     
-    # Resolve upload:// protocol
+    # Resolve upload:// and recording:// protocols
     resolved_url = source_url
     if source_url.startswith("upload://"):
         resolved_url = source_url.replace("upload://", "")
+    elif source_url.startswith("recording://"):
+        resolved_url = source_url.replace("recording://", "")
         
     if os.path.exists(resolved_url) and os.path.isfile(resolved_url):
         print(f"[{source_id}] Source is a local file: {resolved_url}. Skipping download logic.")
@@ -399,6 +551,10 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
                 if rescued_url:
                     source_url = rescued_url
                     print(f"[{source_id}] Spotify-to-Apple Rescue: {source_url}")
+                    # If rescued to Apple, MUST resolve to direct audio now
+                    if "podcasts.apple.com" in source_url:
+                        source_url = resolve_apple_podcast_audio(source_url)
+                        print(f"[{source_id}] Resolved Rescued URL: {source_url}")
 
         temp_audio = os.path.join(output_dir, f"{source_id}_audio")
         print(f"[{source_id}] Attempting download to {temp_audio}")
@@ -426,8 +582,6 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
         # Vimeo-specific impersonation fix
         if "vimeo.com" in source_url:
             cmd.extend(["--referer", "https://vimeo.com/"])
-        elif "spotify.com" in source_url:
-            cmd.extend(["--referer", "https://open.spotify.com/"])
         elif "apple.com" in source_url:
             cmd.extend(["--referer", "https://podcasts.apple.com/"])
         
@@ -727,9 +881,17 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
         else:
             # HTML - very naive para extraction
             paras = re.findall(r"<p[^>]*>(.*?)</p>", content, re.DOTALL | re.IGNORECASE)
-            text = "\n\n".join(paras) if paras else ""
+            text = "\n\n".join(re.sub(r"<[^>]+>", "", p) for p in paras if p.strip()) if paras else ""
             
+            # If text is short, try to rescue from meta description (Essential for X/Twitter)
             if len(text.split()) < 50:
+                 # Try og:description or twitter:description
+                 meta_m = re.search(r'<meta\s+(?:property|name)="(?:og|twitter):description"\s+content="(.*?)"', content, re.IGNORECASE)
+                 if meta_m:
+                     text = meta_m.group(1).strip()
+                     print(f"[{source_id}] Content rescue via Meta Description: {text[:50]}...")
+            
+            if len(text.split()) < 10: # Still too short
                  return None
 
         # Strip remaining HTML tags
@@ -778,7 +940,7 @@ def finish_transcript(source_id: str, transcript_list: list, output_dir: str) ->
     }
 
 
-def fetch_transcript(source_id: str, source_url: str = None, source_type: str = None):
+def fetch_transcript(source_id: str, source_url: str = None, source_type: str = None, max_segments: int = 100):
     """Main entrypoint — dispatch to correct fetcher based on source type."""
     base = os.path.dirname(__file__)
 
@@ -886,7 +1048,7 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
 
     try:
         if source_type == "youtube":
-            result = fetch_youtube_transcript(yt_id, output_dir)
+            result = fetch_youtube_transcript(yt_id, output_dir, max_segments=max_segments)
             result["source_id"] = source_id
             print(json.dumps(result))
 
@@ -896,7 +1058,23 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
                 print(json.dumps(result))
             except Exception as e:
                 # Rescue for podcasts if audio fails but we have metadata text
-                rescued = metadata.get("raw_metadata", {}).get("rescued_article_text")
+                rescued = metadata.get("raw_metadata", {}).get("rescued_article_text") or \
+                          metadata.get("raw_metadata", {}).get("extracted_text_preview")
+                
+                # Spotify Specific: If it's Spotify and we failed, try the description
+                if not rescued and "spotify.com" in source_url:
+                    descr = metadata.get("description")
+                    if descr and len(descr) > 100: # Lowered threshold
+                         rescued = descr
+                         print(f"[{source_id}] SPOTIFY RESCUE: Audio failed, using episode description.")
+                
+                if not rescued:
+                    # Final fallback for Spotify: use title and a placeholder if needed
+                    # "we have grown pass this" implies it should never just fail
+                    title = metadata.get("title", "Unknown Episode")
+                    rescued = f"Transcription unavailable for '{title}'.\n\nShow Notes: {metadata.get('description', 'No description available.')}"
+                    print(f"[{source_id}] FINAL RESCUE: Using placeholder text.")
+
                 if rescued:
                     print(f"[{source_id}] RESCUE: Audio failed, falling back to show notes.", file=sys.stderr)
                     result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)
@@ -906,21 +1084,23 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
                     raise e
 
 
-        elif source_type == "rss":
-            # 1. Check if metadata already has extracted text preview (from Newspaper3k in RssAdapter)
-            rescued = metadata.get("raw_metadata", {}).get("extracted_text_preview")
-            if rescued:
+        elif source_type in ("rss", "twitter", "document"):
+            # 1. Check if metadata already has extracted text preview
+            rescued = metadata.get("raw_metadata", {}).get("extracted_text_preview") or \
+                      metadata.get("raw_metadata", {}).get("rescued_article_text") or \
+                      metadata.get("description") # Fallback to description if unroll failed
+            
+            if rescued and len(rescued) > 50:
                 result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)
                 print(json.dumps(result))
             else:
-                # 2. If we reached here, the Fast-Path check above didn't return (or failed)
-                # We try one more time with the base URL as the content source
-                result = fetch_rss_text_transcript(source_id, source_url, output_dir)
+                if source_type == "rss":
+                    result = fetch_rss_text_transcript(source_id, source_url, output_dir)
+                    if result:
+                        print(json.dumps(result))
+                        return
                 
-                if result:
-                    print(json.dumps(result))
-                else:
-                    raise Exception("RSS content contains no usable transcript.")
+                raise Exception(f"{source_type.title()} content contains no usable transcript.")
 
 
         else:
@@ -943,6 +1123,7 @@ if __name__ == "__main__":
     parser.add_argument("--url", help="Source URL (YouTube, Vimeo, podcast, etc.)")
     parser.add_argument("--source-id", help="Normalized source ID")
     parser.add_argument("--source-type", default=None, help="Source type override")
+    parser.add_argument("--max-segments", type=int, default=100, help="Max segments to merge into")
     args = parser.parse_args()
 
     # Resolve source_id from URL if not provided
@@ -954,4 +1135,4 @@ if __name__ == "__main__":
         print(json.dumps({"status": "error", "error_detail": "Must provide --url or --source-id"}), file=sys.stderr)
         sys.exit(1)
 
-    fetch_transcript(source_id, args.url, args.source_type)
+    fetch_transcript(source_id, args.url, args.source_type, max_segments=args.max_segments)

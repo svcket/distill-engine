@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 
@@ -44,12 +45,21 @@ model User {
   email         String?   @unique
   emailVerified DateTime?
   image         String?
+  role          String    @default("USER") // USER, ADMIN
+  isBeta        Boolean   @default(false)
   accounts      Account[]
   sessions      Session[]
   preferences   UserPreferences?
   sources       Source[]
   drafts        Draft[]
   usage         Usage?
+}
+
+model BetaWhitelist {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  invitedBy String?
+  createdAt DateTime @default(now())
 }
 
 model VerificationToken {

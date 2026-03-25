@@ -15,14 +15,15 @@ export async function POST(request: Request) {
         })
 
         if (!success) {
-            return NextResponse.json({ error: "Failed to execute insight extractor", details: error }, { status: 500 })
+            return NextResponse.json({ error: "Failed to execute packet builder", details: error }, { status: 500 })
         }
 
         const result = adaptInsightResponse(rawOutput || "")
 
         return NextResponse.json({ result, message: `Extracted insights for: ${transcriptId}` })
 
-    } catch (err: any) {
-        return NextResponse.json({ error: err.message }, { status: 500 })
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        return NextResponse.json({ error: msg }, { status: 500 })
     }
 }
