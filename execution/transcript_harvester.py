@@ -4,13 +4,19 @@ Routes to the appropriate adapter based on source type.
 Supports: YouTube (youtube_transcript_api), Vimeo (manual), Podcast/Upload (Whisper stub).
 """
 
-import sys
-import argparse
 import json
-import os
 import re
+import os
+import argparse
+import sys
+import glob
+import subprocess
 import datetime
-from typing import Optional
+from typing import Optional, List, Dict, Any
+from dataclasses import dataclass
+# Ensure execution dir is in path for relative imports if run as script
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from monitoring import log_rescue_attempt
 
 def determine_transcript_strategy(source_id: str, metadata: dict) -> tuple[str, str]:
     """
@@ -32,10 +38,10 @@ def determine_transcript_strategy(source_id: str, metadata: dict) -> tuple[str, 
         return "direct", "vtt_srt"
 
     # 3. Podcast: Check for platform URLs or MP3 resolution
-    if source_type in ("podcast", "apple_podcast", "spotify") or "spotify.com" in url or "podcasts.apple.com" in url or "rss.com" in url:
+    if source_type in ("podcast", "apple_podcast", "spotify_podcast", "spotify") or "spotify.com" in url or "podcasts.apple.com" in url or "rss.com" in url:
         # If it's a known platform, we'll try Whisper strategy even without explicit .mp3
         # (yt-dlp handles many of these platform URLs natively)
-        if "spotify.com" in url or "apple.com" in url or "rss.com" in url or source_type in ("apple_podcast", "spotify"):
+        if "spotify.com" in url or "apple.com" in url or "rss.com" in url or source_type in ("apple_podcast", "spotify_podcast", "spotify"):
             return "audio_fallback", "audio_whisper"
         
         # Fallback check for direct audio extensions
@@ -117,6 +123,18 @@ def load_source_metadata(source_id: str) -> dict:
         except Exception:
             pass
 
+    # 4. CASE-INSENSITIVE FALLBACK (New)
+    # If we didn't find the exact ID, try a case-insensitive search in the sources directory
+    import glob
+    all_sources = glob.glob(os.path.join(base, ".tmp", "sources", "*.json"))
+    for file in all_sources:
+        if os.path.basename(file).lower() == f"{source_id.lower()}.json":
+            try:
+                with open(file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data[0] if isinstance(data, list) and data else data
+            except: pass
+
     return {"source_id": source_id, "source_type": "youtube"}
 
 
@@ -125,7 +143,7 @@ def merge_segments(segments: list, max_segments: int) -> list:
     if not segments or len(segments) <= max_segments:
         return segments
 
-    # Calculate grouping size
+    # 1. Initial grouping by size
     total_segments = len(segments)
     group_size = (total_segments + max_segments - 1) // max_segments
     
@@ -139,38 +157,64 @@ def merge_segments(segments: list, max_segments: int) -> list:
         if not merged_text:
             continue
             
+        start = float(group[0].get("start", 0.0))
+        end = float(group[-1].get("start", 0.0)) + float(group[-1].get("duration", 0.0))
+        
         merged.append({
             "text": merged_text,
-            "start": group[0].get("start", 0),
-            "duration": sum(s.get("duration", 0) for s in group)
+            "start": start,
+            "duration": end - start
         })
-        
-    # Aggressive merging to reach target count
+
+    # 2. AGGRESSIVE: If still over max_segments, merge the smallest adjacent blocks
     while len(merged) > max_segments:
-        # Find smallest pair
         best_idx = -1
-        min_combined_duration = float('inf')
-        
+        min_combined_duration = float("inf")
         for i in range(len(merged) - 1):
-            combined = merged[i]["duration"] + merged[i+1]["duration"]
+            d1 = float(merged[i].get("duration", 0.0))
+            d2 = float(merged[i+1].get("duration", 0.0))
+            combined = d1 + d2
             if combined < min_combined_duration:
                 min_combined_duration = combined
                 best_idx = i
-        
-        if best_idx == -1: break # Should not happen if len(merged) > 1
-        
-        # Merge best_idx and best_idx + 1
-        m1 = merged[best_idx]
-        m2 = merged[best_idx + 1]
-        new_seg = {
+        if best_idx == -1: break
+        m1, m2 = merged[best_idx], merged[best_idx+1]
+        merged[best_idx:best_idx+2] = [{
             "text": m1["text"] + " " + m2["text"],
             "start": m1["start"],
             "duration": m1["duration"] + m2["duration"]
-        }
-        # Replace the pair with the merged segment
-        merged[best_idx:best_idx+2] = [new_seg]
-        
+        }]
     return merged
+
+
+def update_source_metadata(source_id: str, updates: dict):
+    """Update the source metadata JSON with new fields (e.g. duration)."""
+    base = os.path.dirname(__file__)
+    meta_path = os.path.join(base, ".tmp", "sources", f"{source_id}.json")
+    
+    if not os.path.exists(meta_path):
+        return
+
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        is_list = isinstance(data, list)
+        main_obj = data[0] if is_list and data else data
+        
+        if not isinstance(main_obj, dict):
+            return
+
+        for k, v in updates.items():
+            main_obj[k] = v
+            
+        if "duration_seconds" in updates and updates["duration_seconds"] > 0:
+            main_obj["is_shell"] = False
+
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump([main_obj] if is_list else main_obj, f, indent=2)
+    except Exception as e:
+        print(f"[{source_id}] Metadata update FAILED: {e}", file=sys.stderr)
 
 
 def fetch_youtube_transcript(source_id: str, output_dir: str, max_segments: int = 100) -> dict:
@@ -257,40 +301,38 @@ def resolve_apple_podcast_audio(url: str) -> str:
     except Exception as e:
         print(f"iTunes Resolution failed: {e}")
     return url
-
 def resolve_spotify_via_itunes(title: str, show_name: Optional[str] = None) -> Optional[str]:
     """Try to find a public Apple Podcast link for a Spotify episode via Title search."""
     import urllib.request
     import urllib.parse
     import json
     import re
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     
     try:
         # 1. Improved Title Cleaning (Sync with adapter)
-        # Handle pipe and bullet separators
         clean_title = title.split("|")[0].split("\u2022")[0].strip()
+        clean_title = re.sub(r'^(?:Season|Episode|Ep|S)?\s*\d+[:\s-]*(?:Episode|Ep|E)?\s*\d*[:\s-]*', '', clean_title, flags=re.IGNORECASE).strip()
         
-        # Strip "Season X Episode Y" or "Episode 123" prefixes
-        clean_title = re.sub(r'^(?:Season|Episode|Ep|S|E)?\s*\d+[:\s-]*(?:Episode|Ep|E)?\s*\d*[:\s-]*', '', clean_title, flags=re.IGNORECASE).strip()
-        
-        # Fallback if too aggressive
         if len(clean_title) < 5:
              clean_title = title.split("|")[0].split("\u2022")[0].strip()
 
-        # Derive episode vs show
-        # Most Spotify og:titles are "Episode Title - Show Name"
         parts = clean_title.split(" - ")
         derived_show = parts[-1].strip() if len(parts) > 1 else None
         episode_name = " - ".join(parts[:-1]).strip() if len(parts) > 1 else clean_title
 
         def itunes_search(q, entity="podcastEpisode"):
-            encoded_query = urllib.parse.quote(q)
-            search_url = f"https://itunes.apple.com/search?term={encoded_query}&entity={entity}&limit=10"
-            print(f"[Spotify-Resolver] Searching iTunes: {q} ({entity})")
-            req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.load(resp)
-            return data.get("results", [])
+            try:
+                encoded_query = urllib.parse.quote(q)
+                search_url = f"https://itunes.apple.com/search?term={encoded_query}&entity={entity}&limit=10"
+                req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.load(resp)
+                    results = data.get("results", [])
+                    print(f"[Spotify-Resolver] Search: '{q}' found {len(results)} results")
+                    return results
+            except:
+                return []
 
         # Build prioritized search queries
         queries = []
@@ -302,22 +344,35 @@ def resolve_spotify_via_itunes(title: str, show_name: Optional[str] = None) -> O
             queries.append({"q": episode_name, "ent": "podcastEpisode"})
         if best_show:
             queries.append({"q": best_show, "ent": "podcast"})
-        queries.append({"q": clean_title, "ent": "podcastEpisode"})
+        
+        # Deduplicate and add clean title as fallback
+        unique_queries = []
+        seen = set()
+        for q in queries:
+            if q["q"] not in seen:
+                unique_queries.append(q)
+                seen.add(q["q"])
+        
+        if clean_title not in seen:
+            unique_queries.append({"q": clean_title, "ent": "podcastEpisode"})
 
-        results = []
-        for q_obj in queries:
-            results = itunes_search(q_obj["q"], q_obj["ent"])
-            if results: break
+        # Parallelize searches
+        all_results = []
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_query = {executor.submit(itunes_search, q["q"], q["ent"]): q for q in unique_queries}
+            for future in as_completed(future_to_query):
+                res = future.result()
+                if res: all_results.extend(res)
 
         # Matching Logic
-        if results:
+        if all_results:
             best_match = None
             best_score = 0
             
             target_t = episode_name.lower()
             target_s = (best_show or "").lower()
             
-            for res in results:
+            for res in all_results:
                 res_t = res.get("trackName", "").lower()
                 res_s = res.get("collectionName", "").lower()
                 
@@ -348,12 +403,18 @@ def resolve_spotify_via_itunes(title: str, show_name: Optional[str] = None) -> O
             if best_match and best_score >= 0.7:
                 found_url = best_match.get("episodeUrl") or best_match.get("previewUrl")
                 if found_url:
-                    print(f"[Spotify-Resolver] DRM RESCUE ({'Exact' if best_score == 1.0 else 'Fuzzy'}): {best_match.get('trackName')}")
+                    print(f"[Spotify-Resolver] Success! Found Apple URL: {found_url}")
+                    log_rescue_attempt("spotify", "success", f"Matched '{title}' to Apple")
                     return found_url
-                    
+                
+            print(f"[Spotify-Resolver] No high-confidence match (best score: {best_score})")
+            log_rescue_attempt("spotify", "failure", f"No match for '{title}' (score: {best_score})")
+            return None
+            
     except Exception as e:
-        print(f"[Spotify-Resolver] Spotify Search Fallback failed: {e}")
-    return None
+        print(f"[Spotify-Resolver] Critical failure during rescue: {e}")
+        log_rescue_attempt("spotify", "failure", f"Error: {str(e)}")
+        return None
 
 def extract_spotify_title(url: str) -> Optional[str]:
     """Robust title extraction from Spotify page using mobile UA and embed fallback."""
@@ -556,10 +617,17 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
                         source_url = resolve_apple_podcast_audio(source_url)
                         print(f"[{source_id}] Resolved Rescued URL: {source_url}")
 
-        temp_audio = os.path.join(output_dir, f"{source_id}_audio")
-        print(f"[{source_id}] Attempting download to {temp_audio}")
-        cmd = [
-            "python3", "-m", "yt_dlp",
+        # Skip yt-dlp for known DRM Spotify episodes if no rescue found
+        is_unrescued_spotify = "spotify.com" in source_url and "/episode/" in source_url
+        
+        if is_unrescued_spotify:
+             print(f"[{source_id}] SPOTIFY-DRM: Skipping yt-dlp (guaranteed block). No rescue found.")
+             # Fall through to the final check which will raise the specialized error
+        else:
+             temp_audio = os.path.join(output_dir, f"{source_id}_audio")
+             print(f"[{source_id}] Attempting download to {temp_audio}")
+             cmd = [
+                 "python3", "-m", "yt_dlp",
             "--force-overwrites",
             "--extract-audio",
             "--audio-format", "mp3",
@@ -576,6 +644,8 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
         cmd.extend([
             "--no-check-certificates",
             "--no-warnings",
+            "--socket-timeout", "10",  # Even faster failure on stalled connections
+            "--concurrent-fragments", "4",
             "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         ])
         
@@ -590,38 +660,40 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
         # yt-dlp retry loop for transient network issues
         last_err = None
         fatal_error = False
-        for attempt in range(3): # Increased to 3 for higher reliability
-            try:
-                # Use a 120s timeout to prevent hanging on slow streams
-                proc = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
-                last_err = None
-                break
-            except subprocess.TimeoutExpired:
-                last_err = "Download timed out after 120s (likely slow connection)."
-            except subprocess.CalledProcessError as e:
-                err_text = e.stderr.decode() if e.stderr else "Unknown yt-dlp error"
-                
-                # Check for fatal errors that shouldn't be retried
-                if "403" in err_text or "Forbidden" in err_text:
-                    last_err = "Access Denied (403). The source may be private, age-restricted, or blocked in this region."
-                    fatal_error = True
+        
+        if not is_unrescued_spotify:
+            # Max 2 attempts: 30s × 2 = 60s max download time total
+            for attempt in range(2):
+                try:
+                    proc = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20) # Further reduced to 20s
+                    last_err = None
                     break
-                if "429" in err_text or "Too Many Requests" in err_text:
-                    last_err = "Rate Limited (429) by the platform. Please try again in 5 minutes."
-                    fatal_error = True # Don't retry immediately
-                    break
-                if "Geoblocked" in err_text:
-                    last_err = "Source is geoblocked and cannot be accessed from this server."
-                    fatal_error = True
-                    break
+                except subprocess.TimeoutExpired:
+                    last_err = "Download timed out after 20s."
+                except subprocess.CalledProcessError as e:
+                    err_text = e.stderr.decode() if e.stderr else "Unknown yt-dlp error"
+                    
+                    # Check for fatal errors that shouldn't be retried
+                    if "403" in err_text or "Forbidden" in err_text:
+                        last_err = "Access Denied (403). The source may be private, age-restricted, or blocked in this region."
+                        fatal_error = True
+                        break
+                    if "429" in err_text or "Too Many Requests" in err_text:
+                        last_err = "Rate Limited (429) by the platform. Please try again in 5 minutes."
+                        fatal_error = True # Don't retry immediately
+                        break
+                    if "Geoblocked" in err_text:
+                        last_err = "Source is geoblocked and cannot be accessed from this server."
+                        fatal_error = True
+                        break
 
-                # Filter out non-fatal warnings that flood stderr
-                lines = [l for l in err_text.splitlines() if "WARNING" not in l and "Deprecated" not in l]
-                last_err = "\n".join(lines).strip() or "Unknown error (suppressed warnings)"
-            
-            if attempt < 2:
-                import time
-                time.sleep(2 ** attempt) # Exponential backoff: 1s, 2s
+                    # Filter out non-fatal warnings that flood stderr
+                    lines = [l for l in err_text.splitlines() if "WARNING" not in l and "Deprecated" not in l]
+                    last_err = "\n".join(lines).strip() or "Unknown error (suppressed warnings)"
+                
+                if attempt < 2:
+                    import time
+                    time.sleep(2 ** attempt) # Exponential backoff: 1s, 2s
 
         if last_err:
             # Structuring the error for the UI
@@ -940,15 +1012,20 @@ def finish_transcript(source_id: str, transcript_list: list, output_dir: str) ->
     }
 
 
-def fetch_transcript(source_id: str, source_url: str = None, source_type: str = None, max_segments: int = 100):
+def fetch_transcript(source_id: str, source_url: str = None, source_type: str = None, max_segments: int = 100, passed_title: str = None):
     """Main entrypoint — dispatch to correct fetcher based on source type."""
     base = os.path.dirname(__file__)
 
     # Load metadata if not provided
-    print(f"[{source_id}] HARVESTER START | URL: {source_url} | Type: {source_type}")
+    print(f"[{source_id}] HARVESTER START | URL: {source_url} | Type: {source_type} | Passed Title: {passed_title}")
     metadata = {}
     if not source_type or not source_url:
         metadata = load_source_metadata(source_id)
+        
+    # ALWAYS prioritize the passed title if it's available and metadata is generic or missing
+    if passed_title and metadata.get("title") in (None, "", "Podcast Episode"):
+        metadata["title"] = passed_title
+        print(f"[{source_id}] Using passed title for discovery: {passed_title}")
         
         # If metadata is just the default fallback, try to infer from URL/ID
         if metadata.get("source_type") == "youtube" and not metadata.get("url"):
@@ -1015,26 +1092,32 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
             print(f"[{source_id}] RESCUE: Using metadata text as transcript fallback.")
             output_dir = os.path.join(base, ".tmp", "transcripts", source_id)
             os.makedirs(output_dir, exist_ok=True)
-            result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)
-            result["status"] = "rescued_text"
-            print(json.dumps(result))
-            return
-
         raise Exception(f"Transcript unavailable for this source. Route: {method}")
-
-
-    # Determine the actual YouTube ID for YouTube sources
-    yt_id = source_id
-    if source_type == "youtube":
-        yt_id = extract_video_id(source_url) if source_url else source_id
-        if not yt_id or len(yt_id) > 20:
-            yt_id = source_id
 
     output_dir = os.path.join(base, ".tmp", "transcripts", source_id)
     os.makedirs(output_dir, exist_ok=True)
 
+    # 0. METADATA DISCOVERY: Try to get duration/missing info before proceeding
+    if source_url and ("youtube.com" in source_url or "youtu.be" in source_url or "spotify.com" in source_url or "apple.com" in source_url or "vimeo.com" in source_url):
+        print(f"[{source_id}] Polling metadata via yt-dlp...")
+        info_cmd = [
+            "python3", "-m", "yt_dlp",
+            "--no-check-certificates",
+            "--no-warnings",
+            "--print", "duration",
+            source_url
+        ]
+        try:
+            info_res = subprocess.run(info_cmd, capture_output=True, text=True, timeout=10)
+            if info_res.returncode == 0:
+                dur_str = info_res.stdout.strip()
+                if dur_str.isdigit():
+                    duration = int(dur_str)
+                    print(f"[{source_id}] Discovery: Found duration {duration}s.")
+                    update_source_metadata(source_id, {"duration_seconds": duration})
+        except: pass
+
     # 1. FAST-PATH: Check for pre-existing transcript links in RSS/HTML for ANY source
-    # This avoids Whisper/YouTube API if a direct link is already provided in metadata or via discovery
     fast_path_url = fetch_rss_transcript_if_available(source_url)
     if fast_path_url:
         print(f"[{source_id}] FAST-PATH: Found direct transcript link: {fast_path_url}")
@@ -1042,73 +1125,88 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
             result = fetch_rss_text_transcript(source_id, fast_path_url, output_dir)
             if result:
                 print(json.dumps(result))
+                # Update metadata for fast-path success too
+                update_source_metadata(source_id, {"is_shell": False})
                 return
         except Exception as fe:
             print(f"[{source_id}] FAST-PATH failed: {fe}. Falling back to standard strategy.")
 
+    result = None
     try:
+        # 2. DISPATCH: Determine strategy based on source type
         if source_type == "youtube":
+            yt_id = extract_video_id(source_url) if source_url else source_id
+            if not yt_id or len(yt_id) > 20: 
+                yt_id = source_id
+                
             result = fetch_youtube_transcript(yt_id, output_dir, max_segments=max_segments)
             result["source_id"] = source_id
-            print(json.dumps(result))
 
-        elif source_type in ("podcast", "upload", "vimeo", "recording", "apple_podcast", "spotify"):
+        elif source_type in ("podcast", "upload", "vimeo", "recording", "apple_podcast", "spotify_podcast", "spotify"):
             try:
                 result = fetch_whisper_transcript(source_id, source_url, output_dir, referer=referer)
-                print(json.dumps(result))
             except Exception as e:
                 # Rescue for podcasts if audio fails but we have metadata text
                 rescued = metadata.get("raw_metadata", {}).get("rescued_article_text") or \
                           metadata.get("raw_metadata", {}).get("extracted_text_preview")
                 
-                # Spotify Specific: If it's Spotify and we failed, try the description
-                if not rescued and "spotify.com" in source_url:
+                # Spotify/Apple Specific: If it's a podcast and we failed, try to use the description
+                is_podcast = "podcast" in (source_type or "").lower() or "spotify" in (source_url or "").lower()
+                if not rescued and is_podcast:
                     descr = metadata.get("description")
-                    if descr and len(descr) > 100: # Lowered threshold
+                    if descr and len(descr) > 200:
                          rescued = descr
-                         print(f"[{source_id}] SPOTIFY RESCUE: Audio failed, using episode description.")
-                
+                         print(f"[{source_id}] PODCAST RESCUE: Audio failed, using detailed episode description.")
+
                 if not rescued:
-                    # Final fallback for Spotify: use title and a placeholder if needed
-                    # "we have grown pass this" implies it should never just fail
-                    title = metadata.get("title", "Unknown Episode")
-                    rescued = f"Transcription unavailable for '{title}'.\n\nShow Notes: {metadata.get('description', 'No description available.')}"
-                    print(f"[{source_id}] FINAL RESCUE: Using placeholder text.")
+                    # HARD GATE: If we have no transcript and no significant description, we STOP.
+                    title = metadata.get("title", "this source")
+                    msg = f"Pipeline stopped: No transcript or detailed content available for '{title}'."
+                    print(f"[{source_id}] {msg}", file=sys.stderr)
+                    raise Exception(msg)
 
                 if rescued:
-                    print(f"[{source_id}] RESCUE: Audio failed, falling back to show notes.", file=sys.stderr)
+                    print(f"[{source_id}] RESCUE: Audio failed, falling back to discovered text.", file=sys.stderr)
+                    # Create a single segment with the rescued text
                     result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)
                     result["status"] = "rescued_text"
-                    print(json.dumps(result))
                 else:
                     raise e
 
-
         elif source_type in ("rss", "twitter", "document"):
-            # 1. Check if metadata already has extracted text preview
             rescued = metadata.get("raw_metadata", {}).get("extracted_text_preview") or \
                       metadata.get("raw_metadata", {}).get("rescued_article_text") or \
-                      metadata.get("description") # Fallback to description if unroll failed
+                      metadata.get("description")
             
             if rescued and len(rescued) > 50:
                 result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)
-                print(json.dumps(result))
+                result["status"] = "rescued_text"
             else:
                 if source_type == "rss":
                     result = fetch_rss_text_transcript(source_id, source_url, output_dir)
-                    if result:
-                        print(json.dumps(result))
-                        return
-                
-                raise Exception(f"{source_type.title()} content contains no usable transcript.")
-
+                if not result:
+                    raise Exception(f"{source_type.title()} content contains no usable transcript.")
 
         else:
             raise Exception(f"Unsupported source type: {source_type}")
 
+        # GLOBAL SUCCESS: Output result and update metadata
+        if result:
+            if "source_id" not in result:
+                result["source_id"] = source_id
+            print(json.dumps(result))
+
+            if result.get("status") in ("success", "rescued_text"):
+                updates = {"is_shell": False}
+                if "duration_seconds" in result:
+                    updates["duration_seconds"] = result["duration_seconds"]
+                elif "duration" in result and isinstance(result["duration"], (int, float)):
+                     updates["duration_seconds"] = int(result["duration"])
+                
+                update_source_metadata(source_id, updates)
+
     except Exception as e:
         error_str = str(e)
-        # Log to stderr and exit with non-zero to trigger hard gate in UI
         print(json.dumps({
             "source_id": source_id, 
             "status": "error", 
@@ -1121,18 +1219,20 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fetch transcript for any source type.")
     parser.add_argument("--url", help="Source URL (YouTube, Vimeo, podcast, etc.)")
-    parser.add_argument("--source-id", help="Normalized source ID")
-    parser.add_argument("--source-type", default=None, help="Source type override")
-    parser.add_argument("--max-segments", type=int, default=100, help="Max segments to merge into")
+    parser.add_argument("--source-id", required=True, help="Unique identifier for the source")
+    parser.add_argument("--source-type", help="Type of source (youtube, podcast, etc.)")
+    parser.add_argument("--title", help="Optional pre-discovered title to avoid scraping")
+    parser.add_argument("--max-segments", type=int, default=100, help="Max segments to process")
     args = parser.parse_args()
 
-    # Resolve source_id from URL if not provided
-    source_id = args.source_id
-    if not source_id and args.url:
-        source_id = extract_video_id(args.url)
-
-    if not source_id:
-        print(json.dumps({"status": "error", "error_detail": "Must provide --url or --source-id"}), file=sys.stderr)
+    try:
+        fetch_transcript(
+            args.source_id, 
+            source_url=args.url, 
+            source_type=args.source_type, 
+            max_segments=args.max_segments,
+            passed_title=args.title
+        )
+    except Exception as e:
+        print(json.dumps({"status": "error", "error_detail": str(e)}), file=sys.stderr)
         sys.exit(1)
-
-    fetch_transcript(source_id, args.url, args.source_type, max_segments=args.max_segments)

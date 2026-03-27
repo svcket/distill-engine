@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,22 +8,20 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String?
-  access_token       String?
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?
-  session_state      String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -40,19 +35,19 @@ model Session {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String           @id @default(cuid())
   name          String?
-  email         String?   @unique
+  email         String?          @unique
   emailVerified DateTime?
   image         String?
-  role          String    @default("USER") // USER, ADMIN
-  isBeta        Boolean   @default(false)
+  role          String           @default("USER")
+  isBeta        Boolean          @default(false)
   accounts      Account[]
-  sessions      Session[]
-  preferences   UserPreferences?
-  sources       Source[]
   drafts        Draft[]
+  sessions      Session[]
+  sources       Source[]
   usage         Usage?
+  preferences   UserPreferences?
 }
 
 model BetaWhitelist {
@@ -71,63 +66,55 @@ model VerificationToken {
 }
 
 model UserPreferences {
-  id               String  @id @default(cuid())
-  userId           String  @unique
-  user             User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Engine Preferences
-  writingStyle     String  @default("balanced")
-  preferredTone    String  @default("professional")
-  defaultLength    String  @default("medium")
-  
-  // Processing Defaults
-  autoStartPipeline Boolean @default(false)
-  generateSummaries Boolean @default(true)
-  
-  // Notifications
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  writingStyle      String   @default("balanced")
+  preferredTone     String   @default("professional")
+  defaultLength     String   @default("medium")
+  autoStartPipeline Boolean  @default(false)
+  generateSummaries Boolean  @default(true)
   notifyInApp       Boolean  @default(true)
   notifyEmailDigest String   @default("daily")
   notifyPush        Boolean  @default(false)
   notifyCritical    Boolean  @default(true)
-  
-  updatedAt        DateTime @updatedAt
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Source {
   id               String   @id @default(cuid())
   userId           String
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title            String
   url              String
-  type             String // youtube, podcast, etc
-  status           String // pending, processing, completed, failed
+  type             String
+  status           String
   content          String?
   published        String?
   duration         String?
   score            Int      @default(0)
-  completedStages  String?  // Comma-separated string for SQLite
   transcriptStatus String?  @default("pending")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  completedStages  String[] @default([])
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Draft {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   content   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-
 model Usage {
-  id               String @id @default(cuid())
-  userId           String @unique
-  user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sourcesProcessed Int    @default(0)
-  draftsGenerated  Int    @default(0)
-  currentPlan      String @default("free")
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  sourcesProcessed Int      @default(0)
+  draftsGenerated  Int      @default(0)
+  currentPlan      String   @default("free")
   updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

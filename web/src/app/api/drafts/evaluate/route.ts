@@ -1,3 +1,5 @@
+import { auth } from "@/auth"
+import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import path from 'path'
@@ -6,6 +8,11 @@ import fs from 'fs'
 const EXECUTION_DIR = path.resolve(process.cwd(), '../execution')
 
 export async function POST(request: Request) {
+    const session = await auth()
+    if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     try {
         const { sourceId } = await request.json()
 
@@ -35,6 +42,24 @@ export async function POST(request: Request) {
         // The script returns { status: "success", data: { scores: {...}, strengths: [...], ... } }
         const parsedBundle = typeof data === 'object' && data !== null ? data as any : {};
         const dqmData = parsedBundle?.data || parsedBundle || {};
+
+        // Persist stage completion
+        await (prisma as any).source.update({
+            where: { id: sourceId, userId: session.user.id },
+            data: {
+                completedStages: {
+                    push: 'qa'
+                }
+            }
+        }).catch((e: any) => {
+            // Fallback for string-based completedStages if push fails
+            return prisma.source.update({
+                where: { id: sourceId, userId: session.user.id },
+                data: {
+                    completedStages: 'qa'
+                }
+            })
+        })
 
         return NextResponse.json({ 
             result: { status: "done", payload: dqmData }, 

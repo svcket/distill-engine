@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/Button"
 import { ArrowLeft, Edit3, Target, Sparkles, Layout, Loader2, ArrowRight, FileText } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useParams } from "next/navigation"
+import { PublishDropdown } from "@/components/features/PublishDropdown"
+import { Share2, CheckCircle2 } from "lucide-react"
 
 export default function DraftStudioPage() {
     const params = useParams()
@@ -362,6 +364,22 @@ export default function DraftStudioPage() {
                             </div>
                         </CardContent>
                     </Card>
+
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 p-6 bg-muted/20 rounded-2xl border border-border/40 animate-in fade-in slide-in-from-bottom-2 duration-700 delay-300">
+                        <div className="space-y-1">
+                            <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                                <Share2 className="w-4 h-4 text-brand" />
+                                Share Work
+                            </p>
+                            <p className="text-xs text-muted-foreground">Distribute to social platforms or blogging tools</p>
+                        </div>
+                        <div className="w-full sm:w-auto flex justify-end">
+                            <PublishDropdown 
+                                type="draft_studio"
+                                onPublish={(platform) => alert(`Sharing to ${platform} coming soon!`)}
+                            />
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -369,22 +387,3 @@ export default function DraftStudioPage() {
     )
 }
 
-function CheckCircle2(props: any) {
-    return (
-        <svg
-            {...props}
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        >
-            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-            <polyline points="22 4 12 14.01 9 11.01" />
-        </svg>
-    )
-}

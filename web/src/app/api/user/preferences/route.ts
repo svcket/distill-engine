@@ -61,13 +61,23 @@ export async function PATCH(request: Request) {
         }
 
         const body = await request.json()
+        const { oneSignalUserId, ...rest } = body
+
+        // 1. Update User level fields if provided
+        if (oneSignalUserId !== undefined) {
+            await prisma.user.update({
+                where: { id: session.user.id },
+                data: { oneSignalUserId }
+            })
+        }
         
+        // 2. Update Preferences
         const preferences = await prisma.userPreferences.upsert({
             where: { userId: session.user.id },
-            update: body,
+            update: rest as any,
             create: {
                 userId: session.user.id,
-                ...body
+                ...(rest as any)
             }
         })
 

@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/auth'
 import path from 'path'
-import fs from 'fs'
+import { promises as fs } from 'fs'
+import fsSync from 'fs'
 
 export async function GET() {
     const session = await auth()
@@ -22,32 +23,38 @@ export async function GET() {
             ? path.resolve(webDir, '../execution/.tmp')
             : path.resolve(webDir, 'execution/.tmp')
 
-        const hydratedSources = data.map((s: any) => {
+        const hydratedSources = await Promise.all(data.map(async (s: any) => {
+            const updates: any = {}
             const source = {
                 ...s,
-                source_type: s.type, // Map 'type' to 'source_type' for frontend consistency
-                completedStages: s.completedStages ? s.completedStages.split(',') : []
+                source_type: s.type,
+                completedStages: Array.isArray(s.completedStages) ? s.completedStages : []
             }
             
             // 1. Hydrate Title
-            if (source.title === 'Unknown Source' || !source.title || source.title === 'New Source') {
+            if (source.title === 'Unknown Source' || !source.title || source.title === 'New Source' || source.title === 'Podcast Episode') {
                 const metaPath = path.join(baseDir, 'transcripts', source.id, 'metadata.json')
-                if (fs.existsSync(metaPath)) {
-                    try {
-                        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
-                        if (meta.title && meta.title !== 'Unknown Source') {
+                try {
+                    const stats = await fs.stat(metaPath).catch(() => null)
+                    if (stats && stats.isFile()) {
+                        const metaStr = await fs.readFile(metaPath, 'utf-8')
+                        const meta = JSON.parse(metaStr)
+                        if (meta.title && meta.title !== 'Unknown Source' && meta.title !== 'Podcast Episode') {
                             source.title = meta.title
+                            updates.title = meta.title
                         }
-                    } catch (e) { /* ignore */ }
-                }
+                    }
+                } catch (e) { /* ignore */ }
             }
 
             // 2. Hydrate Duration
-            if (!source.duration || source.duration === '—') {
+            if (!source.duration || source.duration === '—' || source.duration === 'PT0S') {
                 const transcriptPath = path.join(baseDir, 'transcripts', source.id, `${source.id}_raw.json`)
-                if (fs.existsSync(transcriptPath)) {
-                    try {
-                        const transcriptData = JSON.parse(fs.readFileSync(transcriptPath, 'utf-8'));
+                try {
+                    const stats = await fs.stat(transcriptPath).catch(() => null)
+                    if (stats && stats.isFile()) {
+                        const transcriptStr = await fs.readFile(transcriptPath, 'utf-8')
+                        const transcriptData = JSON.parse(transcriptStr);
                         let totalSecs = 0;
                         if (Array.isArray(transcriptData) && transcriptData.length > 0) {
                             const last = transcriptData[transcriptData.length - 1];
@@ -61,31 +68,44 @@ export async function GET() {
                             const h = Math.floor(totalSecs / 3600);
                             const m = Math.floor((totalSecs % 3600) / 60);
                             const s_val = Math.floor(totalSecs % 60);
-                            source.duration = h > 0 
+                            const dur = h > 0 
                                 ? `${h}:${String(m).padStart(2, '0')}:${String(s_val).padStart(2, '0')}`
                                 : `${m}:${String(s_val).padStart(2, '0')}`;
+                            source.duration = dur
+                            updates.duration = dur
                         }
-                    } catch (e) { /* ignore */ }
-                }
+                    }
+                } catch (e) { /* ignore */ }
             }
 
             // 3. Hydrate DQM Score
             if (!source.score || source.score === 0) {
                 const evalPath = path.join(baseDir, 'evaluations', `${source.id}_eval.json`)
-                if (fs.existsSync(evalPath)) {
-                    try {
-                        const evalData = JSON.parse(fs.readFileSync(evalPath, 'utf-8'))
+                try {
+                    const stats = await fs.stat(evalPath).catch(() => null)
+                    if (stats && stats.isFile()) {
+                        const evalStr = await fs.readFile(evalPath, 'utf-8')
+                        const evalData = JSON.parse(evalStr)
                         const dqmPayload = evalData.payload || evalData.data || evalData
                         const score = dqmPayload?.scores?.publishability || dqmPayload?.publishability
                         if (score) {
                             source.score = score
+                            updates.score = score
                         }
-                    } catch (e) { /* ignore */ }
-                }
+                    }
+                } catch (e) { /* ignore */ }
+            }
+
+            // Persistence: If we found new info, update the DB in the background
+            if (Object.keys(updates).length > 0) {
+                prisma.source.update({
+                    where: { id: source.id },
+                    data: updates
+                }).catch(err => console.error(`Failed to persist hydration for ${source.id}:`, err))
             }
             
             return source
-        })
+        }))
 
         return NextResponse.json({ sources: hydratedSources })
     } catch (error) {
@@ -119,12 +139,12 @@ export async function POST(request: Request) {
             const { sourceId, stageId } = body
             const source = await prisma.source.findUnique({ where: { id: sourceId } })
             if (source) {
-                const stages = source.completedStages ? source.completedStages.split(',') : []
+                const stages = [...(Array.isArray(source.completedStages) ? source.completedStages : [])]
                 if (!stages.includes(stageId)) {
                     stages.push(stageId)
                     await prisma.source.update({
                         where: { id: sourceId },
-                        data: { completedStages: stages.join(',') }
+                        data: { completedStages: stages }
                     })
                 }
             }

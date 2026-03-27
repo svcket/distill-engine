@@ -50,7 +50,7 @@ export async function POST(request: Request) {
         }
 
         // Persist the source to Postgres scoped to the user
-        const source = await prisma.source.upsert({
+        const source = await (prisma.source as any).upsert({
             where: { id: result.source_id },
             update: {
                 title: result.title || 'Unknown Source',
@@ -66,6 +66,7 @@ export async function POST(request: Request) {
                 published: result.published || 'Recently',
                 duration: result.duration || '—',
                 score: result.score || 0,
+                completedStages: [],
             }
         })
 
@@ -77,13 +78,8 @@ export async function POST(request: Request) {
             create: { userId: session.user.id, sourcesProcessed: 1 }
         })
 
-        // AUTOMATION: Trigger transcription auto-fetch in the background
-        const transcriptFetchUrl = `${new URL(request.url).origin}/api/transcripts/fetch`
-        fetch(transcriptFetchUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: result.url || url, sourceId: result.source_id, sourceType: result.source_type })
-        }).catch(err => console.error("Auto-transcription trigger failed:", err))
+        // AUTOMATION: Pipeline now strictly user-triggered to avoid unintended consumption
+        // Previously triggered /api/transcripts/fetch here
 
         return NextResponse.json({ result: source })
 

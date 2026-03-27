@@ -1,8 +1,15 @@
+import { auth } from "@/auth"
+import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import { adaptInsightResponse } from '@/lib/adapters'
 
 export async function POST(request: Request) {
+    const session = await auth()
+    if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     try {
         const { transcriptId } = await request.json()
 
@@ -19,6 +26,24 @@ export async function POST(request: Request) {
         }
 
         const result = adaptInsightResponse(rawOutput || "")
+
+        // Persist stage completion
+        await (prisma as any).source.update({
+            where: { id: transcriptId, userId: session.user.id },
+            data: {
+                completedStages: {
+                    push: 'packet'
+                }
+            }
+        }).catch((e: any) => {
+            // Fallback for string-based completedStages if push fails
+            return prisma.source.update({
+                where: { id: transcriptId, userId: session.user.id },
+                data: {
+                    completedStages: 'packet'
+                }
+            })
+        })
 
         return NextResponse.json({ result, message: `Extracted insights for: ${transcriptId}` })
 

@@ -9,6 +9,7 @@ import re
 import hashlib
 import urllib.request
 import urllib.parse
+import html
 from typing import Optional
 from .base_adapter import BaseAdapter, NormalizedSource
 
@@ -40,10 +41,15 @@ class PodcastAdapter(BaseAdapter):
         # Strip tracking/session parameters for consistent hashing
         url_clean = url.strip().split("?")[0]
         
-        # 1. Spotify ID extraction
+        # 1. Spotify ID extraction — use exactly what's in the URL but ensure it's captured before query params
         spotify_match = re.search(r"spotify\.com/episode/([a-zA-Z0-9]+)", url_clean)
         if spotify_match:
             source_id = f"spotify_{spotify_match.group(1)}"
+        
+        # Also handle show-level URLs if they slip through
+        elif "spotify.com/show/" in url_clean:
+             show_match = re.search(r"spotify\.com/show/([a-zA-Z0-9]+)", url_clean)
+             source_id = f"spotify_show_{show_match.group(1)}"
         
         # 2. Apple ID extraction
         elif "podcasts.apple.com" in url_clean:
@@ -59,21 +65,28 @@ class PodcastAdapter(BaseAdapter):
         else:
             source_id = "podcast_" + hashlib.md5(url_clean.encode()).hexdigest()[:12]
         
-        # Fast Path: return shell if requested
+        # Determine specific platform type
+        if "spotify.com" in url:
+            platform_type = "spotify_podcast"
+        elif "podcasts.apple.com" in url or "apple.com" in url:
+            platform_type = "apple_podcast"
+        else:
+            platform_type = "podcast"
+
         if shell:
-            # If it's a direct audio file, we don't need to resolve anything
             is_direct = url.lower().endswith(".mp3") or ".mp3?" in url.lower() or url.lower().endswith(".m4a") or ".m4a?" in url.lower()
             target_title = "Direct Audio Source" if is_direct else None
             
             if not is_direct:
-                # Try a VERY quick resolution with short timeout
                 try:
-                    _, target_title, _ = self._resolve_to_rss_feed_and_title(url)
-                except: pass
+                    # PASS is_shell=True to skip expensive iTunes searches during initial ingest
+                    _, target_title, _ = self._resolve_to_rss_feed_and_title(url, is_shell=True)
+                except Exception as e: 
+                    print(f"[PodcastAdapter] Shell title extraction failed for {url}: {e}")
                 
             return NormalizedSource(
                 source_id=source_id,
-                source_type="podcast",
+                source_type=platform_type,
                 title=target_title or "Podcast Episode",
                 creator="Podcast",
                 url=url,
@@ -115,8 +128,8 @@ class PodcastAdapter(BaseAdapter):
             
         return NormalizedSource(
             source_id=source_id,
-            source_type="podcast",
-            title=metadata.get("title", "Podcast Episode"),
+            source_type=platform_type,
+            title=metadata.get("title") or target_title or (source_id.replace("spotify_", "") if source_id else "Podcast Episode"),
             creator=metadata.get("author", "Unknown Host"),
             url=final_extract_url,
             published_at=metadata.get("published_at"),
@@ -134,7 +147,7 @@ class PodcastAdapter(BaseAdapter):
         )
 
 
-    def _resolve_to_rss_feed_and_title(self, url: str) -> tuple[str, Optional[str], Optional[str]]:
+    def _resolve_to_rss_feed_and_title(self, url: str, is_shell: bool = False) -> tuple[str, Optional[str], Optional[str]]:
         """
         Resolve Spotify or Apple Podcast URLs into (feed_url, target_title, target_guid).
         """
@@ -180,54 +193,66 @@ class PodcastAdapter(BaseAdapter):
         # Handle Spotify (Scrape title, search iTunes)
         if "spotify.com" in url:
             try:
-                # 1. Try different User-Agents (including mobile to bypass some desktop interstitials)
+                # 1. Try different User-Agents
                 user_agents = [
                     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
                     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
                 ]
                 
-                html = ""
+                page_html = ""
                 for ua in user_agents:
                     try:
-                        req = urllib.request.Request(url, headers={"User-Agent": ua})
+                        req = urllib.request.Request(url, headers={
+                            "User-Agent": ua,
+                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                            "Accept-Language": "en-US,en;q=0.5"
+                        })
                         with urllib.request.urlopen(req, timeout=5) as resp:
-                            html = resp.read().decode("utf-8", errors="ignore")
-                            if "og:title" in html or "<title>" in html: break
+                            page_html = resp.read().decode("utf-8", errors="ignore")
+                            if "og:title" in page_html or "<title>" in page_html: break
                     except Exception: continue
                 
                 # 2. Try Embed URL if main URL failed to yield metadata
-                if "og:title" not in html or "Spotify \u2013 Web Player" in html:
+                if "og:title" not in page_html or "Spotify \u2013 Web Player" in page_html:
                     try:
                         embed_url = url.replace("open.spotify.com/episode/", "open.spotify.com/embed/episode/").split("?")[0]
                         req = urllib.request.Request(embed_url, headers={"User-Agent": user_agents[1]})
                         with urllib.request.urlopen(req, timeout=5) as resp:
-                            embed_html = resp.read().decode("utf-8", errors="ignore")
-                            if "og:title" in embed_html:
-                                html = embed_html
+                            page_html = resp.read().decode("utf-8", errors="ignore")
                     except Exception: pass
                 
-                og_title = re.search(r'property="og:title" content="(.*?)"', html)
+                og_title = re.search(r'property="og:title" content="(.*?)"', page_html)
                 if not og_title or "Spotify \u2013 Web Player" in og_title.group(1):
-                    # Try Twitter title
-                    og_title = re.search(r'name="twitter:title" content="(.*?)"', html)
-                
-                if not og_title or "Spotify \u2013 Web Player" in og_title.group(1):
-                    # Try direct <title>
-                    og_title = re.search(r'<title>(.*?)</title>', html)
+                    # Try Twitter/Meta title
+                    og_title = re.search(r'name="(?:twitter|title)" content="(.*?)"', page_html)
+                    if not og_title:
+                        og_title = re.search(r'<title>(.*?)</title>', page_html, re.DOTALL | re.IGNORECASE)
 
                 if og_title:
-                    raw_title = og_title.group(1)
-                    # Correct title cleaning: split by platform separators first
-                    clean_target = raw_title.split("|")[0].split("\u2022")[0].strip()
+                    episode_name = ""
+                    try:
+                        raw_title = html.unescape(og_title.group(1)).strip()
+                    except Exception:
+                        raw_title = og_title.group(1).strip()
                     
-                    # Strip "Season X Episode Y" or "Episode 123" prefixes
-                    clean_target = re.sub(r"^(?:Season|Episode|Ep|S|E)?\s*\d+[:\s-]*(?:Episode|Ep|E)?\s*\d*[:\s-]*", "", clean_target, flags=re.IGNORECASE).strip()
-                    target_title = clean_target
+                    # If we got the generic Spotify title, ignore it and keep searching
+                    if "Spotify – Web Player" in raw_title or "Spotify - Web Player" in raw_title:
+                        raw_title = None
                     
-                    parts = clean_target.split(" - ")
-                    show_name = parts[-1].strip() if len(parts) > 1 else clean_target
-                    episode_name = parts[0].strip() if len(parts) > 1 else ""
+                    if raw_title:
+                        # IMPROVED: Handle common Spotify title patterns more cleanly
+                        # Usually "Episode Title | Show Name" or "Episode Title · Show Name"
+                        clean_target = raw_title.replace(" | Spotify", "").replace(" - Spotify", "").strip()
+                        
+                        # Use first half before separator if the title seems merged
+                        parts = re.split(r" [|\xb7\u2022\xb7\-] ", clean_target)
+                        episode_name = parts[0].strip() if len(parts) > 1 else clean_target
+                        show_name_guess = parts[-1].strip() if len(parts) > 1 else None
+                    
+                    # Strip "Season X Episode Y" or "Episode 123" prefixes from episode name
+                    episode_name_clean = re.sub(r"^(?:Season|Episode|Ep|S|E)?\s*\d+[:\s-]*(?:Episode|Ep|E)?\s*\d*[:\s-]*", "", episode_name, flags=re.IGNORECASE).strip()
+                    target_title = episode_name_clean
                     
                     # Clean the episode name specifically for better searching
                     clean_episode = re.sub(r"Season\s*\d+", "", episode_name, flags=re.IGNORECASE).strip()
@@ -235,21 +260,29 @@ class PodcastAdapter(BaseAdapter):
                     # Also try to find the creator/show name directly in meta
                     # Also try to find the show name directly in meta description
                     # Spotify descriptions often start with "Show Name · Episode"
-                    show_m = re.search(r'property="og:description" content="(.*?)(?: \xb7| \u2022| ·)', html)
+                    show_m = re.search(r'property="og:description" content="(.*?)(?: \xb7| \u2022| ·)', page_html)
                     content_show = None
                     if show_m:
-                        content_show = show_m.group(1).strip()
+                        content_show = html.unescape(show_m.group(1).strip())
                     
                     # Build prioritized search queries
                     queries = []
-                    best_show = show_name or content_show
-                    if episode_name and best_show:
-                        queries.append({"q": f"{episode_name} {best_show}", "ent": "podcastEpisode"})
-                    if len(episode_name) > 10:
-                        queries.append({"q": episode_name, "ent": "podcastEpisode"})
+                    
+                    # IF IN SHELL MODE: We skip the expensive iTunes search to provide immediate UI feedback.
+                    # We just return the target_title scraped from the page.
+                    if is_shell:
+                        return url, target_title, None
+
+                    best_show = show_name_guess or content_show
+                    if episode_name_clean and best_show:
+                        queries.append({"q": f"{episode_name_clean} {best_show}", "ent": "podcastEpisode"})
+                    if len(episode_name_clean) > 8:
+                        queries.append({"q": episode_name_clean, "ent": "podcastEpisode"})
                     if best_show:
                         queries.append({"q": best_show, "ent": "podcast"})
                     queries.append({"q": clean_target, "ent": "podcastEpisode"})
+                    # Extra fallback: search just the title on any entity
+                    queries.append({"q": episode_name_clean, "ent": "podcast"})
                     
                     for sq in queries:
                         search_url = f"https://itunes.apple.com/search?term={urllib.parse.quote(sq['q'])}&entity={sq['ent']}&limit=10"
@@ -276,11 +309,11 @@ class PodcastAdapter(BaseAdapter):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=5) as resp:
-                html = resp.read().decode("utf-8", errors="ignore")
+                resp_html = resp.read().decode("utf-8", errors="ignore")
                 # Look for <link rel="alternate" type="application/rss+xml" href="...">
-                rss_m = re.search(r'type="application/rss\+xml".*?href=["\'](https?://[^"\']+)["\']', html, re.IGNORECASE)
+                rss_m = re.search(r'type="application/rss\+xml".*?href=["\'](https?://[^"\']+)["\']', resp_html, re.IGNORECASE)
                 if not rss_m:
-                    rss_m = re.search(r'href=["\'](https?://[^"\']+)["\'].*?type="application/rss\+xml"', html, re.IGNORECASE)
+                    rss_m = re.search(r'href=["\'](https?://[^"\']+)["\'].*?type="application/rss\+xml"', resp_html, re.IGNORECASE)
                 
                 if rss_m:
                     return rss_m.group(1), target_title, target_guid

@@ -16,14 +16,17 @@ export async function POST(request: Request) {
         let activeUrl = url
         let activeSourceType = sourceType
         
+        let activeTitle = ""
+        
         // If url is missing, try to find it in the database
-        if (!activeUrl && sourceId) {
+        if (sourceId) {
             const source = await prisma.source.findUnique({
                 where: { id: sourceId }
             })
             if (source) {
-                activeUrl = source.url
+                activeUrl = activeUrl || source.url
                 activeSourceType = activeSourceType || source.type || 'youtube'
+                activeTitle = source.title || ""
             }
         }
 
@@ -34,6 +37,7 @@ export async function POST(request: Request) {
 
         const args = ['--url', activeUrl, '--source-id', sourceId]
         if (activeSourceType) args.push('--source-type', activeSourceType)
+        if (activeTitle) args.push('--title', activeTitle)
 
         // Synchronously run for direct pipeline stability
         const { success, data, error: scriptError } = await runPythonScript<any>('transcript_harvester.py', [
@@ -45,7 +49,7 @@ export async function POST(request: Request) {
         
         if (success && data) {
             // Update the source record to indicate transcription is ready
-            const result = data
+            const result = data as any
             const finalStatus = result.status === 'rescued_text' ? 'rescued_text' : 'transcribed'
             
             // Read content from the textPath if available
@@ -65,12 +69,25 @@ export async function POST(request: Request) {
                 }
             }
 
-            await (prisma.source.update as any)({
+            // Format duration as M:SS string if present
+            let durationString = undefined
+            if (result.duration && typeof result.duration === 'number') {
+                const mins = Math.floor(result.duration / 60)
+                const secs = Math.floor(result.duration % 60)
+                durationString = `${mins}:${String(secs).padStart(2, '0')}`
+            }
+
+            await prisma.source.update({
                 where: { id: sourceId, userId: session.user.id },
                 data: { 
                     status: finalStatus,
                     transcriptStatus: finalStatus,
                     content: content || '',
+                    duration: durationString || undefined,
+                    title: result.title || undefined,
+                    completedStages: {
+                        push: 'transcript'
+                    }
                 }
             })
             return NextResponse.json({ 
@@ -80,7 +97,7 @@ export async function POST(request: Request) {
             })
         } else {
             await (prisma.source.update as any)({
-                where: { id: sourceId, userId: session.user.id },
+                where: { id: sourceId, userId: (session.user as any).id },
                 data: { 
                     status: 'failed',
                     transcriptStatus: 'failed'

@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import path from 'path'
 import fs from 'fs'
 import { runPythonScript } from '@/lib/python-runner'
+import { sendPushNotification } from '@/lib/one-signal'
 
 const EXECUTION_DIR = path.resolve(process.cwd(), '../execution')
 
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
 
     // Find the latest draft for this source to ensure we have content to socialise
     const draft = await prisma.draft.findFirst({
-        where: { userId: session.user.id },
+        where: { userId: session.user.id, id: sourceId }, // Using id as sourceId is the draft's parent in this simplified schema
         orderBy: { createdAt: 'desc' }
     })
 
@@ -78,6 +79,24 @@ export async function POST(request: Request) {
         if (!success) {
             return NextResponse.json({ error: "Thread generation failed", details: error }, { status: 500 })
         }
+
+        await prisma.source.update({
+            where: { id: sourceId, userId: session.user.id },
+            data: { 
+                status: 'completed',
+                completedStages: {
+                    push: 'socialise'
+                }
+            }
+        });
+
+        // 4. Dispatch Push Notification
+        await sendPushNotification(
+            session.user.id, 
+            "Distillation Complete", 
+            `Your analysis for "${source.title}" is ready.`,
+            `${process.env.NEXT_PUBLIC_APP_URL}/sources?id=${sourceId}`
+        );
 
         return NextResponse.json({ 
             result: data,

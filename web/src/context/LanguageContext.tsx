@@ -18,7 +18,7 @@ const translations: Record<Language, Record<string, string>> = {
         settings: "Settings",
         importSource: "Import Source",
         importFromDevice: "Import from Device",
-        searchPlaceholder: "Search topics or paste a URL...",
+        searchPlaceholder: "Paste a URL to a podcast, video, or article...",
         monitorSources: "Monitor sources, pipeline progress, and ready drafts.",
         recentSources: "Recent Sources",
         readyDrafts: "Ready Drafts",
@@ -76,10 +76,12 @@ const translations: Record<Language, Record<string, string>> = {
         goToExportCenter: "Go to Draft Studio",
         visitOriginalSource: "Visit Original Source",
         landingHeadline: "Turn any source into structured insight.",
-        composerPlaceholder: "Paste a link, upload a file or record...",
+        composerPlaceholder: "Paste a link, upload audio/video, or record...",
         continue: "Continue",
         operationalIntelligence: "Operational intelligence active",
         runRemaining: "Run Pipeline",
+        runPipeline: "Run Pipeline",
+        continuePipeline: "Continue Pipeline",
         backToLibrary: "Back to Library"
     },
     ES: {
@@ -89,7 +91,7 @@ const translations: Record<Language, Record<string, string>> = {
         settings: "Ajustes",
         importSource: "Importar Fuente",
         importFromDevice: "Importar desde dispositivo",
-        searchPlaceholder: "Buscar temas o pegar URL...",
+        searchPlaceholder: "Pega una URL de un podcast, video o artículo...",
         monitorSources: "Monitorear fuentes, progreso y borradores.",
         recentSources: "Fuentes Recientes",
         readyDrafts: "Borradores Listos",
@@ -138,8 +140,10 @@ const translations: Record<Language, Record<string, string>> = {
         goToExportCenter: "Ir al Centro de Exportación",
         visitOriginalSource: "Visitar Fuente Original",
         landingHeadline: "Convierte cualquier fuente en conocimientos estructurados.",
-        composerPlaceholder: "Pega un enlace, sube un archivo o graba...",
+        composerPlaceholder: "Pega un enlace, sube audio/video o graba...",
         continue: "Continuar",
+        runPipeline: "Ejecutar Pipeline",
+        continuePipeline: "Continuar Pipeline",
         operationalIntelligence: "Inteligencia operativa activa"
     },
     FR: {
@@ -149,7 +153,7 @@ const translations: Record<Language, Record<string, string>> = {
         settings: "Paramètres",
         importSource: "Importer Source",
         importFromDevice: "Importer de l'appareil",
-        searchPlaceholder: "Rechercher ou coller URL...",
+        searchPlaceholder: "Collez une URL vers un podcast, une vidéo ou un article...",
         monitorSources: "Surveiller les sources et les brouillons.",
         recentSources: "Sources Récentes",
         readyDrafts: "Brouillons Prêts",
@@ -198,8 +202,10 @@ const translations: Record<Language, Record<string, string>> = {
         goToExportCenter: "Aller au Centre d'Exportation",
         visitOriginalSource: "Visiter la Source Originale",
         landingHeadline: "Transformez n'importe quelle source en informations structurées.",
-        composerPlaceholder: "Collez un lien, téléchargez un fichier ou enregistrez...",
+        composerPlaceholder: "Collez un lien, téléchargez audio/vidéo ou enregistrez...",
         continue: "Continuer",
+        runPipeline: "Lancer le Pipeline",
+        continuePipeline: "Continuer le Pipeline",
         operationalIntelligence: "Intelligence opérationnelle active"
     },
     DE: {
@@ -209,7 +215,7 @@ const translations: Record<Language, Record<string, string>> = {
         settings: "Einstellungen",
         importSource: "Quelle Importieren",
         importFromDevice: "Vom Gerät importieren",
-        searchPlaceholder: "Themen suchen oder URL...",
+        searchPlaceholder: "Fügen Sie eine URL zu einem Podcast, Video oder Artikel ein...",
         monitorSources: "Quellen und Entwürfe überwachen.",
         recentSources: "Aktuelle Quellen",
         readyDrafts: "Bereite Entwürfe",
@@ -258,8 +264,10 @@ const translations: Record<Language, Record<string, string>> = {
         goToExportCenter: "Zum Exportzentrum gehen",
         visitOriginalSource: "Originalquelle besuchen",
         landingHeadline: "Verwandeln Sie jede Quelle in strukturierte Erkenntnisse.",
-        composerPlaceholder: "Link einfügen, Datei hochladen oder aufnehmen...",
+        composerPlaceholder: "Link einfügen, Audio/Video hochladen oder aufnehmen...",
         continue: "Weiter",
+        runPipeline: "Pipeline ausführen",
+        continuePipeline: "Pipeline fortsetzen",
         operationalIntelligence: "Operative Intelligenz aktiv"
     },
     YO: {
@@ -269,7 +277,7 @@ const translations: Record<Language, Record<string, string>> = {
         settings: "Ètò",
         importSource: "Kó Orísun Wọlé",
         importFromDevice: "Kó wọlé láti ẹ̀rọ",
-        searchPlaceholder: "Wá àkọlé tàbí lẹ́ mọ́ URL...",
+        searchPlaceholder: "Lẹ mọ́ URL sí adarí ọ̀rọ̀, fídíò tàbí àpilẹ̀kọ...",
         monitorSources: "Ìbojútó àwọn orísun àti iṣẹ́.",
         recentSources: "Àwọn Orísun Tuntun",
         readyDrafts: "Ìwé Tí Ó Setán",
@@ -318,8 +326,10 @@ const translations: Record<Language, Record<string, string>> = {
         goToExportCenter: "Lọ sí Ilé Ìjájáde",
         visitOriginalSource: "Ṣàbẹ̀wò sí Orísun Atilẹ̀wa",
         landingHeadline: "Sọ orísun èyíkéyìí di òye tí a ṣètò.",
-        composerPlaceholder: "Lẹ mọ́ ìsopọ̀ kan, gbé fáìlì kan sókè tàbí gba ohùn sílẹ̀...",
+        composerPlaceholder: "Lẹ mọ́ ìsopọ̀ kan, gbé ohùn/fídíò rẹ sókè tàbí gba ohùn sílẹ̀...",
         continue: "Tẹ̀síwájú",
+        runPipeline: "Ṣiṣẹ́ Ìṣètò",
+        continuePipeline: "Tẹ̀síwájú nínú Ìṣètò",
         operationalIntelligence: "Imọ̀ iṣẹ́ nṣiṣẹ́ lọ́wọ́"
     }
 }

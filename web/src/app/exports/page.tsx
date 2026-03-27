@@ -2,8 +2,9 @@
 import { useState, useEffect, Suspense } from "react"
 import { Button } from "@/components/ui/Button"
 import { Badge } from "@/components/ui/Badge"
-import { Download, FileText, Eye, Loader2, Copy } from "lucide-react"
+import { Download, FileText, Eye, Loader2, Copy, Share2, Search, Trash2 } from "lucide-react"
 import { useLanguage } from "@/context/LanguageContext"
+import { PublishDropdown } from "@/components/features/PublishDropdown"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { getFormatStyles } from "@/lib/format-styles"
@@ -31,6 +32,7 @@ function ExportsContent() {
     const [drafts, setDrafts] = useState<Draft[]>([])
     const [loading, setLoading] = useState(true)
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
+    const [searchQuery, setSearchQuery] = useState("")
 
     useEffect(() => {
         async function loadDrafts() {
@@ -70,6 +72,28 @@ function ExportsContent() {
         URL.revokeObjectURL(url)
     }
 
+    const handleDeleteDraft = async (id: string) => {
+        if (!confirm("Are you sure you want to delete this draft?")) return;
+        try {
+            const res = await fetch("/api/exports/delete", {
+                method: "POST",
+                body: JSON.stringify({ id }),
+                headers: { "Content-Type": "application/json" }
+            })
+            if (res.ok) {
+                setDrafts(prev => prev.filter(d => d.id !== id))
+            }
+        } catch (error) {
+            console.error("Delete error:", error)
+        }
+    }
+
+    const filteredDrafts = drafts.filter(draft => 
+        draft.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        draft.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        draft.format.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+
     const timeAgo = (dateStr: string) => {
         const diff = Date.now() - new Date(dateStr).getTime()
         const minutes = Math.floor(diff / 60000)
@@ -84,14 +108,31 @@ function ExportsContent() {
         <div className="flex h-full overflow-y-auto">
             <div className="flex-1">
                 <div className="p-8 max-w-[1400px] mx-auto space-y-8 animate-in fade-in duration-500">
-                    <div className="flex items-end justify-between">
+                    <div className="flex items-center justify-between gap-8">
                         <div>
-                            <h1 className="text-3xl font-serif font-semibold tracking-tight">{t("exports")}</h1>
-                            <p className="text-muted-foreground mt-1">{t("readyDrafts")}</p>
+                            <div className="flex items-center gap-3">
+                                <h1 className="text-3xl font-serif font-semibold tracking-tight">
+                                    {drafts.length} {t("readyDrafts")}
+                                </h1>
+                                {drafts.length > 0 && (
+                                    <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20 px-2 py-0 h-5">
+                                        Collection active
+                                    </Badge>
+                                )}
+                            </div>
+                            <p className="text-muted-foreground mt-1 lowercase text-sm opacity-60">Curated exports for publication</p>
                         </div>
-                        {drafts.length > 0 && (
-                            <Badge variant="secondary" className="text-xs">{drafts.length} {t("library")} ready</Badge>
-                        )}
+                        
+                        <div className="flex-1 max-w-md relative group">
+                            <input
+                                type="text"
+                                placeholder="Search drafts..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full h-11 bg-muted/40 border-border/60 hover:border-border rounded-xl pl-11 pr-4 text-sm transition-all focus:bg-background focus:ring-1 focus:ring-emerald-500/20 focus:border-emerald-500/30"
+                            />
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/40 group-focus-within:text-emerald-500/60 transition-colors" />
+                        </div>
                     </div>
 
                     {loading ? (
@@ -110,7 +151,7 @@ function ExportsContent() {
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                            {drafts.map(draft => (
+                            {filteredDrafts.map(draft => (
                                 <Link key={draft.id} href={`/exports/${draft.id}`} className="flex flex-col group hover:shadow-soft hover:border-gray-300 transition-all duration-200 bg-card border border-border rounded-xl shadow-sm">
                                     <div className="p-4 flex flex-col h-full">
                                         <div className="flex justify-between items-start mb-2">
@@ -182,7 +223,7 @@ function ExportsContent() {
                                                      </Button>
                                                      {openDropdownId === draft.id && (
                                                          <div className="fixed sm:absolute right-[20px] sm:right-0 mt-2 w-52 bg-background border border-border rounded-xl shadow-2xl p-1.5 animate-in fade-in slide-in-from-top-2 duration-200 z-[100]" onClick={(e) => e.stopPropagation()}>
-                                                             <button 
+                                                              <button 
                                                                  onClick={(e) => {
                                                                      e.preventDefault();
                                                                      e.stopPropagation();
@@ -231,23 +272,24 @@ function ExportsContent() {
                                                                  <span>Plain Text (.txt)</span>
                                                              </button>
                                                              <div className="h-px bg-border/60 my-1 mx-1" />
-                                                             <button 
-                                                                 onClick={(e) => {
-                                                                     e.preventDefault();
-                                                                     e.stopPropagation();
-                                                                     navigator.clipboard.writeText(`${window.location.origin}/exports/${draft.id}`);
-                                                                     alert("Share link copied to clipboard");
-                                                                     setOpenDropdownId(null);
-                                                                 }}
-                                                                 className="w-full text-left px-3 py-2 text-[11px] hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group/item"
-                                                             >
-                                                                 <Copy className="w-3.5 h-3.5 text-amber-500 group-hover/item:scale-110 transition-transform" />
-                                                                 <span>Copy Share Link</span>
-                                                             </button>
+                                                              <PublishDropdown type="draft_studio" onPublish={(platform) => alert(`Sharing to ${platform} coming soon!`)} trigger={<button onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group/item"><Share2 className="w-3.5 h-3.5 text-amber-500 group-hover/item:scale-110 transition-transform" /><span>Share Work</span></button>}/>
                                                          </div>
                                                      )}
-                                                 </div>
-                                             </div>
+                                                      <Button
+                                                         variant="ghost"
+                                                         size="icon"
+                                                         className="h-7 w-7 text-muted-foreground hover:text-red-500 transition-colors"
+                                                         title="Delete Draft"
+                                                         onClick={(e) => {
+                                                             e.preventDefault();
+                                                             e.stopPropagation();
+                                                             handleDeleteDraft(draft.id);
+                                                         }}
+                                                     >
+                                                         <Trash2 className="w-3.5 h-3.5" />
+                                                     </Button>
+                                                  </div>
+                                              </div>
                                          </div>
                                     </div>
                                 </Link>

@@ -1,9 +1,16 @@
+import { auth } from "@/auth"
+import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import { adaptInsightResponse } from '@/lib/adapters'
 import path from 'path'
 
 export async function POST(request: Request) {
+    const session = await auth()
+    if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     try {
         const { transcriptId, type, audience, tone } = await request.json()
 
@@ -29,6 +36,16 @@ export async function POST(request: Request) {
 
         // We can reuse the JSON parsing structure from adaptInsightResponse since it's standardized
         const result = adaptInsightResponse(rawOutput || "")
+
+        // Persist stage completion
+        await prisma.source.update({
+            where: { id: transcriptId, userId: session.user.id },
+            data: {
+                completedStages: {
+                    push: 'angle'
+                }
+            }
+        })
 
         return NextResponse.json({ result, message: `Strategized angles for: ${transcriptId}` })
 

@@ -21,11 +21,13 @@ class ContentPlan(BaseModel):
     editorial_angle: str = Field(description="The chosen angle (Explainer, Cultural Analysis, Case Study, etc.).")
     voice_persona: str = Field(description="The selected authorial voice (Analyst, Storyteller, Builder, etc.).")
     structure_architecture: list[str] = Field(description="The narrative flow (Hook -> Context -> Observation -> Example -> Implication -> Conclusion).")
+    section_headings: list[str] = Field(description="Draft punchy, editorial subheadings for each major section of the architecture (H2 level).")
     supporting_insights: list[str] = Field(description="Key insights assigned to each logical block.")
     concrete_examples: list[str] = Field(description="Specific, non-abstract examples from the source to illustrate claims.")
 
+from typing import Optional
 
-def generate_draft(outline_path: str, insights_path: str, packet_path: str, brief_path: str = None, feedback: str = None, stream: bool = False):
+def generate_draft(outline_path: str, insights_path: str, packet_path: str, brief_path: Optional[str] = None, feedback: Optional[str] = None, stream: bool = False):
     if not os.path.exists(outline_path) or not os.path.exists(insights_path) or not os.path.exists(packet_path):
         print(json.dumps({"status": "failed", "error": "Missing input payloads."}), file=sys.stderr)
         sys.exit(1)
@@ -106,7 +108,7 @@ CRITICAL WRITING RULES:
 - **SPECIFICITY OVER ABSTRACTION**: Reference real tools, cases, dates, or systems. Instead of "People are carving out identities", write "Someone who once introduced themselves as 'John’s girlfriend' now introduces themselves as 'the one who just started ceramics classes'".
 - **NO AI CLICHÉS**: Strictly avoid: "In today's rapidly evolving world", "It is important to note", "As we move forward", "In conclusion", "Dive into", "Tapestry", "Delve", "Harness". These significantly reduce the human-quality score.
 - **PERSPECTIVE OVER COMMENTARY**: Provide a point of view. Explain *why* something matters to a builder or founder.
-- **Structure & Spacing**: Use standard Markdown headers (# and ##). **CRITICAL**: Use double newlines (\n\n) between every paragraph and section.
+- **Structure & Spacing**: Use standard Markdown headers (# for Title, ## for Sections). **NON-NEGOTIABLE**: Every 2-3 paragraphs MUST be separated by a punchy `## Section Header`. A draft with no subheadings is a failure. Use double newlines (\n\n) between every paragraph and section.
 - **NO HTML**: Do NOT use <h1>, <p>, or other HTML tags. Use ONLY standard Markdown.
 
 TARGET AUDIENCE: {audience}
@@ -133,16 +135,59 @@ Source Transcript Excerpts (Use for specific grounding):
     user_prompt += f"\n\nWrite the complete {content_type} now."
 
     try:
-        # Advanced Editorial Reasoning Stage
+        # Advanced Editorial Reasoning Stage - defined early for both paths
         reasoning_prompt = f"""Before drafting, perform an internal editorial reasoning sequence:
 1. **Frame Builder**: Determine the central thesis of the piece. Capture tension or contrast grounded in the Insight Packet.
 2. **Angle Selector**: Select the editorial angle (Explainer, Cultural Analysis, Narrative Reflection, Builder Insight, Case Study, Concept Breakdown, or Contrarian Hot-Take).
 3. **Voice Persona Selector**: Select the authorial style (Analyst, Storyteller, Builder, Philosopher, Explainer, or Provocateur).
 4. **Structure Architect**: Determine the narrative flow (standard Hook-to-Conclusion, or unconventional models like Inverted Pyramid, Tension-Resolution Loop, or The Hero's Technical Journey).
+5. **Headlining Strategy**: Brainstorm punchy, non-generic subheadings for every section that avoid labels like "Context" or "Conclusion" in favor of editorial energy (e.g., "The Infinite Scaffolding" instead of "Background").
 
-Generate a strict structural plan based on this reasoning. Avoid the "Intro-Body-Conclusion" default where possible to create more human, editorial energy.
+Generate a strict structural plan based on this reasoning. Ensure subheadings are mandated and present for every transition.
 """
-        
+
+        # PERFORMANCE UPGRADE: Consolidation logic for streaming
+        if stream:
+            print(json.dumps({"type": "status", "message": "Strategizing editorial angle and drafting..."}), flush=True)
+            # In streaming mode, we fold the editorial reasoning into the system prompt for a single high-speed pass
+            optimized_system_prompt = system_prompt + "\n\nEDITORIAL REASONING PROTOCOL:\n" + reasoning_prompt
+            
+            content_chunks = []
+            title = outline_data.get("title", "Draft")
+
+            # Signal stream start
+            print(json.dumps({"type": "stream_start", "source_id": source_id, "title": title}), flush=True)
+
+            stream_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": optimized_system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                stream=True,
+                max_tokens=3000,
+            )
+
+            for chunk in stream_response:
+                delta = chunk.choices[0].delta.content or ""
+                if delta:
+                    content_chunks.append(delta)
+                    print(json.dumps({"type": "chunk", "text": delta}), flush=True)
+
+            full_content = "".join(content_chunks)
+            word_count = len(full_content.split())
+
+            bundle = {
+                "status": "success",
+                "source_id": source_id,
+                "content_type": content_type,
+                "data": {"title": title, "content": full_content, "word_count": word_count}
+            }
+            _save_draft(source_id, bundle)
+            print(json.dumps({"type": "stream_end", "source_id": source_id, "word_count": word_count}), flush=True)
+            return
+
+        # BATCH MODE: High-fidelity reasoning + drafting
         plan_completion = client.beta.chat.completions.parse(
             model="gpt-4o-mini",
             messages=[
@@ -204,18 +249,19 @@ Generate a strict structural plan based on this reasoning. Avoid the "Intro-Body
             )
             v1_draft = initial_completion.choices[0].message.parsed
             
-            # --- INTERNAL SELF-EDITING PASS ---
+            # --- INTERNAL SELF-EDITING PASS (Optimized with gpt-4o-mini for speed) ---
             critic_prompt = f"""You are a high-level Editor. Evaluate the following draft against these standards:
 1. Is the hook engaging and non-generic?
 2. Does each section introduce a new insight without repetition?
 3. Are there concrete examples instead of vague abstractions?
 4. Is the SELECTED VOICE PERSONA consistent?
 5. Are there any AI clichés (e.g. "In today's world", "In conclusion")?
+6. **FORMATTING CHECK**: Does the draft have clear, punchy `## Subheadings` for every major section? If it's a long block of text, insert subheadings to break it up effectively.
 
-If there are issues, rewrite the section to be more specific and human. Return the FINAL, polished draft."""
+If there are issues, rewrite the section to be more specific, human, and properly structured with headers. Return the FINAL, polished draft."""
 
             final_completion = client.beta.chat.completions.parse(
-                model="gpt-4o",
+                model="gpt-4o-mini", # Speed upgrade
                 messages=[
                     {"role": "system", "content": "You are a master editorial polisher."},
                     {"role": "user", "content": f"ORIGINAL DRAFT:\n\nTitle: {v1_draft.title}\n\nContent: {v1_draft.content}" + "\n\n" + critic_prompt}

@@ -31,6 +31,7 @@ import { getFormatStyles } from "@/lib/format-styles"
 import "../editor.css"
 import DQMCard from "@/components/DQMCard"
 import { useLanguage } from "@/context/LanguageContext"
+import { PublishDropdown } from "@/components/features/PublishDropdown"
 
 interface Draft {
     id: string
@@ -87,12 +88,12 @@ export default function DraftWorkspacePage() {
                 const res = await fetch(`/api/store/results?sourceId=${id}`)
                 if (res.ok) {
                     const data = await res.json()
-                    if (data.results?.qa) {
-                        setDqm(data.results.qa.data || data.results.qa)
-                    } else if (data.qa) {
-                        setDqm(data.qa.data || data.qa)
+                    const qaRaw = data.results?.qa || data.qa
+                    if (qaRaw) {
+                        const normalized = qaRaw.payload || qaRaw.data || qaRaw
+                        setDqm(normalized)
+                        localStorage.setItem(`dqm_${id}`, JSON.stringify(normalized))
                     }
-                    localStorage.setItem(`dqm_${id}`, JSON.stringify(data.results?.qa?.data || data.results?.qa || data.qa))
                 }
             } catch (e) { console.error("Score hydration failed", e) }
         }
@@ -129,7 +130,11 @@ export default function DraftWorkspacePage() {
             })
             if (res.ok) {
                 const data = await res.json()
-                if (data.result) {
+                if (data.result?.payload) {
+                    setDqm(data.result.payload)
+                    localStorage.setItem(`dqm_${sourceId}`, JSON.stringify(data.result.payload))
+                } else if (data.result) {
+                    // Fallback for legacy or direct data
                     setDqm(data.result)
                     localStorage.setItem(`dqm_${sourceId}`, JSON.stringify(data.result))
                 }
@@ -424,17 +429,16 @@ export default function DraftWorkspacePage() {
                                     <span>Plain Text (.txt)</span>
                                 </button>
                                 <div className="h-px bg-border/60 my-1 mx-1" />
-                                <button 
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(editor?.getText() || editedContent)
-                                        alert("Share link copied to clipboard")
-                                        setExportOpen(false)
-                                    }}
-                                    className="w-full text-left px-3 py-2 text-[11px] hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group/item"
-                                >
-                                    <Copy className="w-3.5 h-3.5 text-amber-500 group-hover/item:scale-110 transition-transform" />
-                                    <span>Copy Share Link</span>
-                                </button>
+                                <PublishDropdown 
+                                    type="draft_studio"
+                                    onPublish={(platform) => alert(`Sharing to ${platform} coming soon!`)}
+                                    trigger={
+                                        <button className="w-full text-left px-3 py-2 text-[11px] hover:bg-muted rounded-lg transition-colors flex items-center gap-2 group/item">
+                                            <Share2 className="w-3.5 h-3.5 text-amber-500 group-hover/item:scale-110 transition-transform" />
+                                            <span>Share Work</span>
+                                        </button>
+                                    }
+                                />
                             </div>
                         )}
                     </div>
@@ -582,13 +586,6 @@ export default function DraftWorkspacePage() {
                                 <Button 
                                     variant="outline" 
                                     className="w-full justify-start gap-2 h-10 border-border/60 hover:bg-muted/50 text-[13px] font-medium"
-                                    onClick={() => alert("Sharing enabled soon")}
-                                >
-                                    <Share2 className="w-3.5 h-3.5" /> Share Work
-                                </Button>
-                                <Button 
-                                    variant="outline" 
-                                    className="w-full justify-start gap-2 h-10 border-border/60 hover:bg-muted/50 text-[13px] font-medium"
                                     onClick={() => handleQA()}
                                     disabled={isQAing}
                                 >
@@ -607,8 +604,9 @@ export default function DraftWorkspacePage() {
                         <Button 
                             variant="ghost" 
                             size="icon" 
-                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('bold') && "bg-muted text-brand shadow-sm")} 
+                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('bold') && "bg-emerald-500/10 text-emerald-500 shadow-sm")} 
                             title="Bold"
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={() => editor?.chain().focus().toggleBold().run()}
                         >
                             <Bold className="w-4 h-4" />
@@ -616,8 +614,9 @@ export default function DraftWorkspacePage() {
                         <Button 
                             variant="ghost" 
                             size="icon" 
-                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('italic') && "bg-muted text-brand shadow-sm")} 
+                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('italic') && "bg-emerald-500/10 text-emerald-500 shadow-sm")} 
                             title="Italic"
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={() => editor?.chain().focus().toggleItalic().run()}
                         >
                             <Italic className="w-4 h-4" />
@@ -626,17 +625,19 @@ export default function DraftWorkspacePage() {
                         <Button 
                             variant="ghost" 
                             size="icon" 
-                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('heading', { level: 1 }) && "bg-muted text-brand shadow-sm")} 
-                            title="Header 1"
-                            onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
+                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('heading', { level: 2 }) && "bg-emerald-500/10 text-emerald-500 shadow-sm")} 
+                            title="Heading"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
                         >
                             <Type className="w-4 h-4" />
                         </Button>
                         <Button 
                             variant="ghost" 
                             size="icon" 
-                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('blockquote') && "bg-white text-brand shadow-sm")} 
+                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('blockquote') && "bg-emerald-500/10 text-emerald-500 shadow-sm")} 
                             title="Quote"
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={() => editor?.chain().focus().toggleBlockquote().run()}
                         >
                             <Quote className="w-4 h-4" />
@@ -644,8 +645,9 @@ export default function DraftWorkspacePage() {
                         <Button 
                             variant="ghost" 
                             size="icon" 
-                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('bulletList') && "bg-muted text-brand shadow-sm")} 
+                            className={cn("h-8 w-8 hover:bg-muted", editor?.isActive('bulletList') && "bg-emerald-500/10 text-emerald-500 shadow-sm")} 
                             title="List"
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={() => editor?.chain().focus().toggleBulletList().run()}
                         >
                             <List className="w-4 h-4" />

@@ -252,7 +252,6 @@ export default function SourcesPage() {
         <div className="p-8 px-12 max-w-[1500px] mx-auto space-y-8 min-h-full">
             <div className="space-y-1">
                 <h1 className="text-3xl font-serif font-semibold tracking-tight">{t("sources")}</h1>
-                <p className="text-muted-foreground">{t("searchPlaceholder")}</p>
             </div>
 
             {ingestStatus && (

@@ -27,6 +27,7 @@ import {
     CardTitle 
 } from "@/components/ui/Card"
 import { motion, AnimatePresence } from "framer-motion"
+import { useBeta } from "@/context/BetaContext"
 
 type SettingsCategory = "account" | "engine" | "processing" | "notifications" | "billing" | "privacy"
 
@@ -50,6 +51,7 @@ interface UsageStats {
 
 export default function SettingsPage() {
     const { data: session } = useSession()
+    const { isBetaActive, enrollInBeta, isBetaEnrolled } = useBeta()
     const [activeCategory, setActiveCategory] = useState<SettingsCategory>("account")
     
     // State
@@ -57,6 +59,7 @@ export default function SettingsPage() {
     const [usage, setUsage] = useState<UsageStats | null>(null)
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
+    const [billingInterval, setBillingInterval] = useState<"monthly" | "annually">("monthly")
 
     useEffect(() => {
         const fetchData = async () => {
@@ -228,12 +231,6 @@ export default function SettingsPage() {
                                                     </div>
                                                 </div>
 
-                                                <div className="p-4 rounded-xl bg-orange-500/5 border border-orange-500/10">
-                                                    <p className="text-xs text-orange-600/80 font-medium leading-relaxed">
-                                                        Profile details are established via your authentication provider. 
-                                                        To update your name or avatar, please modify your settings at the source (e.g., Google Account).
-                                                    </p>
-                                                </div>
                                             </div>
 
                                             <div className="pt-4 flex items-center justify-between border-t border-border/40">
@@ -500,34 +497,91 @@ export default function SettingsPage() {
                                 </Card>
 
                                 <Card className="border-border/40 bg-card/60 shadow-sm overflow-hidden">
-                                    <CardHeader className="pb-8">
-                                        <CardTitle className="text-lg font-serif">Subscription Plans</CardTitle>
-                                        <CardDescription>Upgrade to increase processing depth and export capacity.</CardDescription>
-                                    </CardHeader>
-                                    <CardContent className="p-4 sm:p-6 lg:p-8">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
+                                    <div className="p-4 flex flex-col items-start w-full space-y-6">
+                                        <div className="flex flex-col gap-1 w-full text-left">
+                                            <CardTitle className="text-lg font-serif transition-colors">Subscription Plans</CardTitle>
+                                            <CardDescription>Upgrade to increase processing depth and export capacity.</CardDescription>
+                                        </div>
+                                        
+                                        <div className="inline-flex items-center gap-1.5 bg-muted/40 p-1 rounded-xl border border-border/10">
+                                            <button
+                                                onClick={() => setBillingInterval("monthly")}
+                                                className={cn(
+                                                    "px-5 py-1.5 rounded-lg text-[11px] font-bold transition-all",
+                                                    billingInterval === "monthly" 
+                                                        ? "bg-foreground text-background shadow-sm" 
+                                                        : "text-muted-foreground hover:text-foreground/80"
+                                                )}
+                                            >
+                                                Monthly
+                                            </button>
+                                            <button
+                                                onClick={() => setBillingInterval("annually")}
+                                                className={cn(
+                                                    "px-5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center gap-2",
+                                                    billingInterval === "annually" 
+                                                        ? "bg-foreground text-background shadow-sm" 
+                                                        : "text-muted-foreground hover:text-foreground/80"
+                                                )}
+                                            >
+                                                Annually
+                                                <span className={cn(
+                                                    "text-[9px] px-1.5 py-0.5 rounded-md border font-black transition-colors",
+                                                    billingInterval === "annually"
+                                                        ? "bg-emerald-500 text-white border-emerald-400"
+                                                        : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                                )}>
+                                                    -20%
+                                                </span>
+                                            </button>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full m-0 p-0 items-stretch">
                                             <PricingCard
                                                 title="Free"
                                                 price="$0 / mo"
-                                                description="Experience basic unified intelligence."
+                                                description="Experience basic unified intelligence for personal projects."
                                                 buttonVariant="outline"
-                                                features={["2 Connected Accounts", "Unified Search", "Basic Filtering"]}
+                                                isCurrentPlan={!isBetaEnrolled}
+                                                features={[
+                                                    "7 Sources Processed / mo",
+                                                    "Max 30 min per Source",
+                                                    "Standard Transcript Extraction",
+                                                    "Basic X-Thread Generation",
+                                                    "1 Connected Platform"
+                                                ]}
                                             />
                                             <PricingCard
                                                 title="Pro"
-                                                price="$19 / mo"
-                                                description="Advanced research and export depth."
+                                                price={billingInterval === "monthly" ? "$19 / mo" : "$15 / mo"}
+                                                savings={billingInterval === "annually" ? "Save $48/yr" : undefined}
+                                                description="Complete industrial content engine for operators and teams."
                                                 buttonVariant="default"
                                                 highlight
-                                                onClick={() => payWithPaystack({
-                                                    email: session?.user?.email || "",
-                                                    amount: 3000000, // 30,000 NGN (approx $19)
-                                                    metadata: { plan: 'pro' }
-                                                })}
-                                                features={["Unlimited Accounts", "Smart Labels", "Priority Support"]}
+                                                isCurrentPlan={!isBetaActive && false} // Placeholder for real Pro check if not in Beta
+                                                onClick={() => {
+                                                    if (isBetaActive) {
+                                                        enrollInBeta();
+                                                    } else {
+                                                        payWithPaystack({
+                                                            email: session?.user?.email || "",
+                                                            amount: billingInterval === "monthly" ? 190000 : 1800000, 
+                                                            metadata: { plan: 'pro', interval: billingInterval }
+                                                        })
+                                                    }
+                                                }}
+                                                features={[
+                                                    "Unlimited Source Ingestion",
+                                                    "Unlimited Source Duration",
+                                                    "Deep Density Intelligence (DQM)",
+                                                    "Advanced Multichannel Assets",
+                                                    "Direct-to-Social Publishing",
+                                                    "Priority Processing Queue",
+                                                    "Unlimited Accounts"
+                                                ]}
                                             />
                                         </div>
-                                    </CardContent>
+                                    </div>
                                 </Card>
                             </div>
                         )}

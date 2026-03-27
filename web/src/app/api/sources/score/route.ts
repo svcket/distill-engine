@@ -59,8 +59,12 @@ export async function POST(request: Request) {
         const updatedSource = await prisma.source.update({
             where: { id: sourceId, userId: session.user.id },
             data: {
+                title: result.title || source.title,
                 score: result.score || 0,
-                status: result.score >= 6 ? 'done' : 'failed'
+                status: result.score >= 6 ? 'done' : 'failed',
+                completedStages: {
+                    push: 'judge'
+                }
             }
         })
 

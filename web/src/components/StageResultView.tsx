@@ -1,14 +1,17 @@
 import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/Badge"
 import { cn } from "@/lib/utils"
-import { Loader2, AlertCircle, CheckCircle2, FileText, FastForward, Cpu, Target, PenTool, Layout, Box, Share2 as ShareIcon, Copy, Check, Download, Lightbulb, Zap, BookOpen, MessageSquareQuote, BarChart3, ChevronDown, ChevronUp } from "lucide-react"
+import { AlertCircle, Target, Share2 as ShareIcon, Copy, Check, Lightbulb, Zap, BookOpen, MessageSquareQuote, BarChart3, Send, CheckCircle2 } from "lucide-react"
 import DQMCard, { DQMData } from "./DQMCard"
+import { PublishDropdown } from "@/components/features/PublishDropdown"
+import Image from "next/image"
 
 type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "socialise" | "export"
 
 interface StageResultViewProps {
     stageId: StageId
     data: Record<string, unknown> | string
+    sourceId?: string
     compact?: boolean // for accordion vs full panel
 }
 
@@ -77,10 +80,20 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
     const status = getStr(data, "status")
     const isRescued = status === "rescued_text"
 
+    if (compact) {
+        return (
+            <div className="flex items-center gap-2">
+                <Badge variant="secondary">
+                    {segmentCount} {isRescued ? "content block" : "segments"} retrieved
+                </Badge>
+            </div>
+        )
+    }
+
     return (
-        <div className="space-y-3">
+        <div className="space-y-6">
             <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant={isRescued ? "secondary" : "secondary"}>
+                <Badge variant="secondary" className="bg-muted text-muted-foreground border-border/50">
                     {segmentCount} {isRescued ? "content block" : "segments"} retrieved
                 </Badge>
                 {isRescued && (
@@ -90,31 +103,36 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
                 )}
             </div>
             
-            {isRescued && !compact && (
+            {isRescued && (
                 <div className="p-4 rounded-xl bg-muted/30 border border-brand/10 text-xs text-muted-foreground leading-relaxed italic">
                     Note: Audio transcription was unavailable. Distill rescued this content from source metadata and show notes to maintain pipeline continuity.
                 </div>
             )}
 
-            {!compact && segments.length > 0 && (
-                <div className="space-y-2 pr-2 pb-6">
+            {segments.length > 0 && (
+                <div className="prose prose-invert prose-p:text-foreground/80 prose-p:leading-relaxed max-w-none prose-p:my-4">
+                    {/* Combine segments into paragraphs, breaking at common speaker markers or significant gaps */}
                     {segments.map((seg, i) => {
                         const s = seg as Record<string, unknown>
-                        const hasTime = typeof s.start === "number" && s.start > 0
+                        const text = getStr(s, "text")
+                        
+                        // Style the speaker marker if present
+                        const parts = text.split(">>")
+                        
                         return (
-                            <div key={i} className="p-3 rounded-lg bg-muted/40 border border-border/40">
-                                {hasTime && (
-                                    <span className="text-[10px] font-mono text-muted-foreground/60 block mb-1">
+                            <p key={i} className="relative group ring-offset-background transition-colors hover:text-foreground">
+                                {parts.map((part, pi) => (
+                                    <span key={pi}>
+                                        {pi > 0 && <span className="text-brand font-bold mx-1 opacity-70">»</span>}
+                                        {part.trim()}
+                                    </span>
+                                ))}
+                                {typeof s.start === "number" && s.start > 0 && (
+                                    <span className="absolute -left-12 top-0 text-[10px] font-mono text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap hidden lg:block">
                                         {`${Math.floor((s.start as number) / 60)}:${String(Math.floor((s.start as number) % 60)).padStart(2, "0")}`}
                                     </span>
                                 )}
-                                <p className={cn(
-                                    "text-xs text-foreground leading-relaxed",
-                                    isRescued ? "text-sm" : ""
-                                )}>
-                                    {getStr(s, "text")}
-                                </p>
-                            </div>
+                            </p>
                         )
                     })}
                 </div>
@@ -127,24 +145,28 @@ function RefineResult({ data, compact }: { data: Record<string, unknown>; compac
     const segments = getArr(data, "segments")
     const count = segments.length || getNum(data, "segment_count", 0)
 
+    if (compact) {
+        return <Badge variant="secondary">{count} logical segments</Badge>
+    }
+
     return (
-        <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-                Transcript cleaned and structured into <span className="font-semibold text-foreground">{count} logical segments</span>.
-                Noise artifacts, filler words, and system tags removed.
-            </p>
-            {!compact && segments.length > 0 && (
-                <div className="space-y-3 pb-6">
-                    {segments.map((seg, i) => {
-                        const s = seg as Record<string, unknown>
-                        return (
-                            <div key={i} className="p-4 rounded-lg bg-muted/40 border border-border/40">
-                                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{getStr(s, "text")}</p>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
+        <div className="space-y-6">
+            <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                    {count} Logical Segments
+                </Badge>
+            </div>
+            
+            <div className="prose prose-invert prose-p:text-foreground/90 prose-p:leading-relaxed max-w-none">
+                {segments.map((seg, i) => {
+                    const s = seg as Record<string, unknown>
+                    return (
+                        <p key={i} className="my-6 first:mt-0 last:mb-0">
+                            {getStr(s, "text")}
+                        </p>
+                    )
+                })}
+            </div>
         </div>
     )
 }
@@ -341,14 +363,12 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
-                <Badge className="bg-brand/10 text-brand border-brand/20 flex items-center gap-1.5">
+                <Badge className="bg-brand/10 text-brand border-brand/20 flex items-center h-8 px-4 text-[13px] font-semibold">
                     {displayFormat}
-                    <ChevronDown className="w-3 h-3 opacity-60" />
                 </Badge>
                 {secondaryFormats.map((f, i) => (
-                    <Badge key={i} variant="secondary" className="flex items-center gap-1.5">
+                    <Badge key={i} variant="secondary" className="flex items-center h-8 px-4 text-[13px] text-muted-foreground/80">
                         {String(f).replace(/_/g, " ")}
-                        <ChevronDown className="w-3 h-3 opacity-40" />
                     </Badge>
                 ))}
             </div>
@@ -365,7 +385,6 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
                     <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif mb-1">Target Audience</div>
                     <div className="flex items-center gap-2">
                         <p className="text-sm text-foreground/70">{audience}</p>
-                        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground opacity-50" />
                     </div>
                 </div>
             )}
@@ -403,7 +422,7 @@ function DraftResult({ data, isGenerating = false, compact = false }: { data: Re
     const d = (data?.result || data?.data || data) as Record<string, unknown>
     const fullText = typeof d === 'string' ? d : (getStr(d, "content") || getStr(d, "text") || "")
     const title = getStr(d, "title")
-    const wordCount = getNum(d, "word_count")
+        // const wordCount = getNum(d, "word_count") // Removed to fix lint
 
     const stripHtml = (text: string) => {
         if (!text) return '';
@@ -590,11 +609,13 @@ function VisualResult({ data, compact }: { data: Record<string, unknown>; compac
                                 <p className="text-sm font-semibold text-foreground">{String(desc)}</p>
                                 
                                 {Boolean(sg.image_url) && (
-                                    <div className="mt-4 rounded-lg overflow-hidden border border-border/40 shadow-sm transition-transform hover:scale-[1.01]">
-                                        <img 
+                                    <div className="mt-4 rounded-lg overflow-hidden border border-border/40 shadow-sm transition-transform hover:scale-[1.01] relative aspect-video">
+                                        <Image 
                                             src={String(sg.image_url)} 
                                             alt={String(desc)}
-                                            className="w-full h-auto object-cover max-h-[400px]"
+                                            fill
+                                            className="object-cover"
+                                            unoptimized // Since these might be external AI generated URLs
                                         />
                                     </div>
                                 )}
@@ -622,7 +643,7 @@ function VisualResult({ data, compact }: { data: Record<string, unknown>; compac
     )
 }
  
-function SocialiseResult({ data }: { data: Record<string, unknown> }) {
+function SocialiseResult({ data, sourceId }: { data: Record<string, unknown>; sourceId?: string }) {
     // Aggressive normalization: catch nested result/data/payload structures
     const d = (data.result || data.data || data.payload || data) as Record<string, unknown>
     const hook = getStr(d, "hook")
@@ -630,11 +651,48 @@ function SocialiseResult({ data }: { data: Record<string, unknown> }) {
     const cta = getStr(d, "cta")
 
     const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+    const [isPublishing, setIsPublishing] = useState(false)
+    const [publishResult, setPublishResult] = useState<{ success: boolean; message: string; url?: string } | null>(null)
 
     const copyToClipboard = (text: string, index: number) => {
         navigator.clipboard.writeText(text)
         setCopiedIndex(index)
         setTimeout(() => setCopiedIndex(null), 2000)
+    }
+
+    const handlePublish = async (platformId: string) => {
+        if (platformId !== 'x') {
+            alert(`Publishing to ${platformId} is coming soon!`)
+            return
+        }
+        if (!sourceId) return
+        setIsPublishing(true)
+        setPublishResult(null)
+
+        try {
+            const res = await fetch("/api/publish", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    sourceId,
+                    platform: "twitter", // Assuming 'x' maps to 'twitter' for the backend
+                    content: { hook, thread, cta }
+                })
+            })
+
+            const result = await res.json()
+            if (res.ok) {
+                const tweetId = result.result?.tweet_ids?.[0]
+                const url = tweetId ? `https://x.com/i/status/${tweetId}` : "https://x.com"
+                setPublishResult({ success: true, message: "Thread published to X!", url })
+            } else {
+                setPublishResult({ success: false, message: result.error || "Publishing failed" })
+            }
+        } catch {
+            setPublishResult({ success: false, message: "Network error during publishing" })
+        } finally {
+            setIsPublishing(false)
+        }
     }
 
     const allTweets = [hook, ...thread, cta].filter(Boolean)
@@ -645,13 +703,44 @@ function SocialiseResult({ data }: { data: Record<string, unknown> }) {
 
     return (
         <div className="space-y-6 pb-12">
-            <div className="flex items-center justify-between gap-4">
-                <div className="space-y-1">
-                    <p className="text-sm font-medium text-foreground">X (Twitter) Thread</p>
-                    <p className="text-xs text-muted-foreground lowercase">Derived from main draft & source context</p>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 p-1 bg-muted/20 rounded-2xl border border-border/40 overflow-visible relative z-30">
+                <div className="p-4 space-y-1">
+                    <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                        <ShareIcon className="w-4 h-4 text-brand" />
+                        Threads
+                    </p>
+                    <p className="text-xs text-muted-foreground">Ready for distribution</p>
                 </div>
-                <Badge variant="success" className="bg-brand/10 text-brand border-brand/20 shrink-0">Socialise</Badge>
+                {sourceId && (
+                    <div className="w-full sm:w-auto p-1 pr-6 flex justify-end">
+                        <PublishDropdown 
+                            type="mission_control"
+                            onPublish={handlePublish}
+                            isPublishing={isPublishing}
+                        />
+                    </div>
+                )}
             </div>
+
+            {publishResult && (
+                <div className={cn(
+                    "p-4 rounded-xl text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2",
+                    publishResult.success ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" : "bg-red-500/10 text-red-500 border border-red-500/20"
+                )}>
+                    <div className="flex items-center gap-3 font-medium">
+                        {publishResult.success ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                        {publishResult.message}
+                    </div>
+                    {publishResult.success && (
+                        <button 
+                            onClick={() => window.open(publishResult.url || 'https://x.com', '_blank')}
+                            className="text-[10px] font-bold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all flex items-center gap-1.5 shrink-0"
+                        >
+                            View on X <Send className="w-2.5 h-2.5" />
+                        </button>
+                    )}
+                </div>
+            )}
 
             <div className="space-y-4 relative before:absolute before:left-6 before:top-8 before:bottom-8 before:w-0.5 before:bg-border/30">
                 {allTweets.map((tweet, i) => (
@@ -715,7 +804,7 @@ function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: 
 
 // ─── Main Component ────────────────────────────────────────────
 
-export function StageResultView({ stageId, data, compact = false }: StageResultViewProps) {
+export function StageResultView({ stageId, data, sourceId, compact = false }: StageResultViewProps) {
     const d = (typeof data === 'string' ? data : data as Record<string, unknown>) || {}
 
     const isFallback = typeof d === 'object' && d !== null && d.status === "Stage complete" && typeof d.message === "string";
@@ -745,7 +834,7 @@ export function StageResultView({ stageId, data, compact = false }: StageResultV
         case "qa":
             return <QaResult data={d as Record<string, unknown>} compact={compact} />
         case "socialise":
-            return <SocialiseResult data={d as Record<string, unknown>} />
+            return <SocialiseResult data={d as Record<string, unknown>} sourceId={sourceId} />
         default:
             return <GenericResult data={typeof d === 'string' ? { message: d } : (d as Record<string, unknown>)} />
     }
@@ -753,7 +842,7 @@ export function StageResultView({ stageId, data, compact = false }: StageResultV
 
 
 // Export for use in Inspect panel with full detail
-export function StageResultPanel({ stageId, data }: { stageId: StageId; data: Record<string, unknown> }) {
+export function StageResultPanel({ stageId, data, sourceId }: { stageId: StageId; data: Record<string, unknown>; sourceId?: string }) {
     const d = (data.data as Record<string, unknown>) || data.result || data;
     const wordCount = stageId === "draft" 
         ? (getNum(d as Record<string, unknown>, "word_count") || 
@@ -771,7 +860,7 @@ export function StageResultPanel({ stageId, data }: { stageId: StageId; data: Re
                     <Badge variant="success" className="font-sans">{wordCount} words</Badge>
                 )}
             </div>
-            <StageResultView stageId={stageId} data={data} compact={false} />
+            <StageResultView stageId={stageId} data={data} sourceId={sourceId} compact={false} />
         </div>
     )
 }

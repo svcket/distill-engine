@@ -1,8 +1,15 @@
+import { auth } from "@/auth"
+import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 import path from 'path'
 
 export async function POST(request: Request) {
+    const session = await auth()
+    if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     try {
         const { transcriptId } = await request.json()
 
@@ -34,13 +41,21 @@ export async function POST(request: Request) {
 
                 pyProcess.stderr.on('data', (data) => {
                     console.error(`[Insight API] Python Stderr: ${data}`)
-                    // Optional: expose errors to the stream
-                    // controller.enqueue(encoder.encode(JSON.stringify({ type: "error", message: data.toString() }) + "\n"))
                 })
 
-                pyProcess.on('close', (code) => {
+                pyProcess.on('close', async (code) => {
                     if (code !== 0) {
                         controller.enqueue(encoder.encode(JSON.stringify({ type: "error", message: `Script exited with code ${code}` }) + "\n"))
+                    } else {
+                        // Persist stage completion on success
+                        await prisma.source.update({
+                            where: { id: transcriptId, userId: session.user.id },
+                            data: {
+                                completedStages: {
+                                    push: 'insights'
+                                }
+                            }
+                        })
                     }
                     controller.close()
                 })

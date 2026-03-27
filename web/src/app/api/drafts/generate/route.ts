@@ -147,8 +147,24 @@ export async function POST(request: Request) {
                                     where: { userId: userId },
                                     update: { draftsGenerated: { increment: 1 } },
                                     create: { userId: userId, draftsGenerated: 1 }
+                                }),
+                                (prisma as any).source.update({
+                                    where: { id: sourceId, userId: userId },
+                                    data: {
+                                        completedStages: {
+                                            push: 'draft'
+                                        }
+                                    }
                                 })
-                            ])
+                            ]).catch(async (e) => {
+                                // Fallback for string-based completedStages if push fails
+                                await prisma.source.update({
+                                    where: { id: sourceId, userId: userId },
+                                    data: {
+                                        completedStages: 'draft'
+                                    }
+                                })
+                            })
                         }
                         controller.close()
                     })
@@ -224,8 +240,24 @@ export async function POST(request: Request) {
             where: { userId: userId },
             update: { draftsGenerated: { increment: 1 } },
             create: { userId: userId, draftsGenerated: 1 }
+        }),
+        (prisma as any).source.update({
+            where: { id: sourceId, userId: userId },
+            data: {
+                completedStages: {
+                    push: 'draft'
+                }
+            }
         })
-    ])
+    ]).catch(async (e) => {
+        // Fallback for string-based completedStages if push fails
+        await prisma.source.update({
+            where: { id: sourceId, userId: userId },
+            data: {
+                completedStages: 'draft'
+            }
+        })
+    })
 
     return NextResponse.json({ result: result.data || result })
 }

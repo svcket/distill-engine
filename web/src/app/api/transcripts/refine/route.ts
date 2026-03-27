@@ -1,9 +1,16 @@
+import { auth } from "@/auth"
+import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import { adaptRefinerResponse } from '@/lib/adapters'
 import path from 'path'
 
 export async function POST(request: Request) {
+    const session = await auth()
+    if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     try {
         const { transcriptId } = await request.json()
 
@@ -24,6 +31,24 @@ export async function POST(request: Request) {
         }
 
         const result = adaptRefinerResponse(rawOutput || "")
+
+        // Persist stage completion
+        await (prisma as any).source.update({
+            where: { id: transcriptId, userId: session.user.id },
+            data: {
+                completedStages: {
+                    push: 'refine'
+                }
+            }
+        }).catch((e: any) => {
+            // Fallback for string-based completedStages if push fails
+            return prisma.source.update({
+                where: { id: transcriptId, userId: session.user.id },
+                data: {
+                    completedStages: 'refine' // Minimal fallback
+                }
+            })
+        })
 
         return NextResponse.json({ result, message: `Refined transcript: ${transcriptId}` })
 

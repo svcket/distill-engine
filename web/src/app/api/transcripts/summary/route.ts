@@ -1,8 +1,16 @@
+import { auth } from "@/auth"
+import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import path from 'path'
+import fs from 'fs'
 
 export async function POST(request: Request) {
+    const session = await auth()
+    if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     try {
         const { transcriptId } = await request.json()
 
@@ -14,7 +22,9 @@ export async function POST(request: Request) {
         const inputPath = path.join(executionDir, '.tmp', 'refined_transcripts', transcriptId, `${transcriptId}_refined.json`)
         const outputMd = path.join(executionDir, '.tmp', 'summaries', transcriptId, `${transcriptId}_summary.md`)
 
-        const { success, error, rawOutput } = await runPythonScript("transcript_summarizer.py", ["--input", inputPath, "--output", outputMd])
+        const { success, error, rawOutput } = await runPythonScript("transcript_summarizer.py", ["--input", inputPath, "--output", outputMd], {
+            expectedArtifact: `.tmp/summaries/${transcriptId}/${transcriptId}_summary.json`
+        })
 
         if (!success) {
             return NextResponse.json({ error: "Failed to execute summarizer script", details: error }, { status: 500 })
@@ -27,7 +37,6 @@ export async function POST(request: Request) {
             result = JSON.parse(lastLine)
             
             // Hydration: Read the actual summary content from the JSON file
-            const fs = await import('fs')
             const summaryJsonPath = path.join(executionDir, '.tmp', 'summaries', transcriptId, `${transcriptId}_summary.json`)
             if (fs.existsSync(summaryJsonPath)) {
                 const rawData = fs.readFileSync(summaryJsonPath, 'utf-8')
@@ -37,6 +46,24 @@ export async function POST(request: Request) {
         } catch {
             result = { summary: "" }
         }
+
+        // Persist stage completion
+        await (prisma as any).source.update({
+            where: { id: transcriptId, userId: session.user.id },
+            data: {
+                completedStages: {
+                    push: 'summary'
+                }
+            }
+        }).catch((e: any) => {
+            // Fallback for string-based completedStages if push fails
+            return prisma.source.update({
+                where: { id: transcriptId, userId: session.user.id },
+                data: {
+                    completedStages: 'summary'
+                }
+            })
+        })
 
         return NextResponse.json({ result, message: `Generated summary for: ${transcriptId}` })
 

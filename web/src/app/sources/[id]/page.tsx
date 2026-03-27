@@ -5,14 +5,16 @@ import { Badge } from "@/components/ui/Badge"
 import { Button } from "@/components/ui/Button"
 import { StageResultPanel } from "@/components/StageResultView"
 import { SourceCandidate } from "@/lib/mockData"
-import {
-    ArrowLeft, Loader2, FileText, Bot, Sparkles, Target, Edit3,
-    ShieldCheck, Check, ChevronDown, RefreshCw, Play, Share2,
-    ExternalLink, MoreHorizontal, Trash2, X, Calendar, Clock, BarChart3
+import { 
+    ArrowLeft, Loader2, FileText, Bot, Sparkles, Target, Edit3, 
+    ShieldCheck, Check, ChevronDown, ChevronUp, RefreshCw, Play, Share2, 
+    ExternalLink, MoreHorizontal, Trash2, X, Calendar, Clock, BarChart3,
+    AlertCircle, Search, Save
 } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
+import { motion, AnimatePresence } from "framer-motion"
 
 type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insights" | "angle" | "draft" | "qa" | "socialise" | "export"
 type StageStatus = "completed" | "active" | "locked"
@@ -81,7 +83,7 @@ const STAGES: WorkflowStage[] = [
     { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
-    { id: "socialise", label: "Socialize content", description: "Generate X threads, LinkedIn posts, and distribution assets", icon: Share2, apiEndpoint: "/api/socialise", apiBody: (id) => ({ transcriptId: id }) },
+    { id: "socialise", label: "Social content", description: "Generate X threads, LinkedIn posts, and distribution assets", icon: Share2, apiEndpoint: "/api/socialise", apiBody: (id) => ({ transcriptId: id }) },
 ]
 
 const INTENT_DESCRIPTIONS: Record<string, string> = {
@@ -202,6 +204,7 @@ export default function SourceMissionControl() {
     // Currently executing stage
     const [executingStage, setExecutingStage] = useState<StageId | null>(null)
     const [isRunningAll, setIsRunningAll] = useState(false)
+    const [showCelebration, setShowCelebration] = useState(false)
     const [error, setError] = useState<{ message: string; type: "error" | "info" } | null>(null)
 
     // Side panel state
@@ -211,6 +214,7 @@ export default function SourceMissionControl() {
     const [intentType, setIntentType] = useState<string>("blog_article")
     const [intentAudience, setIntentAudience] = useState<string>("general_reader")
     const [intentTone, setIntentTone] = useState<string>("conversational_editorial")
+    const [focusedField, setFocusedField] = useState<string | null>(null)
 
     // Expanded accordion IDs
 
@@ -588,6 +592,10 @@ export default function SourceMissionControl() {
             // If this was the last stage, mark source as done
             if (STAGES.findIndex(s => s.id === stage.id) === STAGES.length - 1) {
                 setSource(s => ({ ...s, status: "done" }))
+                // Trigger celebratory UI if it was just completed
+                if (isRunningAll || executingStage === "socialise") {
+                    setShowCelebration(true)
+                }
             }
         }
     }
@@ -614,7 +622,8 @@ export default function SourceMissionControl() {
     }
 
     // Run full pipeline — auto-chains all remaining stages
-    const runFullPipeline = async () => {
+    // resuming: when true (Continue Pipeline flow), bypasses the mandatory 'angle' pause
+    const runFullPipeline = async (resuming = false) => {
         setIsRunningAll(true)
         setError(null)
 
@@ -700,26 +709,25 @@ export default function SourceMissionControl() {
                 await new Promise(resolve => setTimeout(resolve, 100))
             }
 
-            // 2. Pause at "angle" to allow user to review insights and configure intent before framing/generation
-            // This ensures the pipeline doesn't just "blow past" the editorial strategy gate.
-            // We ONLY pause if we are running the full pipeline from an earlier stage.
-            // If the user manually clicks "Continue" or "Execute" on angle, we proceed.
-            if (stage.id === "angle" && i > startIndex) {
-                setLogs(prev => [{ event: `Pipeline paused for strategy review. Please configure Framing/Intent below.`, time: "Just now", status: "info" }, ...prev])
-                setError({ message: `Pipeline waiting for Editorial Strategy. Please confirm your intent options below.`, type: "info" })
+            // 2. CRITICAL GATE: Pause at 'angle' (Editorial Strategy) to let users confirm writing intent.
+            // This is a mandatory UX checkpoint — the user must explicitly click "Continue Pipeline".
+            // If resuming is true, we skip the break and actually EXECUTE the angle stage.
+            if (stage.id === "angle" && !resuming) {
                 setIsRunningAll(false)
                 setExecutingStage(null)
-                return // Stop auto-execution
+                setLogs(prev => [{ event: `Pipeline paused. Select your Writing Intent Strategy below, then click Continue.`, time: "Just now", status: "info" }, ...prev])
+                setError({ message: "Select your writing intent strategy below, then click Continue Pipeline.", type: "info" })
+                break
             }
 
             setExecutingStage(stage.id)
 
             try {
-                const bodyPayload = stage.id === "draft" || stage.id === "angle"
+                const bodyPayload = (stage.id === "draft" || stage.id === "angle")
                     ? { 
                         ...stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone }), 
-                        transcriptId: id, // Angle endpoint uses transcriptId
-                        stream: stage.id === "draft" ? true : undefined 
+                        transcriptId: id,
+                        stream: stage.id === "draft",
                       }
                     : stage.apiBody(id)
 
@@ -797,6 +805,20 @@ export default function SourceMissionControl() {
                 if (resValue) {
                     setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
                     currentResults[stage.id] = resValue // Update local copy for gating
+
+                    // ─── TRANSCRIPT GUARDRAIL ───
+                    if (stage.id === "transcript") {
+                        const tsData = (resValue as TranscriptResult);
+                        const segments = tsData?.segments || (resValue as Record<string, any>)?.result?.segments;
+                        if (!segments || segments.length === 0) {
+                            const errorMsg = "Transcription failed: No text segments were extracted. Pipeline halted.";
+                            setError({ message: errorMsg, type: "error" });
+                            setLogs(prev => [{ event: errorMsg, time: "Just now", status: "error" }, ...prev]);
+                            setIsRunningAll(false);
+                            break;
+                        }
+                    }
+                    // ───────────────────────────
 
                     // ─── REACTIVE PANEL SYNC ───
                     // If the panel is open for this stage, refresh it immediately
@@ -975,7 +997,7 @@ export default function SourceMissionControl() {
                                 </button>
                                 <div className="absolute right-0 top-full mt-2 w-48 bg-background border border-border/60 rounded-xl shadow-xl shadow-black/20 opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all z-50 p-1">
                                     <button 
-                                        onClick={runFullPipeline}
+                                        onClick={() => runFullPipeline()}
                                         disabled={isRunningAll}
                                         className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-foreground hover:bg-muted rounded-lg transition-colors"
                                     >
@@ -1035,7 +1057,19 @@ export default function SourceMissionControl() {
                         <div className="space-y-2.5">
                             <div className="flex items-center gap-2 mb-1">
                                 <Badge variant="secondary" className="bg-brand/10 text-brand border-brand/20 uppercase tracking-widest text-[10px] h-5 px-2 font-bold italic">
-                                    {source.source_type || "Source"}
+                                    {{
+                                        youtube: "YouTube",
+                                        spotify_podcast: "Spotify Podcast",
+                                        apple_podcast: "Apple Podcast",
+                                        podcast: "Podcast",
+                                        spotify: "Spotify Podcast",
+                                        vimeo: "Vimeo",
+                                        rss: "RSS / Article",
+                                        twitter: "X / Twitter",
+                                        document: "Document",
+                                        upload: "Upload",
+                                        recording: "Recording",
+                                    }[source.source_type ?? ""] || source.source_type || "Source"}
                                 </Badge>
                                 {source.status === "done" && (
                                     <Badge variant="success" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 uppercase tracking-widest text-[10px] h-5 px-2 font-bold">
@@ -1090,112 +1124,94 @@ export default function SourceMissionControl() {
                                 <div className="flex items-center justify-between mb-4">
                                     <h2 className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-widest font-serif">{t("pipelineStages")}</h2>
                                     {activeIndex < STAGES.length && (
-                                        <Button
-                                            variant="default"
-                                            size="sm"
-                                            className="gap-1.5 h-8 text-[12px] rounded-lg font-bold bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/10 transition-all duration-200 border-none"
-                                            onClick={runFullPipeline}
-                                            disabled={isRunningAll || !!executingStage}
-                                        >
-                                            {isRunningAll ? (
-                                                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {t("processing")}...</>
-                                            ) : (
-                                                 <><Play className="w-3 h-3 fill-current" /> {t("runRemaining")}</>
+                                                <Button
+                                                    variant="default"
+                                                    size="sm"
+                                                    className="gap-1.5 h-8 text-[12px] rounded-lg font-bold bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/10 transition-all duration-200 border-none"
+                                                    onClick={() => runFullPipeline()}
+                                                    disabled={isRunningAll || !!executingStage}
+                                                >
+                                                    {isRunningAll ? (
+                                                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {t("processing")}...</>
+                                                    ) : activeIndex > 0 ? (
+                                                        <>{t("continuePipeline")}</>
+                                                    ) : (
+                                                        <><Play className="w-3 h-3 fill-current" /> {t("runPipeline")}</>
+                                                    )}
+                                                </Button>
                                             )}
-                                        </Button>
-                                    )}
-                                </div>
-
-                                <div className="space-y-0 relative">
-                                    {visibleStages.map((stage, i) => {
-                                        const status = getStageStatus(STAGES.findIndex(s => s.id === stage.id))
-                                        const isExecuting = executingStage === stage.id
-                                        const isCompleted = status === "completed"
-                                        const isActive = status === "active"
-                                        const isLocked = status === "locked"
-
-                                        return (
-                                            <div key={stage.id} className="group/stage relative flex">
-                                                {/* Left Side: Timeline Column */}
-                                                <div className="flex flex-col items-center w-10 shrink-0 relative">
-                                                    {/* Vertical Connector Lines */}
-                                                    <div className={cn(
-                                                        "absolute left-[19px] w-[2px] transition-colors duration-500",
-                                                        i === 0 ? "top-[12px] h-[calc(100%-12px)]" : i === visibleStages.length - 1 ? "top-0 h-[12px]" : "top-0 h-full",
-                                                        (isCompleted || isActive) ? "bg-emerald-500/30" : "bg-border/40"
-                                                    )} />
-                                                    
-                                                    {/* Status Circle */}
-                                                    <div className={cn(
-                                                        "w-6 h-6 rounded-full border-2 flex items-center justify-center bg-background z-10 transition-all duration-500",
-                                                        isCompleted ? "border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)]" : 
-                                                        isActive ? "border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)]" : "border-border/60"
-                                                    )}>
-                                                        {isCompleted ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : 
-                                                         isActive ? <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> : null}
-                                                    </div>
-                                                </div>
-
-                                                {/* Right Side: Stage Content */}
-                                                <div className={cn(
-                                                    "flex-1 pb-10 transition-all duration-300 ml-2",
-                                                    isLocked && "opacity-50"
-                                                )}>
-                                                    <div className="flex items-start justify-between group/row">
-                                                        <div className="space-y-1">
-                                                            <h3 className={cn(
-                                                                "text-[15px] font-medium transition-colors",
-                                                                isCompleted || isActive ? "text-foreground" : "text-muted-foreground"
+                                        </div>
+    
+                                        <div className="space-y-0 relative">
+                                            {visibleStages.map((stage, i) => {
+                                                const status = getStageStatus(STAGES.findIndex(s => s.id === stage.id))
+                                                const isExecuting = executingStage === stage.id
+                                                const isCompleted = status === "completed"
+                                                const isActive = status === "active"
+                                                const isLocked = status === "locked"
+    
+                                                return (
+                                                    <div key={stage.id} className="group/stage relative flex">
+                                                        {/* Left Side: Timeline Column */}
+                                                        <div className="flex flex-col items-center w-10 shrink-0 relative">
+                                                            {/* Vertical Connector Lines */}
+                                                            <div className={cn(
+                                                                "absolute left-[19px] w-[2px] transition-colors duration-500",
+                                                                i === 0 ? "top-[12px] h-[calc(100%-12px)]" : i === visibleStages.length - 1 ? "top-0 h-[12px]" : "top-0 h-full",
+                                                                (isCompleted || isActive) ? "bg-emerald-500/30" : "bg-border/40"
+                                                            )} />
+                                                            
+                                                            {/* Status Circle */}
+                                                            <div className={cn(
+                                                                "w-6 h-6 rounded-full border-2 flex items-center justify-center bg-background z-10 transition-all duration-500",
+                                                                isCompleted ? "border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)]" : 
+                                                                isActive ? "border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)]" : "border-border/60"
                                                             )}>
-                                                                    {stage.label}
-                                                                </h3>
-                                                                <p className="text-[13px] text-muted-foreground/70 leading-relaxed max-w-md">
-                                                                    {stage.id === "transcript" && source.transcriptStatus === "unavailable" 
-                                                                        ? "Transcript is unavailable for this source. Pipeline stopped."
-                                                                        : isActive && stage.id === "angle"
-                                                                          ? (INTENT_DESCRIPTIONS[intentType] || stage.description)
-                                                                          : stage.id === "draft" 
-                                                                            ? `Generate ${intentType.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())} for ${intentAudience.replace(/_/g, " ")} target.`
-                                                                            : stage.description}
-                                                                </p>
+                                                                {isCompleted ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : 
+                                                                 isActive ? <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> : null}
                                                             </div>
-
-                                                        {/* Primary Action Button Cluster */}
-                                                        <div className="flex items-center gap-4">
-                                                            {/* View Button (Primary for completed stages) */}
-                                                             {isCompleted && (
-                                                                 <Button
-                                                                     variant="outline"
-                                                                     size="sm"
-                                                                     onClick={(e) => { e.stopPropagation(); openPanel(stage) }}
-                                                                     title="View stage results"
-                                                                     className="h-8 px-4 border-emerald-500/30 bg-emerald-500/5 text-[12px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/50 transition-all rounded-lg"
-                                                                 >
-                                                                     View
-                                                                 </Button>
-                                                             )}
-
-                                                            {/* Execute Button */}
-                                                             {isActive && !isCompleted && stage.apiEndpoint && (
-                                                                 <button
-                                                                     onClick={(e) => { e.stopPropagation(); executeStage(stage) }}
-                                                                     disabled={isExecuting || (stage.id === "transcript" && source.transcriptStatus === "unavailable")}
-                                                                     className={cn(
-                                                                         "px-4 py-1.5 rounded-full text-[13px] font-medium transition-all flex items-center gap-1.5",
-                                                                         (stage.id === "transcript" && source.transcriptStatus === "unavailable")
-                                                                             ? "border border-red-500/20 bg-red-500/5 text-red-500 cursor-not-allowed"
-                                                                             : isExecuting 
-                                                                                 ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
-                                                                                 : "bg-emerald-500/5 text-emerald-500 border border-emerald-500/40 hover:bg-emerald-500/10 hover:shadow-[0_0_15px_rgba(16,185,129,0.1)] shadow-micro"
-                                                                     )}
-                                                                 >
-                                                                     {isExecuting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Executing...</span></> : 
-                                                                      (stage.id === "transcript" && source.transcriptStatus === "unavailable") ? 
-                                                                      <span>Unavailable</span> : <span>Execute</span>}
-                                                                 </button>
-                                                             )}
                                                         </div>
-                                                    </div>
+    
+                                                        {/* Right Side: Stage Content */}
+                                                        <div className={cn(
+                                                            "flex-1 pb-10 transition-all duration-300 ml-2",
+                                                            isLocked && "opacity-50"
+                                                        )}>
+                                                            <div className="flex items-start justify-between group/row">
+                                                                <div className="space-y-1">
+                                                                    <h3 className={cn(
+                                                                        "text-[15px] font-medium transition-colors",
+                                                                        isCompleted || isActive ? "text-foreground" : "text-muted-foreground"
+                                                                    )}>
+                                                                            {stage.label}
+                                                                        </h3>
+                                                                        <p className="text-[13px] text-muted-foreground/70 leading-relaxed max-w-md">
+                                                                            {stage.id === "transcript" && source.transcriptStatus === "unavailable" 
+                                                                                ? "Transcript is unavailable for this source. Pipeline stopped."
+                                                                                : isActive && stage.id === "angle"
+                                                                                  ? (INTENT_DESCRIPTIONS[intentType] || stage.description)
+                                                                                  : stage.id === "draft" 
+                                                                                    ? `Generate ${intentType.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())} for ${intentAudience.replace(/_/g, " ")} target.`
+                                                                                    : stage.description}
+                                                                        </p>
+                                                                    </div>
+        
+                                                                {/* Primary Action Button Cluster */}
+                                                                <div className="flex items-center gap-4">
+                                                                    {/* View Button (Primary for completed stages) */}
+                                                                     {isCompleted && (
+                                                                         <Button
+                                                                             variant="outline"
+                                                                             size="sm"
+                                                                             onClick={(e) => { e.stopPropagation(); openPanel(stage) }}
+                                                                             title="View stage results"
+                                                                             className="h-8 px-4 border-emerald-500/30 bg-emerald-500/5 text-[12px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/50 transition-all rounded-lg"
+                                                                         >
+                                                                             View
+                                                                         </Button>
+                                                                     )}
+                                                                </div>
+                                                            </div>
 
                                                     {/* Writing Intent Setup moved to Angle Stage Checkpoint - Always visible when stage is selected or done */}
                                                     {stage.id === "angle" && isActive && (
@@ -1212,8 +1228,10 @@ export default function SourceMissionControl() {
                                                                         <select
                                                                             value={intentType}
                                                                             onChange={(e) => { setIntentType(e.target.value); invalidateStrategy(); }}
+                                                                            onFocus={() => setFocusedField('format')}
+                                                                            onBlur={() => setFocusedField(null)}
                                                                             title="Select content format"
-                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none"
+                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none transition-all"
                                                                         >
                                                                             <option value="technical_explainer">Technical Explainer</option>
                                                                             <option value="blog_article">Blog Article</option>
@@ -1223,7 +1241,11 @@ export default function SourceMissionControl() {
                                                                             <option value="thought_leadership">Thought Leadership</option>
                                                                         </select>
                                                                         <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-                                                                            <ChevronDown className="h-4 w-4 text-brand opacity-90" />
+                                                                            {focusedField === 'format' ? (
+                                                                                <ChevronUp className="h-4 w-4 text-brand transition-transform duration-200" />
+                                                                            ) : (
+                                                                                <ChevronDown className="h-4 w-4 text-muted-foreground/60 transition-transform duration-200" />
+                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -1233,8 +1255,10 @@ export default function SourceMissionControl() {
                                                                         <select
                                                                             value={intentAudience}
                                                                             onChange={(e) => { setIntentAudience(e.target.value); invalidateStrategy(); }}
+                                                                            onFocus={() => setFocusedField('audience')}
+                                                                            onBlur={() => setFocusedField(null)}
                                                                             title="Select target audience"
-                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none"
+                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none transition-all"
                                                                         >
                                                                             <option value="general_reader">General Reader</option>
                                                                             <option value="beginner">Beginner</option>
@@ -1243,7 +1267,11 @@ export default function SourceMissionControl() {
                                                                             <option value="technical">Technical Engineer</option>
                                                                         </select>
                                                                         <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-                                                                            <ChevronDown className="h-4 w-4 text-brand opacity-90" />
+                                                                            {focusedField === 'audience' ? (
+                                                                                <ChevronUp className="h-4 w-4 text-brand transition-transform duration-200" />
+                                                                            ) : (
+                                                                                <ChevronDown className="h-4 w-4 text-muted-foreground/60 transition-transform duration-200" />
+                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -1253,8 +1281,10 @@ export default function SourceMissionControl() {
                                                                         <select
                                                                             value={intentTone}
                                                                             onChange={(e) => { setIntentTone(e.target.value); invalidateStrategy(); }}
+                                                                            onFocus={() => setFocusedField('tone')}
+                                                                            onBlur={() => setFocusedField(null)}
                                                                             title="Select voice and tone"
-                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none"
+                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none transition-all"
                                                                         >
                                                                             <option value="conversational_editorial">Conversational</option>
                                                                             <option value="formal_authoritative">Formal</option>
@@ -1262,7 +1292,11 @@ export default function SourceMissionControl() {
                                                                             <option value="dense_information">Direct</option>
                                                                         </select>
                                                                         <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-                                                                            <ChevronDown className="h-4 w-4 text-brand opacity-90" />
+                                                                            {focusedField === 'tone' ? (
+                                                                                <ChevronUp className="h-4 w-4 text-brand transition-transform duration-200" />
+                                                                            ) : (
+                                                                                <ChevronDown className="h-4 w-4 text-muted-foreground/60 transition-transform duration-200" />
+                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -1275,7 +1309,7 @@ export default function SourceMissionControl() {
                                                                 <Button 
                                                                     size="sm" 
                                                                     className="h-8 px-5 rounded-full font-semibold bg-white text-zinc-900 shadow-sm hover:bg-zinc-100 transition-all flex items-center gap-1.5 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-                                                                     onClick={(e) => { e.stopPropagation(); runFullPipeline(); }}
+                                                                     onClick={(e) => { e.stopPropagation(); runFullPipeline(true); }}
                                                                      disabled={isRunningAll || !!executingStage}
                                                                  >
                                                                      {isRunningAll || executingStage === "angle" ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Play className="w-3.5 h-3.5 fill-current"/>}
@@ -1353,35 +1387,6 @@ export default function SourceMissionControl() {
                                 </div>
                             </div>
 
-                            {/* Social Assets Quick View — Appears when socialise stage is complete */}
-                            {stageResults.socialise && (
-                                <div className="p-6 rounded-2xl bg-brand/5 border border-brand/20 space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
-                                    <div className="flex items-center justify-between">
-                                        <h3 className="text-[11px] font-bold text-brand uppercase tracking-widest font-serif">Social Assets</h3>
-                                        <Badge variant="success" className="bg-brand/10 text-brand border-brand/20">Ready</Badge>
-                                    </div>
-                                    <div className="space-y-3">
-                                        <p className="text-sm font-medium text-foreground leading-relaxed italic">
-                                            &ldquo;{(() => {
-                                                const sr = stageResults.socialise as SocialiseResult;
-                                                return sr?.hook || sr?.hooks?.[0] || sr?.result?.hook || sr?.result?.hooks?.[0] || "Ready to socialize";
-                                            })()}&rdquo;
-                                        </p>
-                                        <Button 
-                                            variant="outline" 
-                                            size="sm" 
-                                            className="w-full text-[10px] h-8 uppercase tracking-widest font-bold"
-                                            onClick={() => {
-                                                const s = STAGES.find(st => st.id === 'socialise');
-                                                if (s) openPanel(s);
-                                            }}
-                                        >
-                                            View Full Thread
-                                        </Button>
-                                    </div>
-                                </div>
-                            )}
-
                             {/* Info Card / Helpful Context — Minimal and clean */}
                             <div className="p-6 rounded-2xl bg-muted/20 border border-border/40 space-y-3">
                                 <h3 className="text-[11px] font-bold text-muted-foreground/50 uppercase tracking-widest font-serif">Mission Intelligence</h3>
@@ -1405,11 +1410,69 @@ export default function SourceMissionControl() {
                     </div>
                     <div className="flex-1 overflow-y-auto p-6">
                         {panelContent.stageId && (
-                            <StageResultPanel stageId={panelContent.stageId} data={panelContent.data as Record<string, unknown>} />
+                            <StageResultPanel stageId={panelContent.stageId} data={panelContent.data as Record<string, unknown>} sourceId={id} />
                         )}
                     </div>
                 </div>
             )}
+            {/* ═══ CELEBRATION OVERLAY ═══ */}
+            <AnimatePresence>
+                {showCelebration && (
+                    <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none"
+                    >
+                        {/* Multiple confetti particles using framer-motion */}
+                        {[...Array(20)].map((_, i) => (
+                            <motion.div
+                                key={i}
+                                initial={{ 
+                                    x: 0, 
+                                    y: 0, 
+                                    opacity: 1, 
+                                    scale: Math.random() * 0.5 + 0.5,
+                                    rotate: 0 
+                                }}
+                                animate={{ 
+                                    x: (Math.random() - 0.5) * 1000, 
+                                    y: (Math.random() - 0.5) * 1000, 
+                                    opacity: 0,
+                                    rotate: Math.random() * 360 
+                                }}
+                                transition={{ duration: 2, ease: "easeOut" }}
+                                className="absolute w-3 h-3 rounded-sm"
+                                style={{ 
+                                    backgroundColor: ["#10b981", "#34d399", "#6ee7b7", "#059669", "#fbbf24"][Math.floor(Math.random() * 5)] 
+                                }}
+                            />
+                        ))}
+                        
+                        <motion.div
+                            initial={{ scale: 0.8, opacity: 0, y: 20 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.8, opacity: 0, y: 20 }}
+                            className="bg-card/90 backdrop-blur-xl border border-emerald-500/30 p-8 rounded-[2.5rem] shadow-2xl flex flex-col items-center gap-4 pointer-events-auto max-w-sm text-center"
+                        >
+                            <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mb-2">
+                                <ShieldCheck className="w-8 h-8 text-emerald-500" />
+                            </div>
+                            <h2 className="text-2xl font-serif font-bold text-foreground">Pipeline Complete</h2>
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                                Your source has been successfully distilled, analyzed, and socialized. 
+                                High-fidelity assets are ready for distribution.
+                            </p>
+                            <Button 
+                                onClick={() => setShowCelebration(false)}
+                                className="mt-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full px-8"
+                            >
+                                Continue to Studio
+                            </Button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     )
 }

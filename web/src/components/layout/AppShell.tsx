@@ -14,7 +14,8 @@ import {
 import { signOut, useSession } from "next-auth/react"
 import Image from "next/image"
 import { useLanguage, Language } from "@/context/LanguageContext"
-import { payWithPaystack } from "@/lib/paystack"
+import { useBeta } from "@/context/BetaContext"
+import { Badge } from "@/components/ui/Badge"
 
 interface UserWithPlan {
     name?: string | null;
@@ -27,8 +28,9 @@ interface UserWithPlan {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
     const { data: session } = useSession()
+    const { isBetaActive, isBetaEnrolled } = useBeta()
     const user = session?.user as UserWithPlan | undefined
-    const userPlan = user?.plan || "free"
+    const userPlan = isBetaEnrolled ? "pro" : (user?.plan || "free")
     const pathname = usePathname()
     const { lang, setLang, t } = useLanguage()
     const [isLangOpen, setIsLangOpen] = useState(false)
@@ -78,6 +80,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                 <div className="w-2 h-2 bg-background rounded-full" />
                             </div>
                             Distill Engine
+                            {isBetaActive && (
+                                <Badge variant="outline" className="ml-1 h-4 px-1 text-[8px] font-black border-brand/30 text-brand bg-brand/5 uppercase tracking-tighter">
+                                    Beta
+                                </Badge>
+                            )}
                         </Link>
                     </div>
 
@@ -138,21 +145,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </div>
 
                     <div className="p-4 border-t border-border bg-card/50 space-y-3">
-                        {userPlan === "free" && (
-                            <button 
-                                onClick={() => payWithPaystack({
-                                    email: user?.email || "",
-                                    amount: 3000000, // 30,000 NGN (approx $19)
-                                    metadata: {
-                                        plan: 'pro'
-                                    }
-                                })}
-                                className="flex items-center justify-center gap-2 w-full py-2.5 bg-zinc-950 text-white dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl text-xs font-bold shadow-lg hover:scale-[1.02] active:scale-95 transition-all border border-zinc-800 dark:border-emerald-500/30"
-                            >
-                                <LayoutGrid className="w-3.5 h-3.5" />
-                                Upgrade (Launch Pro)
-                            </button>
-                        )}
                         <Link 
                             href="/settings"
                             className="flex items-center gap-3 p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all group"
@@ -170,9 +162,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                 )}
                             </div>
                             <div className="flex flex-col min-w-0">
-                                <span className="text-sm font-bold text-foreground truncate">{user?.name || "Member"}</span>
-                                <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">
+                                <span className="text-sm font-bold text-foreground truncate">{user?.name?.replace(/\s*\(Founder\)\s*/gi, '') || "Member"}</span>
+                                <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold flex items-center gap-1.5">
                                     {userPlan.toUpperCase()} PLAN
+                                    {isBetaEnrolled && isBetaActive && (
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                                    )}
                                 </span>
                             </div>
                         </Link>

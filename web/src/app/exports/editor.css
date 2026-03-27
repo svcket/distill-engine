@@ -53,10 +53,42 @@
   margin-top: 0;
   margin-bottom: 18px;
   padding-left: 30px;
+  list-style-type: disc;
+}
+
+.wysiwyg-editor ol {
+  list-style-type: decimal;
 }
 
 .wysiwyg-editor li {
   margin-bottom: 8px;
+}
+
+.wysiwyg-editor strong {
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.wysiwyg-editor em {
+  font-style: italic;
+}
+
+/* Custom Scrollbar Utility */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(var(--brand-rgb, 16, 185, 129), 0.2);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--brand-rgb, 16, 185, 129), 0.4);
 }
 
 /* Editorial Adjustments */

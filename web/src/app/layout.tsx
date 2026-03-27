@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Inter, Bricolage_Grotesque } from "next/font/google";
-import { AppShell } from "@/components/layout/AppShell";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -14,6 +13,7 @@ export const metadata: Metadata = {
 import { LanguageProvider } from "@/context/LanguageContext";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { Providers } from "@/components/providers/Providers";
+import { AuthLayoutWrapper } from "@/components/layout/AuthLayoutWrapper";
 
 export default function RootLayout({
   children,
@@ -23,7 +23,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="antialiased" suppressHydrationWarning>
       <head>
-        <script src="https://js.paystack.co/v1/inline.js" async></script>
+        {process.env.NEXT_PUBLIC_IS_BETA !== 'true' && (
+          <script src="https://js.paystack.co/v1/inline.js" async></script>
+        )}
       </head>
       <body className={`${inter.variable} ${serif.variable} font-sans`}>
         <ThemeProvider
@@ -35,9 +37,9 @@ export default function RootLayout({
         >
           <Providers>
             <LanguageProvider>
-              <AppShell>
-                {children}
-              </AppShell>
+              <AuthLayoutWrapper>
+                 {children}
+              </AuthLayoutWrapper>
             </LanguageProvider>
           </Providers>
         </ThemeProvider>
