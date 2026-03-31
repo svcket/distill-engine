@@ -13,3 +13,16 @@ __pycache__/
 .tmp/
 execution/data/
 next-env.d.ts
+
+# AI & Agentic Workflow
+.agents/
+.antigravity/
+.cursorrules
+AGENTS.md
+CLAUDE.md
+NORTHSTAR_PROFILE.md
+build_log.md
+directives/
+ideas/
+outcomes/
+systems/
