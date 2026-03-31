@@ -21,8 +21,9 @@ export async function POST(request: Request) {
         const bytes = await file.arrayBuffer()
         const buffer = Buffer.from(bytes)
 
-        // Ensure upload directory exists
-        const uploadDir = path.resolve(process.cwd(), '../execution/data/uploads')
+        // Ensure upload directory exists and is scoped to the user for isolation
+        const baseUploadDir = path.resolve(process.cwd(), '../execution/data/uploads')
+        const uploadDir = path.join(baseUploadDir, session.user.id)
         await fs.mkdir(uploadDir, { recursive: true })
 
         // Generate unique filename to avoid collisions

@@ -168,14 +168,16 @@ class PodcastAdapter(BaseAdapter):
                 # Try to get episode title from the page
                 req_page = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"})
                 with urllib.request.urlopen(req_page, timeout=5) as resp:
-                    html = resp.read().decode("utf-8", errors="ignore")
-                    og_title = re.search(r'<meta property="og:title" content="(.*?)"', html)
+                    page_content = resp.read().decode("utf-8", errors="ignore")
+                    og_title = re.search(r'<meta property="og:title" content="(.*?)"', page_content)
                     if og_title:
-                        target_title = og_title.group(1).split(" on Apple Podcasts")[0].strip()
+                        raw_t = og_title.group(1).split(" on Apple Podcasts")[0].strip()
+                        target_title = html.unescape(raw_t).strip()
                     else:
-                        title_m = re.search(r"<title>(.*?)</title>", html)
+                        title_m = re.search(r"<title>(.*?)</title>", page_content)
                         if title_m:
-                            target_title = title_m.group(1).split(" on Apple Podcasts")[0].strip()
+                            raw_t = title_m.group(1).split(" on Apple Podcasts")[0].strip()
+                            target_title = html.unescape(raw_t).strip()
 
                 # Extract Apple ID (could be in the path like /show-name/id12345 or /episode/name/id12345)
                 # Look for the last 'id' followed by digits
@@ -258,7 +260,6 @@ class PodcastAdapter(BaseAdapter):
                     clean_episode = re.sub(r"Season\s*\d+", "", episode_name, flags=re.IGNORECASE).strip()
 
                     # Also try to find the creator/show name directly in meta
-                    # Also try to find the show name directly in meta description
                     # Spotify descriptions often start with "Show Name · Episode"
                     show_m = re.search(r'property="og:description" content="(.*?)(?: \xb7| \u2022| ·)', page_html)
                     content_show = None
@@ -279,10 +280,9 @@ class PodcastAdapter(BaseAdapter):
                     if len(episode_name_clean) > 8:
                         queries.append({"q": episode_name_clean, "ent": "podcastEpisode"})
                     if best_show:
+                        # NEW: Try to find the show first, then we can find its feed
                         queries.append({"q": best_show, "ent": "podcast"})
                     queries.append({"q": clean_target, "ent": "podcastEpisode"})
-                    # Extra fallback: search just the title on any entity
-                    queries.append({"q": episode_name_clean, "ent": "podcast"})
                     
                     for sq in queries:
                         search_url = f"https://itunes.apple.com/search?term={urllib.parse.quote(sq['q'])}&entity={sq['ent']}&limit=10"
@@ -291,6 +291,12 @@ class PodcastAdapter(BaseAdapter):
                             with urllib.request.urlopen(req2, timeout=5) as resp2:
                                 data = json.loads(resp2.read().decode())
                                 if data.get("results"):
+                                    # Filter results for best title match
+                                    for res in data["results"]:
+                                        res_title = res.get("trackName", "").lower()
+                                        if episode_name_clean.lower() in res_title or res_title in episode_name_clean.lower():
+                                            return res.get("feedUrl", url), target_title, target_guid
+                                    # If no strong match in loop, return first result
                                     return data["results"][0].get("feedUrl", url), target_title, target_guid
                         except Exception: continue
             except Exception:
@@ -410,9 +416,9 @@ class PodcastAdapter(BaseAdapter):
                 except ValueError: pass
 
             metadata = {
-                "title": title_m.group(1).strip() if title_m else "Podcast Episode",
-                "author": author_m.group(1).strip() if author_m else "Unknown Host",
-                "description": desc_m.group(1).strip()[:500] if desc_m else "",
+                "title": html.unescape(title_m.group(1).strip()) if title_m else "Podcast Episode",
+                "author": html.unescape(author_m.group(1).strip()) if author_m else "Unknown Host",
+                "description": html.unescape(desc_m.group(1).strip())[:500] if desc_m else "",
                 "duration_seconds": duration_seconds,
             }
             return metadata, mp3_url

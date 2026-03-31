@@ -8,9 +8,10 @@ import { SourceCandidate } from "@/lib/mockData"
 import Link from "next/link"
 import {
     Plus, Search, ChevronDown,
-    Play, Grid, List, Trash2
+    Grid, List, Trash2,
+    Paperclip, Mic
 } from "lucide-react"
-import { UnifiedSourceInput } from "@/components/workspace/UnifiedSourceInput"
+import { UnifiedSourceInput, type UnifiedSourceInputHandle } from "@/components/workspace/UnifiedSourceInput"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
 import { format as formatDate, parseISO } from "date-fns"
@@ -24,56 +25,36 @@ type ViewMode = "grid" | "list"
 
 function getTab(source: SourceCandidate): Tab {
     const completedArr = source.completedStages || []
-    // Processed: Either explicitly marked 'done' or has the final 'qa'/'export' stages completed
     if (source.status === "done" || completedArr.includes("qa") || completedArr.includes("export")) return "processed"
-    // Processing: Either explicitly 'processing' or has some stages started
     if (source.status === "processing" || (completedArr.length > 0 && !completedArr.includes("qa"))) return "processing"
     return "unprocessed"
 }
 
-function scoreColor(s: number) {
-    return s >= 8 ? "text-emerald-600" : s >= 6 ? "text-amber-600" : "text-red-500"
-}
-function scoreBorder(s: number) {
-    return s >= 8 ? "border-emerald-200/80" : s >= 6 ? "border-amber-200/60" : "border-red-200/50"
-}
+
+
 
 function getPlatformBadge(platform: string) {
     const p = (platform || "").toLowerCase()
-    
-    // 1. Check for specific high-priority platforms first to avoid Youtube false positives
-    if (p.includes("x.com") || p.includes("twitter.com") || p.includes("t.co")) return "bg-sky-50 text-sky-700 border-sky-100 dark:bg-sky-500/10 dark:text-sky-400 dark:border-sky-500/20"
-    if (p.includes("substack.com") || p.includes("substack")) return "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
-    if (p.includes("podcast") || p.includes("spotify") || p.includes("apple.com") || p.includes("audio")) return "bg-purple-50 text-purple-700 border-purple-100 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20"
-    if (p.includes("document") || p.includes("pdf") || p.includes("docx") || p.includes("txt")) return "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20"
-    
-    // 2. Youtube detection
-    if (p.includes("youtube.com") || p.includes("youtu.be")) return "bg-red-50 text-red-700 border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20"
-    
-    // 3. General web/articles
-    if (p.includes("http") || p.includes("web") || p.includes("article")) return "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
-    
-    return "bg-slate-50 text-slate-700 border-slate-100 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
+    if (p.includes("youtube")) return "bg-red-500/10 text-red-500 border-red-500/20"
+    if (p.includes("spotify")) return "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+    if (p.includes("apple") || p.includes("podcast")) return "bg-purple-500/10 text-purple-500 border-purple-500/20"
+    if (p.includes("vimeo")) return "bg-blue-500/10 text-blue-500 border-blue-500/20"
+    if (p.includes("rss") || p.includes("web") || p.includes("http")) return "bg-slate-500/10 text-slate-500 border-slate-500/20"
+    return "bg-slate-500/10 text-slate-500 border-slate-500/20"
 }
 
 function formatDisplayDate(dateStr: string) {
-    if (!dateStr || dateStr === "—" || dateStr === "Recently" || dateStr === "Today") {
-        return "Just now"
-    }
+    if (!dateStr || dateStr === "—" || dateStr === "Recently" || dateStr === "Today") return "Just now"
     try {
         const date = parseISO(dateStr)
         const now = new Date()
         const diff = Math.floor((now.getTime() - date.getTime()) / 1000)
-
         if (diff < 60) return "Just now"
         if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
         if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
         if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`
-        
         return formatDate(date, "MMM dd, yyyy")
-    } catch {
-        return "Just now"
-    }
+    } catch { return "Just now" }
 }
 
 async function deleteSource(id: string) {
@@ -95,13 +76,11 @@ export default function SourcesPage() {
     const [viewMode, setViewMode] = useState<ViewMode>("list")
     const [sources, setSources] = useState<SourceCandidate[]>([])
     const [platformFilter, setPlatformFilter] = useState("All")
-    const [dateFilter, setDateFilter] = useState("All")
-    const [dqmFilter, setDqmFilter] = useState("All")
-    const [statusFilter, setStatusFilter] = useState("All")
     const [showFilters, setShowFilters] = useState(false)
     const [isIngesting, setIsIngesting] = useState(false)
     const [ingestStatus, setIngestStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null)
     const filterRef = useRef<HTMLDivElement>(null)
+    const sourceInputRef = useRef<UnifiedSourceInputHandle>(null)
 
     const TABS: { key: Tab; label: string; color: string }[] = [
         { key: "processed", label: t("processed"), color: "text-emerald-600" },
@@ -109,7 +88,17 @@ export default function SourcesPage() {
         { key: "unprocessed", label: t("unprocessed"), color: "text-amber-600" },
     ]
 
-    // Close filters on outside click
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth < 1024) {
+                setViewMode("grid")
+            }
+        }
+        handleResize()
+        window.addEventListener("resize", handleResize)
+        return () => window.removeEventListener("resize", handleResize)
+    }, [])
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
@@ -120,8 +109,6 @@ export default function SourcesPage() {
         return () => document.removeEventListener("mousedown", handleClickOutside)
     }, [])
 
-
-    // Load sources
     useEffect(() => {
         async function load() {
             try {
@@ -140,8 +127,6 @@ export default function SourcesPage() {
     const filteredSources = sources.filter(s => {
         const matchTab = getTab(s) === activeTab
         const sType = (s.source_type || "Unknown").toLowerCase()
-        const score = s.dqmScore || s.score || 0
-        const status = s.status || "idle"
         
         let matchPlatform = platformFilter === "All"
         if (!matchPlatform) {
@@ -151,48 +136,14 @@ export default function SourcesPage() {
             else matchPlatform = sType.includes(filter)
         }
         
-        let matchDate = true
-        if (dateFilter !== "All") {
-            const now = new Date()
-            const ingestedAt = s.processedAt ? new Date(s.processedAt) : new Date() // Fallback for mock
-            const diffDays = Math.floor((now.getTime() - ingestedAt.getTime()) / (1000 * 60 * 60 * 24))
-            
-            if (dateFilter === "Today") matchDate = diffDays === 0
-            else if (dateFilter === "Yesterday") matchDate = diffDays === 1
-            else if (dateFilter === "Last 7 Days") matchDate = diffDays <= 7
-        }
-
-        let matchDqm = dqmFilter === "All"
-        if (!matchDqm) {
-            if (dqmFilter === "High") matchDqm = score >= 8
-            else if (dqmFilter === "Standard") matchDqm = score >= 6 && score < 8
-            else if (dqmFilter === "Low") matchDqm = score < 6
-        }
-
-        let matchStatus = statusFilter === "All"
-        if (!matchStatus) {
-            const filter = statusFilter.toLowerCase()
-            if (filter === "harvesting") matchStatus = status === "processing" || status === "pending"
-            else if (filter === "transcribed") matchStatus = s.transcriptStatus === "transcribed" || s.transcriptStatus === "available"
-            else matchStatus = status === filter
-        }
-        
-        return matchTab && matchPlatform && matchDate && matchDqm && matchStatus
+        return matchTab && matchPlatform
     })
 
     const activeFiltersCount = [
-        platformFilter !== "All",
-        dateFilter !== "All",
-        dqmFilter !== "All",
-        statusFilter !== "All"
+        platformFilter !== "All"
     ].filter(Boolean).length
 
-    const handleClearFilters = () => {
-        setPlatformFilter("All")
-        setDateFilter("All")
-        setDqmFilter("All")
-        setStatusFilter("All")
-    }
+
 
     const handleDelete = async (id: string) => {
         if (confirm("Delete this source?")) {
@@ -201,27 +152,50 @@ export default function SourcesPage() {
         }
     }
 
+    const handleIngest = async (input: string) => {
+        if (!input || !input.trim()) return
+        setIsIngesting(true)
+        setIngestStatus(null)
+        const isURL = /^https?:\/\//i.test(input.trim()) || (input.includes('.') && !input.includes(' '))
+        try {
+            if (isURL) {
+                const res = await fetch("/api/sources/ingest", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url: input })
+                })
+                const data = await res.json()
+                if (res.ok && data.result?.id) router.push(`/sources/${data.result.id}`)
+                else setIngestStatus({ type: 'error', message: data.error || "Failed to ingest source." })
+            } else {
+                const res = await fetch("/api/sources/discover", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ query: input })
+                })
+                if (res.ok) {
+                    const data = await res.json()
+                    setSources(prev => [...(data.sources || []), ...prev])
+                    setIngestStatus({ type: 'success', message: `Discovered items for topic: ${input}` })
+                } else setIngestStatus({ type: 'error', message: "Topic search failed." })
+            }
+        } catch {
+            setIngestStatus({ type: 'error', message: "Operation failed." })
+        } finally {
+            setIsIngesting(false)
+            setTimeout(() => setIngestStatus(null), 5000)
+        }
+    }
+
     const handleFileSelect = async (file: File) => {
         setIsIngesting(true);
-        setIngestStatus({
-            type: 'success',
-            message: `Uploading ${file.name}...`
-        });
-        
+        setIngestStatus({ type: 'success', message: `Uploading ${file.name}...` });
         try {
             const formData = new FormData();
             formData.append('file', file);
-            
-            // 1. Upload
-            const uploadRes = await fetch("/api/sources/upload", {
-                method: "POST",
-                body: formData
-            });
+            const uploadRes = await fetch("/api/sources/upload", { method: "POST", body: formData });
             const uploadData = await uploadRes.json();
-            
             if (!uploadRes.ok) throw new Error(uploadData.error || "Upload failed");
-            
-            // 2. Ingest
             setIngestStatus({ type: 'success', message: "Processing file metadata..." });
             const ingestRes = await fetch("/api/sources/ingest", {
                 method: "POST",
@@ -229,19 +203,10 @@ export default function SourcesPage() {
                 body: JSON.stringify({ url: uploadData.url })
             });
             const ingestData = await ingestRes.json();
-            
             if (!ingestRes.ok) throw new Error(ingestData.error || "Ingest failed");
-            
-            // 3. Redirect
-            if (ingestData.result?.id) {
-                router.push(`/sources/${ingestData.result.id}`);
-            }
-        } catch (err: unknown) {
-            console.error("Local import failed:", err);
-            setIngestStatus({ 
-                type: 'error', 
-                message: err instanceof Error ? err.message : "Failed to import local file." 
-            });
+            if (ingestData.result?.id) router.push(`/sources/${ingestData.result.id}`);
+        } catch {
+            setIngestStatus({ type: 'error', message: "Failed to import local file." });
         } finally {
             setIsIngesting(false);
             setTimeout(() => setIngestStatus(null), 5000);
@@ -249,9 +214,9 @@ export default function SourcesPage() {
     }
 
     return (
-        <div className="p-8 px-12 max-w-[1500px] mx-auto space-y-8 min-h-full">
+        <div className="p-4 lg:p-8 lg:px-12 max-w-[1500px] mx-auto space-y-6 lg:space-y-8 min-h-full">
             <div className="space-y-1">
-                <h1 className="text-3xl font-serif font-semibold tracking-tight">{t("sources")}</h1>
+                <h1 className="text-2xl lg:text-3xl font-serif font-semibold tracking-tight">{t("sources")}</h1>
             </div>
 
             {ingestStatus && (
@@ -263,393 +228,230 @@ export default function SourcesPage() {
                 </div>
             )}
 
-            <div className="flex flex-col md:flex-row gap-4 items-start">
-                <div className="flex-1 w-full">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4 w-full mb-6 lg:mb-8">
+                <div className="w-full lg:flex-1 min-w-0">
                     <UnifiedSourceInput 
-                        onIngest={async (input) => {
-                            if (!input || !input.trim()) return
-                            setIsIngesting(true)
-                            setIngestStatus(null)
-
-                            // Intelligent detection: URL vs Topic
-                            const isURL = /^https?:\/\//i.test(input.trim()) || 
-                                          input.includes('.') && !input.includes(' ')
-
-                            try {
-                                if (isURL) {
-                                    const res = await fetch("/api/sources/ingest", {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ url: input })
-                                    })
-                                    const data = await res.json()
-                                    if (res.ok && data.result?.id) {
-                                        router.push(`/sources/${data.result.id}`)
-                                    } else {
-                                        setIngestStatus({ type: 'error', message: data.error || "Failed to ingest source." })
-                                    }
-                                } else {
-                                    // Topic Discovery Search
-                                    const res = await fetch("/api/sources/discover", {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ query: input })
-                                    })
-                                    if (res.ok) {
-                                        const data = await res.json()
-                                        // Update local source candidates with discovered ones
-                                        // In a real app, this might open a discovery modal
-                                        setSources(prev => [...(data.sources || []), ...prev])
-                                        setIngestStatus({ type: 'success', message: `Discovered items for topic: ${input}` })
-                                    } else {
-                                        setIngestStatus({ type: 'error', message: "Topic search failed." })
-                                    }
-                                }
-                            } catch (err) {
-                                console.error("Source operation failed:", err)
-                                setIngestStatus({ type: 'error', message: "Operation failed." })
-                            } finally {
-                                setIsIngesting(false)
-                                setTimeout(() => setIngestStatus(null), 5000)
-                            }
-                        }}
+                        ref={sourceInputRef}
+                        onIngest={handleIngest} 
                         onFileSelect={handleFileSelect}
                         isIngesting={isIngesting}
                     />
                 </div>
-
-                <div className="flex items-center gap-3">
-                    <div className="relative shrink-0" ref={filterRef}>
-                        <Button variant="outline" className={cn("gap-2 h-12 px-6 font-serif font-medium shadow-micro rounded-xl border-border", activeFiltersCount > 0 && "border-brand text-brand bg-brand/5")} onClick={() => setShowFilters(!showFilters)} type="button">
-                            <ChevronDown className={cn("w-4 h-4 transition-transform", showFilters && "rotate-180")} /> 
-                            <span className="text-sm">{activeFiltersCount === 0 ? t("filter") : `${activeFiltersCount} ${activeFiltersCount === 1 ? 'Filter' : 'Filters'}`}</span>
+                
+                <div className="flex items-center justify-between w-full lg:w-auto mt-2 lg:mt-0">
+                    <div className="flex items-center gap-2">
+                        <Button 
+                            variant="outline" 
+                            size="icon"
+                            className="h-10 w-10 lg:h-12 lg:w-12 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground hover:bg-muted/80 transition-all shadow-sm group"
+                            onClick={() => sourceInputRef.current?.upload()}
+                            title="Attach source"
+                        >
+                            <Paperclip className="w-4 h-4 group-hover:text-brand transition-colors" />
                         </Button>
-                        
-                        {showFilters && (
-                            <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-border shadow-soft rounded-xl p-1 z-50 animate-in fade-in slide-in-from-top-2 overflow-y-auto max-h-[80vh]">
-                                <div className="p-2">
-                                    <div className="flex items-center justify-between px-2 mb-1">
-                                        <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{t("platform")}</p>
-                                        {platformFilter !== "All" && <button onClick={() => setPlatformFilter("All")} className="text-[9px] font-bold text-brand uppercase">Reset</button>}
-                                    </div>
-                                    <div className="space-y-0.5">
-                                        {["All", "YouTube", "Twitter", "Web Articles", "Documents"].map(p => (
-                                            <button 
-                                                key={p} 
-                                                className={cn(
-                                                    "w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center justify-between",
-                                                    platformFilter === p ? "bg-brand/5 text-brand font-medium" : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-                                                )}
-                                                onClick={() => setPlatformFilter(p)}
-                                            >
-                                                {p}
-                                                {platformFilter === p && <div className="w-1.5 h-1.5 rounded-full bg-brand" />}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="border-t border-border/50 p-2">
-                                    <div className="flex items-center justify-between px-2 mb-1">
-                                        <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{t("highQuality")}</p>
-                                        {dqmFilter !== "All" && <button onClick={() => setDqmFilter("All")} className="text-[9px] font-bold text-brand uppercase">Reset</button>}
-                                    </div>
-                                    <div className="space-y-0.5">
-                                        {[
-                                            { key: "All", label: t("anyQuality") },
-                                            { key: "High", label: t("highQuality") },
-                                            { key: "Standard", label: t("standardQuality") },
-                                            { key: "Low", label: t("lowQuality") }
-                                        ].map(q => (
-                                            <button 
-                                                key={q.key} 
-                                                className={cn(
-                                                    "w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center justify-between",
-                                                    dqmFilter === q.key ? "bg-brand/5 text-brand font-medium" : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-                                                )}
-                                                onClick={() => setDqmFilter(q.key)}
-                                            >
-                                                {q.label}
-                                                {dqmFilter === q.key && <div className="w-1.5 h-1.5 rounded-full bg-brand" />}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="border-t border-border/50 p-2">
-                                    <div className="flex items-center justify-between px-2 mb-1">
-                                        <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{t("pipelineStatus")}</p>
-                                        {statusFilter !== "All" && <button onClick={() => setStatusFilter("All")} className="text-[9px] font-bold text-brand uppercase">Reset</button>}
-                                    </div>
-                                    <div className="space-y-0.5">
-                                        {[
-                                            { key: "All", label: t("all") },
-                                            { key: "Transcribed", label: t("transcribed") },
-                                            { key: "Harvesting", label: t("harvesting") },
-                                            { key: "Failed", label: t("failed") },
-                                            { key: "Rejected", label: t("rejected") }
-                                        ].map(s => (
-                                            <button 
-                                                key={s.key} 
-                                                className={cn(
-                                                    "w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center justify-between",
-                                                    statusFilter === s.key ? "bg-brand/5 text-brand font-medium" : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-                                                )}
-                                                onClick={() => setStatusFilter(s.key)}
-                                            >
-                                                {s.label}
-                                                {statusFilter === s.key && <div className="w-1.5 h-1.5 rounded-full bg-brand" />}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="border-t border-border/50 p-2">
-                                    <div className="flex items-center justify-between px-2 mb-1">
-                                        <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{t("dateAdded")}</p>
-                                        {dateFilter !== "All" && <button onClick={() => setDateFilter("All")} className="text-[9px] font-bold text-brand uppercase">Reset</button>}
-                                    </div>
-                                    <div className="space-y-0.5">
-                                        {[
-                                            { key: "All", label: t("all") },
-                                            { key: "Today", label: t("today") },
-                                            { key: "Yesterday", label: t("yesterday") },
-                                            { key: "Last 7 Days", label: t("last7Days") }
-                                        ].map(d => (
-                                            <button 
-                                                key={d.key} 
-                                                className={cn(
-                                                    "w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center justify-between",
-                                                    dateFilter === d.key ? "bg-brand/5 text-brand font-medium" : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-                                                )}
-                                                onClick={() => setDateFilter(d.key)}
-                                            >
-                                                {d.label}
-                                                {dateFilter === d.key && <div className="w-1.5 h-1.5 rounded-full bg-brand" />}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {activeFiltersCount > 0 && (
-                                    <div className="p-2 bg-muted/20 border-t border-border/50">
-                                        <button 
-                                            onClick={handleClearFilters}
-                                            className="w-full py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                        >
-                                            Clear All Filters
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        <Button 
+                            variant="outline"
+                            size="icon"
+                            className="h-10 w-10 lg:h-12 lg:w-12 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground hover:bg-muted/80 transition-all shadow-sm group"
+                            onClick={() => sourceInputRef.current?.record()}
+                            title="Record audio"
+                        >
+                            <Mic className="w-4 h-4 group-hover:text-brand transition-colors" />
+                        </Button>
                     </div>
+                    
+                    <button 
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={cn(
+                            "flex items-center gap-2 px-6 h-10 lg:h-12 rounded-xl border text-xs font-serif font-medium transition-all shadow-sm",
+                            activeFiltersCount > 0 
+                                ? "bg-brand/10 border-brand text-brand" 
+                                : "bg-background border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        )}
+                    >
+                        <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", showFilters && "rotate-180")} />
+                        <span>{t("filter")}</span>
+                        {activeFiltersCount > 0 && (
+                            <span className="w-4 h-4 rounded-full bg-brand text-white flex items-center justify-center text-[10px] font-bold">
+                                {activeFiltersCount}
+                            </span>
+                        )}
+                    </button>
+                    
+                    {showFilters && (
+                        <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-border shadow-soft rounded-xl p-1 z-50 animate-in fade-in slide-in-from-top-2 overflow-y-auto max-h-[80vh]">
+                            <div className="p-2">
+                                <div className="flex items-center justify-between px-2 mb-1">
+                                    <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{t("platform")}</p>
+                                    {platformFilter !== "All" && <button onClick={() => setPlatformFilter("All")} className="text-[9px] font-bold text-brand uppercase">Reset</button>}
+                                </div>
+                                <div className="space-y-0.5">
+                                    {["All", "YouTube", "Twitter", "Web Articles", "Documents"].map(p => (
+                                        <button 
+                                            key={p} 
+                                            className={cn(
+                                                "w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center justify-between",
+                                                platformFilter === p ? "bg-brand/5 text-brand font-medium" : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                                            )}
+                                            onClick={() => setPlatformFilter(p)}
+                                        >
+                                            {p} {platformFilter === p && <div className="w-1.5 h-1.5 rounded-full bg-brand" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
             <div className="space-y-6">
-                <div className="flex items-center gap-8 border-b border-border">
+                <div className="flex items-center gap-6 lg:gap-8 border-b border-border overflow-x-auto no-scrollbar scroll-smooth">
                     {TABS.map((tab) => (
                         <button
                             key={tab.key}
                             onClick={() => setActiveTab(tab.key)}
                             className={cn(
-                                "pb-3 text-sm font-medium transition-all relative",
-                                activeTab === tab.key 
-                                    ? "text-brand" 
-                                    : "text-muted-foreground hover:text-foreground"
+                                "pb-3 text-xs lg:text-sm font-medium transition-all relative whitespace-nowrap",
+                                activeTab === tab.key ? "text-brand" : "text-muted-foreground hover:text-foreground"
                             )}
                         >
                             {tab.label} <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
                                 {sources.filter(s => getTab(s) === tab.key).length}
                             </span>
-                            {activeTab === tab.key && (
-                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand rounded-full" />
-                            )}
+                            {activeTab === tab.key && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand rounded-full" />}
                         </button>
                     ))}
                     <div className="ml-auto flex items-center gap-1 pb-3">
-                        <button 
-                            onClick={() => setViewMode("grid")}
-                            className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50")}
-                            title="Grid view"
-                        >
-                            <Grid className="w-4 h-4" />
-                        </button>
-                        <button 
-                            onClick={() => setViewMode("list")}
-                            className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50")}
-                            title="List view"
-                        >
-                            <List className="w-4 h-4" />
-                        </button>
+                        <button title="Grid View" onClick={() => setViewMode("grid")} className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50")}><Grid className="w-4 h-4" /></button>
+                        <button title="List View" onClick={() => setViewMode("list")} className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50")}><List className="w-4 h-4" /></button>
                     </div>
                 </div>
 
                 {filteredSources.length === 0 ? (
-                    <div className="py-20 text-center animate-in fade-in duration-500">
-                        <div className="w-16 h-16 bg-muted/50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                            <Search className="w-8 h-8 text-muted-foreground/30" />
-                        </div>
+                    <div className="py-12 lg:py-20 text-center">
+                        <div className="w-16 h-16 bg-muted/50 rounded-2xl flex items-center justify-center mx-auto mb-4"><Search className="w-8 h-8 text-muted-foreground/30" /></div>
                         <h3 className="text-lg font-medium text-foreground">{t("noSourcesFound")}</h3>
-                        <p className="text-muted-foreground text-sm max-w-xs mx-auto mt-1">{t("noSourcesDescription")}</p>
-                        <Button 
-                            variant="outline"
-                            className="mt-6 gap-2 font-serif font-medium"
-                            onClick={() => {
-                                const input = document.createElement("input");
-                                input.type = "file";
-                                input.onchange = (e) => {
-                                    const file = (e.target as HTMLInputElement).files?.[0];
-                                    if (file) alert(`Importing ${file.name}...`);
-                                };
-                                input.click();
-                            }}
-                        >
-                            <Plus className="w-4 h-4" /> {t("importFromDevice")}
-                        </Button>
+                        <Button variant="outline" className="mt-6 gap-2 font-serif font-medium" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleFileSelect(f) }; i.click(); }}><Plus className="w-4 h-4" /> {t("importFromDevice")}</Button>
                     </div>
                 ) : viewMode === "grid" ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-in fade-in duration-500">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-3">
                         {filteredSources.map(source => (
-                            <Card key={source.id} className="overflow-hidden flex flex-col group hover:shadow-soft hover:border-gray-300 transition-all duration-300 relative">
+                            <Card key={source.id} className="overflow-hidden flex flex-col group hover:shadow-2xl hover:border-brand/30 transition-all duration-500 relative bg-transparent border-white/5 backdrop-blur-[2px]">
                                 <Link href={`/sources/${source.id}`} className="flex-1 flex flex-col">
-                                    <div className="aspect-video relative overflow-hidden bg-muted">
-                                        {source.thumbnail ? (
-                                            <Image 
-                                                src={source.thumbnail} 
-                                                alt={source.title} 
-                                                fill
-                                                className="object-cover transition-transform duration-500 group-hover:scale-105" 
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center">
-                                                <Play className="w-10 h-10 text-muted-foreground/20" />
-                                            </div>
-                                        )}
+                                    <div className="aspect-video relative overflow-hidden bg-transparent">
+                                        <Image 
+                                            src={source.thumbnail || (
+                                                (source.source_type || "").includes("youtube") ? "/thumbnail/thumbnail_youtube.png" :
+                                                (source.source_type || "").includes("spotify") ? "/thumbnail/thumbnail_spotify_podcast.png" :
+                                                (source.source_type || "").includes("apple") || (source.source_type || "").includes("podcast") ? "/thumbnail/thumbnail_apple_podcast.png" :
+                                                "/thumbnail/thumbnail_rss.png"
+                                            )} 
+                                            alt={source.title} 
+                                            fill 
+                                            className="object-cover transition-transform duration-700 group-hover:scale-110 opacity-70 group-hover:opacity-90" 
+                                        />
+                                        {/* Premium Glassmorphic Overlay to reduce distraction and increase contrast */}
+                                        <div className="absolute inset-0 bg-black/20 backdrop-blur-[0px] group-hover:bg-black/10 transition-all duration-500" />
+                                        
                                         {source.duration && (
-                                            <div className="absolute bottom-3 right-3 px-2 py-0.5 rounded bg-black/70 text-[10px] font-bold text-white backdrop-blur-sm tracking-wider">
+                                            <div className="absolute bottom-3 right-3 px-2 py-0.5 rounded-full bg-black/80 text-[10px] font-black text-white backdrop-blur-md border border-white/10 tracking-widest tabular-nums z-10">
                                                 {source.duration}
                                             </div>
                                         )}
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-transparent opacity-60 group-hover:opacity-40 transition-opacity duration-500" />
                                     </div>
                                     <div className="p-5 flex-1 flex flex-col">
-                                        <div className="flex items-start justify-between gap-4 mb-3">
-                                            <h3 className="font-serif font-semibold text-lg leading-tight line-clamp-2 group-hover:text-brand transition-colors">{source.title}</h3>
-                                        </div>
-                                        
-                                        <div className="flex items-center gap-2 mb-4">
-                                            <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center overflow-hidden text-[8px] relative">
-                                                <Image 
-                                                    src={`https://www.google.com/s2/favicons?domain=${(source.source_type || source.type || "youtube").toLowerCase()}.com&sz=32`} 
-                                                    alt="" 
-                                                    width={12}
-                                                    height={12}
-                                                    className="w-3 h-3" 
-                                                />
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <div className="w-4 h-4 rounded-full bg-white/5 flex items-center justify-center overflow-hidden border border-white/10">
+                                                <Image src={`https://www.google.com/s2/favicons?domain=${(source.source_type || "web").toLowerCase()}.com&sz=32`} alt="" width={10} height={10} className="w-2.5 h-2.5 opacity-50 group-hover:opacity-100 transition-opacity" />
                                             </div>
-                                            <span className="text-xs font-medium text-muted-foreground">{source.channel || (source.source_type || source.type || "Source")}</span>
+                                            <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{source.channel || (source.source_type || "Source")}</span>
+                                        </div>
+                                        <h3 className="font-serif font-semibold text-[18px] leading-snug line-clamp-2 mb-4 text-foreground/90 group-hover:text-white transition-colors">{source.title}</h3>
+                                        
+                                        <div className="mt-auto flex items-center justify-between pt-4 border-t border-white/5">
+                                            <div className="text-[10px] font-black uppercase tracking-widest tabular-nums text-foreground">
+                                                DQM: {source.dqmScore || "0"}/100
+                                            </div>
+                                            <div className="text-[9px] text-muted-foreground/40 font-bold uppercase tracking-tighter whitespace-nowrap">
+                                                {formatDisplayDate(source.createdAt)}
+                                            </div>
                                         </div>
                                     </div>
                                 </Link>
-
-                                <div className="px-5 pb-5 mt-auto pt-4 border-t border-border/50 flex flex-col gap-2">
-                                    <div className="flex items-center justify-between">
-                                        <div className={cn("px-2 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider", scoreBorder(source.dqmScore || source.score || 0), scoreColor(source.dqmScore || source.score || 0))}>
-                                            DQM Score: {source.dqmScore || source.score ? `${source.dqmScore || source.score}/100` : "--"}
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-serif font-medium uppercase tracking-tight">
-                                            <span className="opacity-60">DISTILLED:</span>
-                                            <span className="text-muted-foreground mr-1.5">{formatDisplayDate(source.createdAt)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <button 
-                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(source.id); }}
-                                    className="absolute bottom-4 right-4 p-2 rounded-md text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all z-10"
-                                    title="Delete source"
-                                >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                <button title="Delete Source" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(source.id); }} className="absolute top-4 right-4 p-2 rounded-full bg-black/40 backdrop-blur-md text-white/20 hover:text-red-500 hover:bg-red-500/20 border border-white/5 transition-all z-10 opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
                             </Card>
                         ))}
                     </div>
                 ) : (
-                    <div className="border border-border rounded-xl bg-transparent overflow-hidden animate-in fade-in duration-500 shadow-sleek">
-                        <table className="w-full text-left border-collapse">
+                    <div className="border border-border rounded-xl bg-transparent overflow-x-auto shadow-sleek no-scrollbar">
+                        <table className="w-full text-left border-collapse min-w-[300px] lg:min-w-0">
                             <thead>
                                 <tr className="bg-muted/10 border-b border-border/50">
-                                    <th className="px-6 py-4 text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">{t("source")}</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-foreground/80 uppercase tracking-widest text-center font-serif">Platform</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-foreground/80 uppercase tracking-widest text-center font-serif">Duration</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-foreground/80 uppercase tracking-widest text-center font-serif">DQM Score</th>
-                                    <th className="px-6 py-4 text-[11px] font-bold text-foreground/80 uppercase tracking-widest text-right font-serif">{t("actions")}</th>
+                                    <th className="px-4 py-4 text-[12px] font-bold text-foreground/80 uppercase tracking-widest font-serif">{t("source")}</th>
+                                    <th className="hidden lg:table-cell px-4 py-4 text-[12px] font-bold text-foreground/80 uppercase tracking-widest text-center font-serif">Platform</th>
+                                    <th className="fixed-width-col px-4 py-4 text-[12px] font-bold text-foreground/80 uppercase tracking-widest text-center font-serif">Duration</th>
+                                    <th className="hidden sm:table-cell px-4 py-4 text-[12px] font-bold text-foreground/80 uppercase tracking-widest text-center font-serif">DQM Score</th>
+                                    <th className="px-4 py-4 text-[12px] font-bold text-foreground/80 uppercase tracking-widest text-right font-serif">{t("actions")}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border/50">
-                                {filteredSources.map(source => (
-                                    <tr 
-                                        key={source.id} 
-                                        onClick={() => router.push(`/sources/${source.id}`)}
-                                        className="group hover:bg-muted/5 transition-colors cursor-pointer"
-                                    >
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-12 h-8 rounded bg-muted overflow-hidden shrink-0 relative">
-                                                    {source.thumbnail ? (
+                                {filteredSources.map(source => {
+                                    const score = source.dqmScore || source.score || 0
+                                    return (
+                                        <tr key={source.id} onClick={() => router.push(`/sources/${source.id}`)} className="group hover:bg-muted/5 transition-colors cursor-pointer">
+                                            <td className="px-4 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-14 h-9 rounded-lg bg-muted overflow-hidden shrink-0 relative border border-border/30">
                                                         <Image 
-                                                            src={source.thumbnail} 
+                                                            src={source.thumbnail || (
+                                                                (source.source_type || "").includes("youtube") ? "/thumbnail/thumbnail_youtube.png" :
+                                                                (source.source_type || "").includes("spotify") ? "/thumbnail/thumbnail_spotify_podcast.png" :
+                                                                (source.source_type || "").includes("apple") || (source.source_type || "").includes("podcast") ? "/thumbnail/thumbnail_apple_podcast.png" :
+                                                                "/thumbnail/thumbnail_rss.png"
+                                                            )} 
                                                             alt="" 
-                                                            fill
-                                                            className="object-cover" 
+                                                            fill 
+                                                            className="object-cover opacity-80" 
                                                         />
-                                                    ) : (
-                                                        <Play className="w-4 h-4 m-auto text-muted-foreground/20 mt-2" />
-                                                    )}
+                                                        <div className="absolute inset-0 bg-zinc-950/20 backdrop-blur-[0.5px]" />
+                                                    </div>
+                                                    <div className="min-w-0 flex flex-col py-1">
+                                                        <Link href={`/sources/${source.id}`} className="text-[17px] font-semibold text-foreground whitespace-normal break-words line-clamp-2 leading-tight group-hover:text-brand transition-colors">
+                                                            {source.title}
+                                                        </Link>
+                                                        <span className="text-[10px] text-muted-foreground uppercase font-medium tracking-tight">
+                                                            {formatDisplayDate(source.createdAt)}
+                                                        </span>
+                                                    </div>
                                                 </div>
-                                                <div className="min-w-0">
-                                                <div className="flex flex-col">
-                                                    <Link href={`/sources/${source.id}`} className="text-sm font-medium text-foreground hover:text-brand transition-colors block truncate pr-4">
-                                                        {source.title}
-                                                    </Link>
-                                                    <span className="text-[10px] text-muted-foreground tabular-nums uppercase tracking-tight">
-                                                        {formatDisplayDate(source.createdAt)}
-                                                    </span>
+                                            </td>
+                                            <td className="hidden lg:table-cell px-4 py-3 text-center">
+                                                <Badge variant="outline" className={cn("text-[11px] uppercase font-bold px-3 py-1 border-none", getPlatformBadge(source.source_type || ""))}>
+                                                    {source.source_type || "unknown"}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-4 py-3 text-center text-[14px] font-serif text-muted-foreground tabular-nums">
+                                                {source.duration || "--:--"}
+                                            </td>
+                                            <td className="hidden sm:table-cell px-4 py-3 text-center">
+                                                <div className="text-[13px] font-bold uppercase tabular-nums text-foreground">
+                                                    {score || "0"}/100
                                                 </div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <Badge variant="outline" className={cn("text-[10px] font-bold uppercase tracking-wider h-5 shadow-micro", getPlatformBadge(source.source_type || source.type || "unknown"))}>
-                                                {source.source_type || source.type || "unknown"}
-                                            </Badge>
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <div className="text-sm font-medium text-muted-foreground tabular-nums">
-                                                {source.duration || "--"}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <div className={cn("text-sm font-bold tabular-nums", !source.dqmScore && !source.score ? "text-muted-foreground/30" : scoreColor(source.dqmScore || source.score || 0))}>
-                                                {source.dqmScore || source.score ? `${source.dqmScore || source.score}/100` : "--"}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end">
+                                            </td>
+                                            <td className="px-4 py-3 text-right sticky right-0 w-14 min-w-[56px]">
                                                 <button 
-                                                    onClick={(e) => { e.stopPropagation(); handleDelete(source.id); }}
-                                                    className="h-8 w-8 rounded-md flex items-center justify-center text-muted-foreground/30 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                                    title="Delete source"
+                                                    title="Delete Source"
+                                                    onClick={(e) => { e.stopPropagation(); handleDelete(source.id); }} 
+                                                    className="h-8 w-8 rounded-lg inline-flex items-center justify-center text-muted-foreground/60 hover:bg-red-500/10 hover:text-red-500 transition-all opacity-100"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
+                                            </td>
+                                        </tr>
+                                    )
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -658,5 +460,3 @@ export default function SourcesPage() {
         </div>
     )
 }
-
-

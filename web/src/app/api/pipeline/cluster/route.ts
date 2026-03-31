@@ -16,41 +16,43 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing sourceId" }, { status: 400 })
         }
 
-        // Run the evaluate_matrix.py script
-        const { success, data, error: scriptError } = await runPythonScript<Record<string, any>>('evaluate_matrix.py', [
+        // The cluster script runs Summary, Packet, and Insights in a single process
+        const { success, data, error: scriptError } = await runPythonScript<{ results: Record<string, unknown> }>('run_analysis_cluster.py', [
             '--source-id', sourceId
         ])
         
         if (success && data) {
-            const result = data.result || data
+            const result = data.results || data
             
-            // Update the source record with completed state
+            // The cluster returns results for multiple stages
+            const stages = ['summary', 'packet', 'insights']
+            
+            // Update the source record with completed stages
             await prisma.source.update({
                 where: { id: sourceId, userId: session.user.id },
                 data: { 
                     completedStages: {
-                        push: 'qa'
-                    },
-                    score: typeof result.total_score === 'number' ? result.total_score : undefined
+                        push: stages
+                    }
                 }
             })
 
             return NextResponse.json({ 
-                message: "Draft evaluation completed", 
+                message: "Analysis cluster completed", 
                 status: "success",
-                result: result
+                result: result.results || result
             })
         } else {
-            console.error("[Evaluate API Failure]:", scriptError)
+            console.error("[Cluster API Failure]:", scriptError)
             return NextResponse.json({ 
-                error: "Draft evaluation failed", 
+                error: "Analysis cluster failed", 
                 details: scriptError 
             }, { status: 500 })
         }
 
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Unknown error'
-        console.error("[Evaluate API Error]:", err)
+        console.error("[Cluster API Error]:", err)
         return NextResponse.json({ error: msg }, { status: 500 })
     }
 }

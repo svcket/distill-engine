@@ -39,7 +39,7 @@ export default function DraftStudioPage() {
         const loadData = async () => {
             if (!id) return
             try {
-                const res = await fetch(`/api/store?id=${id}`)
+                const res = await fetch(`/api/store/results?sourceId=${id}`)
                 if (res.ok) {
                     const data = await res.json()
                     if (data.results) {

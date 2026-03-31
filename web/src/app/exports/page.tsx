@@ -120,7 +120,7 @@ function ExportsContent() {
                                     </Badge>
                                 )}
                             </div>
-                            <p className="text-muted-foreground mt-1 lowercase text-sm opacity-60">Curated exports for publication</p>
+                            <p className="text-muted-foreground mt-1 lowercase text-sm opacity-60">Curated drafts for publication</p>
                         </div>
                         
                         <div className="flex-1 max-w-md relative group">
@@ -144,7 +144,7 @@ function ExportsContent() {
                             <div className="w-16 h-16 rounded-2xl bg-muted/60 flex items-center justify-center mx-auto">
                                 <FileText className="w-7 h-7 text-muted-foreground/50" />
                             </div>
-                            <p className="text-lg font-medium text-muted-foreground font-serif">No exports yet</p>
+                            <p className="text-lg font-medium text-muted-foreground font-serif">No available drafts yet</p>
                             <p className="text-sm text-muted-foreground/70 max-w-md mx-auto">
                                 {t("monitorSources")}
                             </p>
@@ -180,7 +180,13 @@ function ExportsContent() {
                                         
                                         <div className="flex-1">
                                             <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed opacity-80">
-                                                {draft.content.replace(/<[^>]*>/g, "").trim().slice(0, 150)}...
+                                                {draft.content
+                                                    .replace(/^#+\s/gm, "") // Strip markdown headers
+                                                    .replace(/\*\*/g, "")    // Strip bold
+                                                    .replace(/<[^>]*>/g, "") // Strip any HTML tags
+                                                    .trim()
+                                                    .slice(0, 160) || "No preview available..."}
+                                                {draft.content.length > 160 ? "..." : ""}
                                             </p>
                                         </div>
                                         

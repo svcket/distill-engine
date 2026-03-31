@@ -299,7 +299,19 @@ def resolve_apple_podcast_audio(url: str) -> str:
             return results[1].get("episodeUrl") or results[1].get("previewUrl") or url
             
     except Exception as e:
-        print(f"iTunes Resolution failed: {e}")
+        print(f"iTunes Resolution failed for {url}: {e}")
+    
+    # NEW: Fallback scraping if iTunes fails to return a direct link
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            html_content = resp.read().decode("utf-8")
+            # Look for direct audio enclosures in the page (some platforms expose them)
+            audio_m = re.search(r'<(?:audio|video)[^>]+src=["\'](https?://[^"\']+\.(?:mp3|m4a|wav)[^"\']*)["\']', html_content, re.IGNORECASE)
+            if audio_m:
+                 return audio_m.group(1)
+    except: pass
+    
     return url
 def resolve_spotify_via_itunes(title: str, show_name: Optional[str] = None) -> Optional[str]:
     """Try to find a public Apple Podcast link for a Spotify episode via Title search."""
@@ -457,17 +469,21 @@ def extract_spotify_title(url: str) -> Optional[str]:
             schema_match = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.DOTALL)
             if schema_match:
                 try:
-                    import json
+                    import json, html
                     schema_data = json.loads(schema_match.group(1))
                     if isinstance(schema_data, dict) and "name" in schema_data:
-                        return schema_data["name"]
+                        return html.unescape(schema_data["name"])
                 except: pass
 
             og_title = re.search(r'<title>(.*?)</title>', html)
             
         if og_title:
+            import html
             # Only split by pipes and bullets (platform separators)
             title = og_title.group(1).split("|")[0].split("\u2022")[0].strip()
+            # Decode HTML entities (e.g. &amp; to &) to fix iTunes search scores
+            title = html.unescape(title)
+            
             # If title is still generic, it's a failure
             if "Spotify" in title and "Web Player" in title: return None
             return title
@@ -706,27 +722,31 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
         if downloaded_files:
             audio_file_path = downloaded_files[0]
         else:
-            # DIRECT DOWNLOAD FALLBACK
+            # 7. DIRECT DOWNLOAD FALLBACK
             # If yt-dlp fails but the URL is likely a direct audio link, try requests
             print(f"[{source_id}] yt-dlp produced no file. Trying direct download fallback...")
             try:
                 import requests
                 # Use browser-like headers for direct download too
-                resp = requests.get(source_url, stream=True, timeout=30, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                resp = requests.get(source_url, stream=True, timeout=60, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    "Accept": "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
+                    "Accept-Encoding": "identity", # Avoid compressed stream issues
                 })
                 resp.raise_for_status()
                 
-                # Guess extension from content-type
+                # Guess extension from content-type or URL
                 ext = "mp3"
-                if "audio/mpeg" in resp.headers.get("Content-Type", ""): ext = "mp3"
-                elif "audio/aac" in resp.headers.get("Content-Type", ""): ext = "aac"
-                elif "audio/wav" in resp.headers.get("Content-Type", ""): ext = "wav"
+                ct = resp.headers.get("Content-Type", "").lower()
+                if "audio/mpeg" in ct: ext = "mp3"
+                elif "audio/x-m4a" in ct or "audio/m4a" in ct or "audio/mp4" in ct: ext = "m4a"
+                elif "audio/wav" in ct: ext = "wav"
+                elif ".m4a" in source_url.lower(): ext = "m4a"
                 
                 audio_file_path = f"{temp_audio}.{ext}"
                 with open(audio_file_path, "wb") as f:
-                    for chunk in resp.iter_content(chunk_size=8192):
-                        f.write(chunk)
+                    for chunk in resp.iter_content(chunk_size=128 * 1024): # Larger chunks
+                        if chunk: f.write(chunk)
                 print(f"[{source_id}] Direct download SUCCESS: {audio_file_path}")
             except Exception as de:
                 print(f"[{source_id}] Direct download FAILED: {de}")

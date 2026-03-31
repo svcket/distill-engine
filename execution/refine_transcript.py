@@ -3,7 +3,33 @@ import argparse
 import json
 import os
 import re
-from typing import List, Dict
+import glob
+from typing import List, Dict, Any
+
+def refine_source_transcript(source_id: str) -> Dict[str, Any]:
+    """
+    Reads the harvested transcript and cleans it.
+    Uses case-insensitive glob to find the directory, as Spotify IDs 
+    can have casing mismatches between DB and Harvester.
+    """
+    base_dir = os.path.join(os.path.dirname(__file__), ".tmp", "transcripts")
+    
+    # Use glob for case-insensitive directory matching
+    pattern = os.path.join(base_dir, "*")
+    matching_dirs = glob.glob(pattern)
+    
+    target_dir = None
+    for d in matching_dirs:
+        if os.path.basename(d).lower() == source_id.lower():
+            target_dir = d
+            break
+            
+    if not target_dir:
+        target_dir = os.path.join(base_dir, source_id)
+        
+    input_path = os.path.join(target_dir, f"{source_id}_raw.json")
+    output_path = os.path.join(os.path.dirname(__file__), ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
+    return refine_transcript(input_path, output_path)
 
 def clean_text(text: str) -> str:
     """Removes standard transcript noise like [Music], [Applause], and obvious filler."""
@@ -15,17 +41,15 @@ def clean_text(text: str) -> str:
     text = re.sub(r'\s{2,}', ' ', text)
     return text.strip()
 
-def refine_transcript(transcript_path: str, output_path: str):
+def refine_transcript(transcript_path: str, output_path: str) -> Dict[str, Any]:
     if not os.path.exists(transcript_path):
-        print(json.dumps({"status": "error", "error_detail": f"Input path not found: {transcript_path}"}), file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(f"Input path not found: {transcript_path}")
         
     try:
         with open(transcript_path, 'r', encoding='utf-8') as f:
             raw_chunks = json.load(f)
     except Exception as e:
-        print(json.dumps({"status": "error", "error_detail": f"Failed to parse JSON: {e}"}), file=sys.stderr)
-        sys.exit(1)
+        raise ValueError(f"Failed to parse JSON: {e}")
 
     # We bucket transcript snippets into chunks of ~120 seconds for logical reading segments
     # Or just bucket them based on text length. Let's do 120 seconds.
@@ -90,10 +114,9 @@ def refine_transcript(transcript_path: str, output_path: str):
             "refined_md_path": md_path,
             "chunk_count": len(refined_buckets)
         }
-        print(json.dumps(result))
+        return result
     except Exception as e:
-        print(json.dumps({"status": "error", "error_detail": f"Failed to save refined data: {e}"}), file=sys.stderr)
-        sys.exit(1)
+        raise e
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Refine a raw YouTube transcript into structured chunks.")
@@ -101,4 +124,9 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, help="Path to save refined transcript chunks.")
     
     args = parser.parse_args()
-    refine_transcript(args.input, args.output)
+    try:
+        res = refine_transcript(args.input, args.output)
+        print(json.dumps(res))
+    except Exception as e:
+        print(json.dumps({"status": "error", "error_detail": str(e)}), file=sys.stderr)
+        sys.exit(1)

@@ -18,6 +18,9 @@ export interface SourceCandidate {
     processedAt?: string;
     transcriptStatus?: 'pending' | 'available' | 'unavailable' | 'transcribed' | 'rescued_text' | 'failed';
     transcript_status?: 'pending' | 'available' | 'unavailable' | 'transcribed' | 'rescued_text' | 'failed';
+    draftSnippet?: string;
+    wordCount?: number;
+    contentType?: string;
 }
 
 export interface LibraryInsight {

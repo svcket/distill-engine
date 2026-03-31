@@ -68,15 +68,15 @@ export default function LibraryPage() {
     }
 
     return (
-        <div className="p-8 max-w-[1400px] mx-auto space-y-8 animate-in fade-in duration-500">
+        <div className="p-4 lg:p-8 max-w-[1400px] mx-auto space-y-6 lg:space-y-8 animate-in fade-in duration-500 pb-20 lg:pb-8">
 
-            <div className="flex flex-col gap-6 items-center text-center max-w-2xl mx-auto py-12">
-                <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center mb-2 shadow-soft">
-                    <LibraryIcon className="w-8 h-8 text-white" />
+            <div className="flex flex-col gap-4 lg:gap-6 items-center text-center max-w-2xl mx-auto py-8 lg:py-12">
+                <div className="w-12 h-12 lg:w-16 lg:h-16 bg-black rounded-xl lg:rounded-2xl flex items-center justify-center mb-1 lg:mb-2 shadow-soft">
+                    <LibraryIcon className="w-6 h-6 lg:w-8 lg:h-8 text-white" />
                 </div>
-                <div className="space-y-2">
-                    <h1 className="text-4xl font-serif font-semibold tracking-tight">{t("library")}</h1>
-                    <p className="text-muted-foreground text-lg">
+                <div className="space-y-2 px-4">
+                    <h1 className="text-3xl lg:text-4xl font-serif font-semibold tracking-tight">{t("library")}</h1>
+                    <p className="text-muted-foreground text-sm lg:text-lg">
                         A searchable archive of deeply understood concepts, frameworks, and insights extracted from your research.
                     </p>
                 </div>
@@ -139,10 +139,10 @@ export default function LibraryPage() {
                 </div>
             </div>
 
-            <div className="grid md:grid-cols-4 gap-8">
+            <div className="flex flex-col lg:grid lg:grid-cols-4 gap-8">
 
                 {/* Sidebar Filter/Navigation */}
-                <div className="space-y-6">
+                <div className="space-y-6 order-2 lg:order-1">
                     <div className="space-y-3">
                         <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                             <Hash className="w-4 h-4" /> Core Themes
@@ -187,10 +187,10 @@ export default function LibraryPage() {
                 </div>
 
                 {/* Main Insight Feed */}
-                <div className="md:col-span-3 space-y-4">
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-xl font-serif font-medium">
-                            {searchQuery ? `Insights matching "${searchQuery}"` : "Recently Archived Insights"}
+                <div className="flex-1 lg:col-span-3 space-y-4 order-1 lg:order-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 lg:mb-6">
+                        <h2 className="text-lg lg:text-xl font-serif font-medium">
+                            {searchQuery ? `Insights matching "${searchQuery}"` : "Recent Insights"}
                         </h2>
                         {searchQuery && (
                             <button 

@@ -1,0 +1,11 @@
+yt-dlp
+openai
+openai-whisper
+imageio-ffmpeg
+requests
+youtube-transcript-api
+python-dotenv
+boto3
+psycopg2-binary
+pydantic
+tiktoken

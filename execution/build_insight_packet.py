@@ -11,7 +11,11 @@ import argparse
 import json
 import os
 import glob
+from typing import Dict, Any
 
+def generate_packet_orchestrator(source_id: str) -> Dict[str, Any]:
+    """Convenience wrapper for the Unified Analysis Cluster."""
+    return build_packet(source_id)
 
 def load_json(path: str):
     if os.path.exists(path):
@@ -96,7 +100,7 @@ def rank_segments(segments: list, max_segments: int = 7) -> list:
     return sorted(selected, key=lambda s: s.get("start", 0))
 
 
-def build_packet(source_id: str):
+def build_packet(source_id: str) -> Dict[str, Any]:
     base = os.path.dirname(__file__)
     metadata = find_source(source_id)
 
@@ -132,15 +136,15 @@ def build_packet(source_id: str):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(packet, f, indent=2)
 
-    print(json.dumps({
+    result = {
         "status": "success",
         "source_id": source_id,
-
         "packet_path": out_path,
         "segment_count": len(selected_segments),
         "total_segments": len(transcript),
         "word_count": total_words,
-    }))
+    }
+    return result
 
 
 if __name__ == "__main__":
@@ -148,4 +152,9 @@ if __name__ == "__main__":
     parser.add_argument("--source-id", "--video-id", dest="source_id", required=True,
                         help="Source ID (or legacy YouTube video ID).")
     args = parser.parse_args()
-    build_packet(args.source_id)
+    try:
+        res = build_packet(args.source_id)
+        print(json.dumps(res))
+    except Exception as e:
+        print(json.dumps({"status": "error", "error_detail": str(e)}), file=sys.stderr)
+        sys.exit(1)

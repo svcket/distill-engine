@@ -147,3 +147,13 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     @apply bg-muted-foreground/20;
 }
+
+/* Hide Next.js build indicator on mobile to prevent overlapping with our custom bottom nav */
+@media (max-width: 1023px) {
+    nextjs-portal,
+    #next-build-watcher {
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+}

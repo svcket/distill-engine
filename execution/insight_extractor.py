@@ -3,8 +3,14 @@ import argparse
 import json
 import os
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Dict, Any
 from openai import OpenAI
+
+def generate_insights_orchestrator(source_id: str) -> Dict[str, Any]:
+    """Convenience wrapper for the Unified Analysis Cluster."""
+    base = os.path.dirname(__file__)
+    packet_path = os.path.join(base, ".tmp", "insight_packets", f"{source_id}_packet.json")
+    return extract_insights(packet_path)
 
 class Framework(BaseModel):
     title: str = Field(description="Name of the framework or model.")
@@ -27,18 +33,16 @@ def load_json(filepath: str):
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except: pass
+        except: return None
     return None
 
-def extract_insights(packet_path: str):
+def extract_insights(packet_path: str) -> Dict[str, Any]:
     if not os.path.exists(packet_path):
-        print(json.dumps({"status": "failed", "error": f"Packet not found: {packet_path}"}), file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(f"Packet not found: {packet_path}")
         
     packet = load_json(packet_path)
     if not packet or not isinstance(packet, dict):
-        print(json.dumps({"status": "failed", "error": f"Invalid or empty packet at: {packet_path}"}), file=sys.stderr)
-        sys.exit(1)
+        raise ValueError(f"Invalid or empty packet at: {packet_path}")
 
     source_id = packet.get("source_id") or packet.get("video_id") or "unknown"
     
@@ -67,8 +71,7 @@ def extract_insights(packet_path: str):
         with open(out_path, 'w', encoding='utf-8') as f:
             json.dump(mock_result, f, indent=2)
             
-        print(json.dumps(mock_result))
-        sys.exit(0)
+        return mock_result
 
     client = OpenAI()
     
@@ -120,15 +123,19 @@ def extract_insights(packet_path: str):
         with open(out_path, 'w', encoding='utf-8') as f:
             json.dump(bundle, f, indent=2)
             
-        print(json.dumps(bundle))
+        return bundle
         
     except Exception as e:
-        print(json.dumps({"status": "failed", "error": str(e)}), file=sys.stderr)
-        sys.exit(1)
+        raise e
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract structured knowledge from an insight packet.")
     parser.add_argument("--input", required=True, help="Path to input packet JSON.")
     
     args = parser.parse_args()
-    extract_insights(args.input)
+    try:
+        res = extract_insights(args.input)
+        print(json.dumps(res))
+    except Exception as e:
+        print(json.dumps({"status": "failed", "error": str(e)}), file=sys.stderr)
+        sys.exit(1)

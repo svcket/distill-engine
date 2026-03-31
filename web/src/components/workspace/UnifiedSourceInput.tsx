@@ -1,6 +1,6 @@
 "use client"
-import { useState, useRef, useCallback, useEffect } from "react"
-import { Search, Paperclip, Mic, Loader2, X, Pause, Play, Square } from "lucide-react"
+import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react"
+import { Search, Loader2, X, Paperclip, Mic, Play, Pause, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/Button"
 import { useLanguage } from "@/context/LanguageContext"
@@ -12,7 +12,13 @@ interface UnifiedSourceInputProps {
     isIngesting: boolean
 }
 
-export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: UnifiedSourceInputProps) {
+export interface UnifiedSourceInputHandle {
+    record: () => void;
+    upload: () => void;
+}
+
+export const UnifiedSourceInput = forwardRef<UnifiedSourceInputHandle, UnifiedSourceInputProps>(
+    ({ onIngest, onFileSelect, isIngesting }, ref) => {
     const { t } = useLanguage()
     const [value, setValue] = useState("")
     const [isDragging, setIsDragging] = useState(false)
@@ -31,6 +37,52 @@ export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: Unif
         setValue("")
     }, [value, isIngesting, onIngest])
 
+    useImperativeHandle(ref, () => ({
+        record: () => {
+            if (recordingState === 'idle') startRecording();
+        },
+        upload: () => {
+            fileInputRef.current?.click();
+        }
+    }));
+
+    const startTimer = () => {
+        if (timerRef.current) clearInterval(timerRef.current)
+        timerRef.current = setInterval(() => setDuration(prev => prev + 1), 1000)
+    }
+
+    const stopTimer = () => {
+        if (timerRef.current) clearInterval(timerRef.current)
+        timerRef.current = null
+    }
+
+    const formatTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60)
+        const secs = seconds % 60
+        return `${mins}:${secs.toString().padStart(2, '0')}`
+    }
+
+    const resetToIdle = () => {
+        setRecordingState('idle')
+        setDuration(0)
+        setStream(null)
+        stopTimer()
+    }
+
+    const handleAudioUpload = async (blob: Blob) => {
+        const formData = new FormData()
+        formData.append('audio', blob)
+        try {
+            const res = await fetch('/api/sources/record', { method: 'POST', body: formData })
+            const data = await res.json()
+            if (data.url) await onIngest(data.url)
+        } catch (err) {
+            console.error("Recording upload failed:", err)
+        } finally {
+            resetToIdle()
+        }
+    }
+
     const startRecording = async () => {
         try {
             const micStream = await navigator.mediaDevices.getUserMedia({ 
@@ -43,7 +95,6 @@ export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: Unif
             })
             setStream(micStream)
             
-            // Try to use a high-quality mimeType if supported
             const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
                 ? 'audio/webm;codecs=opus' 
                 : 'audio/webm';
@@ -73,14 +124,12 @@ export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: Unif
         }
     }
 
-    const startTimer = () => {
-        if (timerRef.current) clearInterval(timerRef.current)
-        timerRef.current = setInterval(() => setDuration(prev => prev + 1), 1000)
-    }
-
-    const stopTimer = () => {
-        if (timerRef.current) clearInterval(timerRef.current)
-        timerRef.current = null
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop()
+            setRecordingState('processing')
+            stopTimer()
+        }
     }
 
     const pauseRecording = () => {
@@ -107,45 +156,6 @@ export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: Unif
             resetToIdle()
         }
     }
-
-    const resetToIdle = () => {
-        setRecordingState('idle')
-        setDuration(0)
-        setStream(null)
-        stopTimer()
-    }
-        
-    const stopRecording = () => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-            mediaRecorderRef.current.stop()
-            setRecordingState('processing')
-            stopTimer()
-        }
-    }
-
-    const handleAudioUpload = async (blob: Blob) => {
-        const formData = new FormData()
-        formData.append('audio', blob)
-        try {
-            const res = await fetch('/api/sources/record', { method: 'POST', body: formData })
-            const data = await res.json()
-            if (data.url) await onIngest(data.url)
-        } catch (err) {
-            console.error("Recording upload failed:", err)
-        } finally {
-            resetToIdle()
-        }
-    }
-
-    const formatTime = (seconds: number) => {
-        const mins = Math.floor(seconds / 60)
-        const secs = seconds % 60
-        return `${mins}:${secs.toString().padStart(2, '0')}`
-    }
-
-    useEffect(() => {
-        return () => { if (timerRef.current) clearInterval(timerRef.current) }
-    }, [])
 
     if (recordingState !== 'idle') {
         return (
@@ -220,7 +230,7 @@ export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: Unif
     return (
         <div 
             className={cn(
-                "flex flex-col md:flex-row gap-3 w-full animate-in fade-in slide-in-from-top-4 duration-500",
+                "flex items-center gap-2 w-full animate-in fade-in slide-in-from-top-4 duration-500",
                 isDragging && "scale-[1.01] transition-transform duration-200"
             )}
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
@@ -243,7 +253,7 @@ export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: Unif
                     placeholder={isDragging ? "Drop your file here..." : (t("composerPlaceholder") || "Paste source URL or search...")}
                     aria-label={t("composerPlaceholder") || "Paste source URL or search..."}
                     className={cn(
-                        "w-full pl-11 pr-24 h-12 rounded-xl border border-border bg-background shadow-micro transition-all outline-none",
+                        "w-full pl-10 lg:pl-11 pr-20 lg:pr-24 h-10 lg:h-12 rounded-xl border border-border bg-background shadow-micro transition-all outline-none text-xs lg:text-sm",
                         "focus:ring-4 focus:ring-brand/5 focus:border-brand/30 dark:border-white/5 dark:focus:border-white/15 dark:focus:ring-white/5",
                         isDragging && "border-brand bg-brand/5 ring-4 ring-brand/5"
                     )}
@@ -256,41 +266,20 @@ export function UnifiedSourceInput({ onIngest, onFileSelect, isIngesting }: Unif
                     <Button 
                         size="sm" 
                         className={cn(
-                            "h-8 px-4 text-xs font-serif font-medium transition-all duration-300 border relative overflow-hidden",
+                            "h-7 lg:h-8 px-2.5 lg:px-4 text-[10px] lg:text-xs font-serif font-medium transition-all duration-300 border relative overflow-hidden",
                             value.trim() 
-                                ? "bg-black text-white dark:bg-white dark:text-black hover:scale-[1.02] active:scale-[0.98] hover:shadow-soft" 
+                                ? "bg-black text-white dark:bg-white dark:text-black hover:shadow-soft" 
                                 : "bg-muted text-muted-foreground opacity-40 grayscale pointer-events-none"
                         )}
                         onClick={handleSend}
                         disabled={isIngesting || !value.trim()}
                     >
-                        {isIngesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Ingest"}
+                        {isIngesting ? <Loader2 className="w-3 h-3 lg:w-3.5 lg:h-3.5 animate-spin" /> : "Ingest"}
                     </Button>
                 </div>
             </div>
-
-            <div className="flex items-center gap-2">
-                <Button 
-                    variant="outline"
-                    className="w-12 h-12 p-0 rounded-lg shadow-micro border-border hover:bg-muted/50 transition-all active:scale-95"
-                    onClick={() => fileInputRef.current?.click()}
-                    title="Upload audio/video"
-                    type="button"
-                >
-                    <Paperclip className="w-5 h-5 text-foreground/70" />
-                </Button>
-
-                <Button 
-                    variant="outline"
-                    className="w-12 h-12 p-0 rounded-lg shadow-micro border-border transition-all active:scale-95 hover:bg-muted/50"
-                    onClick={startRecording}
-                    title="Record audio"
-                    disabled={isIngesting}
-                    type="button"
-                >
-                    <Mic className="w-5 h-5 text-foreground/70" />
-                </Button>
-            </div>
         </div>
     )
-}
+});
+
+UnifiedSourceInput.displayName = "UnifiedSourceInput";

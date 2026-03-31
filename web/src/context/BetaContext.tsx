@@ -37,7 +37,7 @@ export function BetaProvider({ children }: { children: React.ReactNode }) {
         if (user?.email && AUTO_PRO_EMAILS.includes(user.email)) return true
 
         const plan = user?.plan || user?.tier
-        return plan === 'pro' || plan === 'beta'
+        return plan === 'pro' || plan === 'beta' || plan === 'beta_pro'
     }, [session?.user, localEnrolled])
 
     const enrollInBeta = async () => {
@@ -54,7 +54,7 @@ export function BetaProvider({ children }: { children: React.ReactNode }) {
                     ...session,
                     user: {
                         ...(session?.user || {}),
-                        plan: 'pro'
+                        plan: 'beta_pro'
                     }
                 })
                 return true
@@ -62,7 +62,7 @@ export function BetaProvider({ children }: { children: React.ReactNode }) {
         } catch (err) {
             console.error("Beta enrollment failed:", err)
         } finally {
-            setIsEnrolling(true)
+            setIsEnrolling(false)
         }
         return false
     }

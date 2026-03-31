@@ -8,15 +8,14 @@ import { SourceCandidate } from "@/lib/mockData"
 import { 
     ArrowLeft, Loader2, FileText, Bot, Sparkles, Target, Edit3, 
     ShieldCheck, Check, ChevronDown, ChevronUp, RefreshCw, Play, Share2, 
-    ExternalLink, MoreHorizontal, Trash2, X, Calendar, Clock, BarChart3,
-    AlertCircle, Search, Save
+    ExternalLink, MoreHorizontal, Trash2, X, Calendar, Clock, BarChart3
 } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
 import { motion, AnimatePresence } from "framer-motion"
 
-type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insights" | "angle" | "draft" | "qa" | "socialise" | "export"
+type StageId = "judge" | "transcript" | "refine" | "cluster" | "summary" | "packet" | "insights" | "angle" | "draft" | "qa" | "socialise" | "export"
 type StageStatus = "completed" | "active" | "locked"
 
 interface StagePayload {
@@ -77,6 +76,7 @@ const STAGES: WorkflowStage[] = [
     { id: "judge", label: "Judge Alignment", description: "Enrich source metadata and evaluate against NorthStar Profile", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }), hidden: true },
     { id: "transcript", label: "Fetch Transcript", description: "Retrieve indexing data via Fast-Path or Whisper", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (id) => ({ sourceId: id }) },
     { id: "refine", label: "Refine Context", description: "Denoise transcript and segment into logical chunks", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (id) => ({ transcriptId: id }), hidden: true },
+    { id: "cluster", label: "Analysis Cluster", description: "Unified high-performance analysis (Refine, Summary, Insights)", icon: Sparkles, apiEndpoint: "/api/pipeline/cluster", apiBody: (id) => ({ sourceId: id }), hidden: true },
     { id: "summary", label: "Source Summary", description: "Concise summary and key framework identification", icon: FileText, apiEndpoint: "/api/transcripts/summary", apiBody: (id) => ({ transcriptId: id }) },
     { id: "packet", label: "Density Mapping", description: "Identify high-signal segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcriptId: id }), hidden: true },
     { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (id) => ({ transcriptId: id }) },
@@ -84,7 +84,7 @@ const STAGES: WorkflowStage[] = [
     { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
     { id: "socialise", label: "Social content", description: "Generate X threads, LinkedIn posts, and distribution assets", icon: Share2, apiEndpoint: "/api/socialise", apiBody: (id) => ({ transcriptId: id }) },
-]
+];
 
 const INTENT_DESCRIPTIONS: Record<string, string> = {
     blog_article: "Long-form editorial piece with structured arguments and narrative flow.",
@@ -346,10 +346,10 @@ export default function SourceMissionControl() {
         if (completedStages.has(stage.id)) return "completed"
         
         // Ensure transcript stage shows as completed if status is retrieved
-        if (stage.id === "transcript" && (tStatus === "transcribed" || tStatus === "rescued_text")) return "completed"
+        if (stage.id === "transcript" && (tStatus === "transcribed" || tStatus === "rescued_text" || tStatus === "unavailable")) return "completed"
         
-        // Hard Gate: If transcript is unavailable or explicitly failed, lock all downstream
-        const isTranscriptDead = tStatus === "unavailable" || tStatus === "failed"
+        // Hard Gate: Only lock if transcript explicitly FAILED (code error), not if it's just unavailable (DRM)
+        const isTranscriptDead = tStatus === "failed"
         if (isTranscriptDead && (stage.id === "transcript" || index > STAGES.findIndex(s => s.id === "transcript"))) {
             return "locked"
         }
@@ -633,6 +633,118 @@ export default function SourceMissionControl() {
         for (let i = startIndex; i < STAGES.length; i++) {
             const stage = STAGES[i]
 
+            // ─── CLUSTER OPTIMIZATION ───
+            // If we are at 'refine' or 'summary' or 'insights', and the cluster has not run yet,
+            // we trigger the Unified Cluster and propagate the results to all child stages.
+            if ((stage.id === "cluster" || stage.id === "refine" || stage.id === "summary" || stage.id === "insights") && 
+                !completedStages.has("cluster")) {
+                
+                setExecutingStage("cluster");
+                setLogs(prev => [{ event: "Initiating Unified Analysis Cluster...", time: "Just now", status: "info" }, ...prev]);
+                
+                try {
+                    const clusterRes = await fetch("/api/pipeline/cluster", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ sourceId: id })
+                    });
+                    
+                    if (!clusterRes.ok) throw new Error("Analysis Cluster failed");
+                    const clusterData = await clusterRes.json();
+                    const results = clusterData.result; // This contains { refine, summary, packet, insights }
+                    
+                    // Propagate results to all clustered stages
+                    const updateObj: Record<string, StageResultData> = { ...currentResults };
+                    const newCompletions = new Set(completedStages);
+                    
+                    if (results.refine) { updateObj.refine = results.refine; newCompletions.add("refine"); }
+                    if (results.summary) { updateObj.summary = results.summary; newCompletions.add("summary"); }
+                    if (results.packet) { updateObj.packet = results.packet; newCompletions.add("packet"); }
+                    if (results.insights) { updateObj.insights = results.insights; newCompletions.add("insights"); }
+                    
+                    newCompletions.add("cluster");
+                    
+                    setStageResults(prev => ({ ...prev, ...updateObj }));
+                    setCompletedStages(newCompletions);
+                    
+                    // Update local loop counter to skip the constituent stages
+                    // We skip to 'angle'
+                    const angleIndex = STAGES.findIndex(s => s.id === "angle");
+                    i = angleIndex - 1; 
+                    
+                    setLogs(prev => [{ event: "Analysis Cluster completed (Refine, Summary, Insights)", time: "Just now", status: "success" }, ...prev]);
+                    setExecutingStage(null);
+                    continue; // Move to next loop iteration (which will be 'angle')
+                    
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : 'Unknown error'
+                    setError({ message: msg, type: "error" });
+                    setIsRunningAll(false);
+                    setExecutingStage(null);
+                    break;
+                }
+            }
+
+            // ─── PARALLELIZATION OPTIMIZATION ───
+            // After 'draft' is done, we can run 'qa' and 'socialise' in parallel.
+            if (stage.id === "qa" && completedStages.has("draft")) {
+                setExecutingStage("qa");
+                setLogs(prev => [{ event: "Launching Parallel Verification & Socialisation...", time: "Just now", status: "info" }, ...prev]);
+                
+                try {
+                    const qaStage = STAGES.find(s => s.id === "qa")!;
+                    const socialiseStage = STAGES.find(s => s.id === "socialise")!;
+                    
+                    // Run both simultaneously
+                    const [qaRes, socialRes] = await Promise.all([
+                        fetch(qaStage.apiEndpoint!, { 
+                            method: "POST", 
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(qaStage.apiBody!(id))
+                        }),
+                        fetch(socialiseStage.apiEndpoint!, { 
+                            method: "POST", 
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(socialiseStage.apiBody!(id))
+                        })
+                    ]);
+                    
+                    if (!qaRes.ok || !socialRes.ok) {
+                        const qaError = !qaRes.ok ? await qaRes.text() : "";
+                        const socialError = !socialRes.ok ? await socialRes.text() : "";
+                        throw new Error(`Execution failed: ${qaError || socialError || "Server responded with an update error"}`);
+                    }
+
+                    const qaData = await qaRes.json();
+                    const socialData = await socialRes.json();
+                    
+                    const qaValue = (qaData.result || qaData) as StageResultData;
+                    const socialValue = (socialData.result || socialData) as StageResultData;
+                    
+                    setStageResults(prev => ({ ...prev, qa: qaValue, socialise: socialValue }));
+                    setCompletedStages(prev => new Set([...prev, "qa", "socialise"]));
+                    
+                    setLogs(prev => [{ event: "Parallel verification and assets completed", time: "Just now", status: "success" }, ...prev]);
+                    
+                    // Update source score from QA
+                    const qaResult = qaValue as Record<string, unknown>;
+                    if (qaResult && typeof qaResult.total_score === 'number') {
+                        setSource(s => ({ ...s, score: qaResult.total_score as number, status: "done" }));
+                    }
+                    
+                    i = STAGES.length; // End loop
+                    setExecutingStage(null);
+                    setShowCelebration(true);
+                    break;
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : 'Unknown error'
+                    setError({ message: `Parallel execution failed: ${msg}`, type: "error" });
+                    setIsRunningAll(false);
+                    setExecutingStage(null);
+                    break;
+                }
+            }
+
             // ════ STAGE GATING ════
             const gate = validateStageGating(stage.id, currentResults)
             if (!gate.valid) {
@@ -640,8 +752,8 @@ export default function SourceMissionControl() {
                     setLogs(prev => [{ event: `Pipeline paused for review. Please check insights and configure Framing/Intent.`, time: "Just now", status: "info" }, ...prev])
                     setError({ message: `Pipeline waiting for Editorial Strategy. Please confirm your intent options below.`, type: "info" })
                 } else {
-                    setLogs(prev => [{ event: `Pipeline halted: ${stage.label} is missing ${gate.missing}`, time: "Just now", status: "error" }, ...prev])
-                    setError({ message: `Pipeline stopped at ${stage.label} due to missing ${gate.missing}`, type: "error" })
+                    setLogs(prev => [{ event: `Pipeline halted: ${stage.label} is missing ${gate.missing}`, time: "Just now", status: "info" }, ...prev])
+                    setError({ message: `Pipeline stopped at ${stage.label} due to missing ${gate.missing}`, type: "info" })
                 }
                 setIsRunningAll(false)
                 break
@@ -809,7 +921,7 @@ export default function SourceMissionControl() {
                     // ─── TRANSCRIPT GUARDRAIL ───
                     if (stage.id === "transcript") {
                         const tsData = (resValue as TranscriptResult);
-                        const segments = tsData?.segments || (resValue as Record<string, any>)?.result?.segments;
+                        const segments = tsData?.segments || (resValue as { result?: { segments?: any[] } })?.result?.segments;
                         if (!segments || segments.length === 0) {
                             const errorMsg = "Transcription failed: No text segments were extracted. Pipeline halted.";
                             setError({ message: errorMsg, type: "error" });
@@ -1045,9 +1157,18 @@ export default function SourceMissionControl() {
                             "p-4 rounded-xl border flex items-center gap-3 animate-in fade-in slide-in-from-top-2",
                             error.type === "info" 
                                 ? "bg-blue-500/10 border-blue-500/20 text-blue-400" 
-                                : "bg-red-500/10 border-red-500/20 text-red-500"
+                                : "bg-destructive/10 border-destructive/20 text-destructive-foreground font-medium"
                         )}>
-                            {error.type === "info" ? <Target className="w-5 h-5" /> : <X className="w-5 h-5 cursor-pointer" onClick={() => setError(null)} />}
+                            <div className={cn(
+                                "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                                error.type === "info" ? "bg-blue-500/20" : "bg-destructive/20"
+                            )}>
+                                {error.type === "info" ? (
+                                    <Target className="w-4 h-4 text-blue-400" />
+                                ) : (
+                                    <X className="w-4 h-4 text-destructive-foreground" onClick={() => setError(null)} />
+                                )}
+                            </div>
                             <span className="text-sm font-medium">{error.message}</span>
                         </div>
                     )}
@@ -1102,14 +1223,21 @@ export default function SourceMissionControl() {
                         <div className="flex items-center gap-2 text-sm">
                             <BarChart3 className="w-3.5 h-3.5 text-muted-foreground/70" />
                             <span className="text-muted-foreground">{t("qualScore")}</span>
-                            <span className={cn("font-semibold tabular-nums", source.score >= 80 || (source.score >= 8 && source.score <= 10) ? "text-emerald-600" : source.score >= 60 || (source.score >= 6 && source.score <= 7) ? "text-amber-600" : source.score > 0 ? "text-red-500" : "text-muted-foreground")}>
-                                {source.score > 0 ? (source.score > 10 ? `${source.score}/100` : `${source.score}/10`) : (stageResults.qa ? <span className="text-muted-foreground opacity-50">Calculating...</span> : <span className="opacity-70 font-normal italic">{t("pending")}...</span>)}
-                            </span>
-                            {source.score > 0 && (
-                                <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", source.score >= 6 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600")}>
-                                    {source.score >= 8 ? "Excellent" : source.score >= 6 ? "Passable" : "Rejected"}
-                                </span>
-                            )}
+                            {(() => {
+                                const normalizedScore = source.score > 10 ? source.score : source.score * 10;
+                                return (
+                                    <>
+                                        <span className={cn("font-semibold tabular-nums", source.score > 0 ? (normalizedScore >= 80 ? "text-emerald-600" : normalizedScore >= 60 ? "text-amber-600" : "text-red-500") : "text-muted-foreground")}>
+                                            {source.score > 0 ? (source.score > 10 ? `${source.score}/100` : `${source.score}/10`) : (stageResults.qa ? <span className="text-muted-foreground opacity-50">Calculating...</span> : <span className="opacity-70 font-normal italic">{t("pending")}...</span>)}
+                                        </span>
+                                        {source.score > 0 && (
+                                            <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", normalizedScore >= 60 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600")}>
+                                                {normalizedScore >= 80 ? "Excellent" : normalizedScore >= 60 ? "Passable" : "Rejected"}
+                                            </span>
+                                        )}
+                                    </>
+                                )
+                            })()}
                         </div>
                     </div>
 
@@ -1132,7 +1260,7 @@ export default function SourceMissionControl() {
                                                     disabled={isRunningAll || !!executingStage}
                                                 >
                                                     {isRunningAll ? (
-                                                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {t("processing")}...</>
+                                                        <><RefreshCw className="w-5 h-5 text-blue-400 animate-spin-slow" /> {t("processing")}...</>
                                                     ) : activeIndex > 0 ? (
                                                         <>{t("continuePipeline")}</>
                                                     ) : (
@@ -1145,7 +1273,6 @@ export default function SourceMissionControl() {
                                         <div className="space-y-0 relative">
                                             {visibleStages.map((stage, i) => {
                                                 const status = getStageStatus(STAGES.findIndex(s => s.id === stage.id))
-                                                const isExecuting = executingStage === stage.id
                                                 const isCompleted = status === "completed"
                                                 const isActive = status === "active"
                                                 const isLocked = status === "locked"
@@ -1366,7 +1493,7 @@ export default function SourceMissionControl() {
                                                     "w-[6px] h-[6px] rounded-full mt-1.5 shrink-0 transition-transform group-hover/log:scale-125",
                                                     log.status === "success" && "bg-emerald-500",
                                                     log.status === "error" && "bg-red-500",
-                                                    log.status === "info" && "bg-brand/60"
+                                                    log.status === "info" && "bg-blue-500/40"
                                                 )} />
                                                 <div className="flex-1 space-y-0.5">
                                                     <div className="flex items-center justify-between">
@@ -1401,14 +1528,17 @@ export default function SourceMissionControl() {
 
             {/* ═══ SIDE PANEL / DETAIL DRAWER ═══ */}
             {panelContent && (
-                <div className="w-[480px] shrink-0 border-l border-border/60 bg-background/95 backdrop-blur-xl flex flex-col animate-in slide-in-from-right-4 duration-300">
+                <div className="fixed inset-y-0 right-0 z-50 w-full h-[100dvh] lg:static lg:w-[480px] lg:h-auto shrink-0 border-l border-border/60 bg-background/95 backdrop-blur-xl flex flex-col animate-in slide-in-from-right-4 duration-300">
                     <div className="h-16 flex items-center justify-between px-6 border-b border-border/60 shrink-0">
                         <h3 className="text-[17px] font-semibold tracking-tight font-serif">{panelContent.title}</h3>
                         <button onClick={() => setPanelContent(null)} aria-label="Close panel" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all duration-200">
                             <X className="w-4 h-4" />
                         </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-6">
+                    <div 
+                        className="flex-1 overflow-y-auto overscroll-contain p-6 pb-[calc(1.5rem+64px)] lg:pb-6"
+                        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+                    >
                         {panelContent.stageId && (
                             <StageResultPanel stageId={panelContent.stageId} data={panelContent.data as Record<string, unknown>} sourceId={id} />
                         )}

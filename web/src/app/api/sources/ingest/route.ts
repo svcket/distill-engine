@@ -50,11 +50,17 @@ export async function POST(request: Request) {
         }
 
         // Persist the source to Postgres scoped to the user
-        const source = await (prisma.source as any).upsert({
+        // We first check if it's already owned by someone else to prevent hijacking
+        const existingSource = await prisma.source.findUnique({ where: { id: result.source_id } })
+        if (existingSource && existingSource.userId !== session.user.id) {
+             return NextResponse.json({ error: 'This source ID is already managed by another user. Collaborative sourcing is not yet supported in Beta.' }, { status: 403 })
+        }
+
+        const source = await prisma.source.upsert({
             where: { id: result.source_id },
             update: {
                 title: result.title || 'Unknown Source',
-                status: 'idle', // Reset status if re-ingesting? 
+                status: 'idle', 
             },
             create: {
                 id: result.source_id,

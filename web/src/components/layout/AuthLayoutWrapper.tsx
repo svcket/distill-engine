@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation"
 import { AppShell } from "./AppShell"
+import { useLanguage } from "@/context/LanguageContext"
 
 export function AuthLayoutWrapper({ children }: { children: React.ReactNode }) {
     const pathname = usePathname()
@@ -12,5 +13,14 @@ export function AuthLayoutWrapper({ children }: { children: React.ReactNode }) {
         return <main className="min-h-screen bg-[#050505]">{children}</main>
     }
 
-    return <AppShell>{children}</AppShell>
+    return (
+        <>
+            <style dangerouslySetInnerHTML={{ __html: `
+                @media (max-width: 1023px) {
+                    .desktop-sidebar { display: none !important; }
+                }
+            `}} />
+            <AppShell>{children}</AppShell>
+        </>
+    )
 }

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { auth } from '@/auth'
 import path from 'path'
 import { promises as fs } from 'fs'
-import fsSync from 'fs'
+import { deleteSourceFiles } from '@/lib/storage-utils'
 
 export async function GET() {
     const session = await auth()
@@ -23,8 +23,8 @@ export async function GET() {
             ? path.resolve(webDir, '../execution/.tmp')
             : path.resolve(webDir, 'execution/.tmp')
 
-        const hydratedSources = await Promise.all(data.map(async (s: any) => {
-            const updates: any = {}
+        const hydratedSources = await Promise.all(data.map(async (s) => {
+            const updates: Partial<typeof s> = {}
             const source = {
                 ...s,
                 source_type: s.type,
@@ -44,7 +44,7 @@ export async function GET() {
                             updates.title = meta.title
                         }
                     }
-                } catch (e) { /* ignore */ }
+                } catch { /* ignore */ }
             }
 
             // 2. Hydrate Duration
@@ -75,7 +75,7 @@ export async function GET() {
                             updates.duration = dur
                         }
                     }
-                } catch (e) { /* ignore */ }
+                } catch { /* ignore */ }
             }
 
             // 3. Hydrate DQM Score
@@ -93,8 +93,31 @@ export async function GET() {
                             updates.score = score
                         }
                     }
-                } catch (e) { /* ignore */ }
+                } catch { /* ignore */ }
             }
+            
+            // 4. Hydrate Draft Metadata (Snippet, Word Count, Content Type)
+            const draftPath = path.join(baseDir, 'drafts', `${source.id}_draft.json`)
+            try {
+                const stats = await fs.stat(draftPath).catch(() => null)
+                if (stats && stats.isFile()) {
+                    const draftStr = await fs.readFile(draftPath, 'utf-8')
+                    const draftData = JSON.parse(draftStr)
+                    const payload = draftData.data || draftData.payload || draftData
+                    
+                    if (payload.content) {
+                        // Extract a clean snippet (approx. 200 chars)
+                        const cleanContent = payload.content.replace(/[#*`]/g, '').trim()
+                        ;(source as any).draftSnippet = cleanContent.length > 200 ? cleanContent.substring(0, 200) + '...' : cleanContent
+                    }
+                    if (payload.word_count || payload.wordCount) {
+                        ;(source as any).wordCount = payload.word_count || payload.wordCount
+                    }
+                    if (draftData.content_type || draftData.contentType || payload.contentType) {
+                        ;(source as any).contentType = draftData.content_type || draftData.contentType || payload.contentType
+                    }
+                }
+            } catch { /* ignore */ }
 
             // Persistence: If we found new info, update the DB in the background
             if (Object.keys(updates).length > 0) {
@@ -138,7 +161,14 @@ export async function POST(request: Request) {
         if (body.action === 'complete_stage') {
             const { sourceId, stageId } = body
             const source = await prisma.source.findUnique({ where: { id: sourceId } })
+            
             if (source) {
+                // Verify ownership or ADMIN role
+                const isAdmin = (session.user as { role?: string }).role === 'ADMIN'
+                if (source.userId !== session.user.id && !isAdmin) {
+                    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+                }
+
                 const stages = [...(Array.isArray(source.completedStages) ? source.completedStages : [])]
                 if (!stages.includes(stageId)) {
                     stages.push(stageId)
@@ -154,9 +184,26 @@ export async function POST(request: Request) {
 
         // Delete a source
         if (body.action === 'delete') {
-            await prisma.source.delete({
-                where: { id: body.id, userId: session.user.id }
-            })
+            const sourceId = body.id
+            const source = await prisma.source.findUnique({ where: { id: sourceId } })
+            
+            if (source) {
+                // Verify ownership or ADMIN role
+                const isAdmin = (session.user as { role?: string }).role === 'ADMIN'
+                if (source.userId !== session.user.id && !isAdmin) {
+                    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+                }
+
+                // 1. Delete from Prisma
+                await prisma.source.delete({
+                    where: { id: sourceId }
+                })
+
+                // 2. Cleanup file artifacts (Cascading Cleanup)
+                console.log(`[Store API] Triggering file cleanup for ${sourceId}`)
+                deleteSourceFiles(sourceId)
+            }
+            
             return NextResponse.json({ success: true })
         }
 

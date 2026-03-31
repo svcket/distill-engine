@@ -6,7 +6,7 @@ import DQMCard, { DQMData } from "./DQMCard"
 import { PublishDropdown } from "@/components/features/PublishDropdown"
 import Image from "next/image"
 
-type StageId = "judge" | "transcript" | "refine" | "summary" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "socialise" | "export"
+type StageId = "judge" | "transcript" | "refine" | "cluster" | "summary" | "packet" | "insights" | "angle" | "draft" | "visual" | "qa" | "socialise" | "export"
 
 interface StageResultViewProps {
     stageId: StageId
@@ -51,6 +51,7 @@ function getNum(obj: Record<string, unknown>, key: string, fallback = 0): number
 
 function JudgeResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
     const score = getNum(data, "score")
+    const normalizedScore = score > 10 ? score : score * 10
     const status = getStr(data, "status")
     const rationale = getStr(data, "rationale", "Source evaluated based on NorthStar alignment criteria.")
 
@@ -59,12 +60,12 @@ function JudgeResult({ data, compact }: { data: Record<string, unknown>; compact
             <div className="flex items-center gap-3">
                 <div className={cn(
                     "text-2xl font-bold tabular-nums",
-                    score >= 8 ? "text-emerald-600" : score >= 6 ? "text-amber-600" : "text-red-500"
+                    normalizedScore >= 80 ? "text-emerald-600" : normalizedScore >= 60 ? "text-amber-600" : "text-red-500"
                 )}>
-                    {score}/10
+                    {score > 10 ? `${score}/100` : `${score}/10`}
                 </div>
                 <Badge variant={status === "done" ? "success" : "secondary"}>
-                    {score >= 8 ? "High Signal" : score >= 6 ? "Moderate Signal" : "Low Signal"}
+                    {normalizedScore >= 80 ? "High Signal" : normalizedScore >= 60 ? "Moderate Signal" : "Low Signal"}
                 </Badge>
             </div>
             {!compact && (
@@ -90,53 +91,99 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
         )
     }
 
+    // --- High-Fidelity Speaker Turn Grouping ---
+    // Extract speaker turns by identifying >> markers and joining related segments
+    interface SpeakerTurn {
+        speaker: string;
+        text: string;
+        timestamp: number;
+    }
+
+    const turns: SpeakerTurn[] = [];
+    let currentTurn: SpeakerTurn | null = null;
+
+    segments.forEach((seg) => {
+        const s = seg as Record<string, unknown>;
+        const rawText = getStr(s, "text").trim();
+        const start = getNum(s, "start");
+
+        // Split text by speaker marker in case multiple speakers are in one segment
+        const parts = rawText.split(/(?=(?:>>))/g);
+
+        parts.forEach((part) => {
+            const trimmedPart = part.trim();
+            if (!trimmedPart) return;
+
+            if (trimmedPart.startsWith(">>")) {
+                // New speaker turn
+                const speakerMatch = trimmedPart.match(/^>>\s*([^:]+):?/);
+                const speakerName = speakerMatch ? speakerMatch[1] : "Speaker";
+                const text = trimmedPart.replace(/^>>\s*([^:]+:?)?\s*/, "");
+
+                if (currentTurn) {
+                    turns.push(currentTurn);
+                }
+
+                currentTurn = {
+                    speaker: speakerName,
+                    text: text,
+                    timestamp: start
+                };
+            } else {
+                // Continuation of current turn
+                if (currentTurn) {
+                    currentTurn.text += (currentTurn.text ? "\n\n" : "") + trimmedPart;
+                } else {
+                    // Fallback for first segment without marker
+                    currentTurn = {
+                        speaker: "Speaker",
+                        text: trimmedPart,
+                        timestamp: start
+                    };
+                }
+            }
+        });
+    });
+
+    if (currentTurn) {
+        turns.push(currentTurn);
+    }
+
     return (
-        <div className="space-y-6">
-            <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="secondary" className="bg-muted text-muted-foreground border-border/50">
-                    {segmentCount} {isRescued ? "content block" : "segments"} retrieved
-                </Badge>
+        <div className="space-y-8 max-w-3xl mx-auto">
+            <div className="flex items-center gap-2 flex-wrap border-b border-border/40 pb-4">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/40 border border-border/60">
+                    <div className="w-2 h-2 rounded-full bg-brand animate-pulse" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-foreground">
+                        Engine Output: {segmentCount} {isRescued ? "blocks" : "segments"}
+                    </span>
+                </div>
                 {isRescued && (
-                    <Badge variant="success" className="bg-brand/10 text-brand border-brand/20">
-                        Rescued from Metadata
+                    <Badge variant="success" className="bg-brand/10 text-brand border-brand/20 h-7">
+                        Rescued Metadata
                     </Badge>
                 )}
             </div>
             
             {isRescued && (
-                <div className="p-4 rounded-xl bg-muted/30 border border-brand/10 text-xs text-muted-foreground leading-relaxed italic">
+                <div className="p-4 rounded-xl bg-brand/5 border border-brand/10 text-xs text-muted-foreground/80 leading-relaxed italic">
                     Note: Audio transcription was unavailable. Distill rescued this content from source metadata and show notes to maintain pipeline continuity.
                 </div>
             )}
 
-            {segments.length > 0 && (
-                <div className="prose prose-invert prose-p:text-foreground/80 prose-p:leading-relaxed max-w-none prose-p:my-4">
-                    {/* Combine segments into paragraphs, breaking at common speaker markers or significant gaps */}
-                    {segments.map((seg, i) => {
-                        const s = seg as Record<string, unknown>
-                        const text = getStr(s, "text")
-                        
-                        // Style the speaker marker if present
-                        const parts = text.split(">>")
-                        
-                        return (
-                            <p key={i} className="relative group ring-offset-background transition-colors hover:text-foreground">
-                                {parts.map((part, pi) => (
-                                    <span key={pi}>
-                                        {pi > 0 && <span className="text-brand font-bold mx-1 opacity-70">»</span>}
-                                        {part.trim()}
-                                    </span>
-                                ))}
-                                {typeof s.start === "number" && s.start > 0 && (
-                                    <span className="absolute -left-12 top-0 text-[10px] font-mono text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap hidden lg:block">
-                                        {`${Math.floor((s.start as number) / 60)}:${String(Math.floor((s.start as number) % 60)).padStart(2, "0")}`}
-                                    </span>
-                                )}
-                            </p>
-                        )
-                    })}
-                </div>
-            )}
+            <div className="space-y-6">
+                {turns.map((turn, i) => (
+                    <div key={i} className="group flex gap-4 items-start border-l-2 border-transparent hover:border-brand/20 pl-3 transition-colors">
+                        <div className="flex-1 min-w-0 space-y-5">
+                            {turn.text.split("\n\n").map((para, j) => (
+                                <p key={j} className="text-[16px] text-foreground/90 leading-[1.7] font-normal antialiased break-words font-sans selection:bg-brand/30 selection:text-white">
+                                    {para.trim()}
+                                </p>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
     )
 }
@@ -451,13 +498,13 @@ function DraftResult({ data, isGenerating = false, compact = false }: { data: Re
         }
     }, [fullText, isGenerating, displayedContent])
 
-    if (!data) return <div className="p-8 text-center text-muted-foreground italic">No draft content available.</div>
+    if (!data) return <div className="p-8 text-center text-muted-foreground italic">No available draft.</div>
 
     const contentToDisplay = isGenerating ? displayedContent : fullText;
     const blocks = contentToDisplay.split(/\n\n|\n(?=[A-Z][^:]+: [A-Z])/);
 
     return (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-700">
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-700 pb-20 lg:pb-0">
             {cleanTitle && !compact && (
                 <div className="border-b border-border/40 pb-4 mb-2">
                     <h1 className="text-2xl font-bold text-foreground font-serif tracking-tight leading-tight">
@@ -780,14 +827,16 @@ function SocialiseResult({ data, sourceId }: { data: Record<string, unknown>; so
 
 function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
     const dqmData = ((data.result || data.payload || data.data || data) as unknown) as DQMData
+    const pubScore = dqmData?.scores?.publishability || 0
+    const normalizedScore = pubScore > 10 ? pubScore : pubScore * 10
     
     if (compact) {
         return (
             <div className="space-y-2">
                 <div className="flex items-center gap-3">
-                    <span className="text-xl font-bold font-serif">{(dqmData?.scores?.publishability) || 0}/100</span>
-                <Badge variant={((dqmData?.scores?.publishability as number) || 0) >= 80 ? "success" : "secondary"}>
-                    {dqmData?.scores?.publishability ? "Available" : "Pending"}
+                    <span className="text-xl font-bold font-serif">{pubScore}{pubScore > 10 ? "/100" : "/10"}</span>
+                <Badge variant={normalizedScore >= 80 ? "success" : "secondary"}>
+                    {pubScore > 0 ? (normalizedScore >= 80 ? "Excellent" : normalizedScore >= 60 ? "Passable" : "Rejected") : "Pending"}
                 </Badge>
 
                 </div>

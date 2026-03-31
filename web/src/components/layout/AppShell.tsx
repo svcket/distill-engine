@@ -9,7 +9,8 @@ import {
     ChevronDown, 
     SquarePen, 
     LayoutGrid, 
-    LogOut, 
+    LogOut,
+    UserCircle 
 } from "lucide-react"
 import { signOut, useSession } from "next-auth/react"
 import Image from "next/image"
@@ -34,7 +35,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname()
     const { lang, setLang, t } = useLanguage()
     const [isLangOpen, setIsLangOpen] = useState(false)
+    const [isMobile, setIsMobile] = useState(false)
+    const [mounted, setMounted] = useState(false)
     const langRef = useRef<HTMLDivElement>(null)
+
+    // Mounted tracking to prevent hydration flashes
+    useEffect(() => {
+        setMounted(true)
+    }, [])
+
+    // Robust mobile detection and window resize tracking
+    useEffect(() => {
+        const check = () => setIsMobile(window.innerWidth < 1024)
+        check()
+        window.addEventListener('resize', check)
+        return () => window.removeEventListener('resize', check)
+    }, [])
 
     // Close on outside click
     useEffect(() => {
@@ -70,11 +86,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const isLoginPage = pathname === "/login"
 
     return (
-        <div className="flex h-screen w-full bg-background overflow-hidden font-sans">
+        <div className={cn(
+            "flex flex-col lg:flex-row w-full bg-background overflow-hidden font-sans",
+            isLoginPage ? "h-screen" : "h-[100dvh] lg:static lg:h-screen overscroll-none"
+        )}>
             {/* Sidebar */}
-            {!isLoginPage && (
-                <aside className="w-60 flex-shrink-0 border-r border-border bg-accent/30 flex flex-col">
-                    <div className="h-14 flex items-center px-6 border-b border-border">
+            {!isLoginPage && mounted && !isMobile && (
+                <aside className="desktop-sidebar lg:flex flex-col h-full border-r border-border bg-accent/30 sticky top-0 w-60 flex-shrink-0 z-[100]">
+                    <div className="h-14 flex items-center px-6 border-b border-border flex-shrink-0">
                         <Link href="/" className="flex items-center gap-2 font-serif font-bold text-lg tracking-tight">
                             <div className="w-5 h-5 bg-brand rounded-sm flex items-center justify-center">
                                 <div className="w-2 h-2 bg-background rounded-full" />
@@ -88,7 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         </Link>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto py-6 px-3">
+                    <div className="flex-1 overflow-y-auto py-6 px-3 no-scrollbar">
                         <div className="space-y-1">
                             <h4 className="px-3 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider mb-3">Product</h4>
                             {navItems.map((item) => {
@@ -144,7 +163,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         </div>
                     </div>
 
-                    <div className="p-4 border-t border-border bg-card/50 space-y-3">
+                    <div className="hidden lg:flex flex-col p-4 border-t border-border bg-card/50 space-y-3 mt-auto w-full">
                         <Link 
                             href="/settings"
                             className="flex items-center gap-3 p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all group"
@@ -176,11 +195,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
 
             {/* Main Content Area */}
-            <main className="flex-1 flex flex-col min-w-0">
+            <main className="flex-1 overflow-y-auto overscroll-contain scroll-smooth">
                 {!isLoginPage && (
-                    <header className="h-14 flex items-center justify-between px-8 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-40">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            Distill Engine <span className="text-border">/</span> <span className="text-foreground font-serif font-medium">{breadcrumb}</span>
+                    <header className="h-14 flex items-center justify-between px-4 lg:px-8 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-40">
+                        <div className="flex items-center gap-2 text-[10px] lg:text-sm text-muted-foreground truncate uppercase tracking-widest font-bold lg:normal-case lg:font-normal lg:tracking-normal">
+                            <span className="hidden lg:inline">Distill Engine <span className="text-border">/</span></span> <span className="text-foreground font-serif font-medium">{breadcrumb}</span>
                         </div>
                         <div className="flex items-center gap-3">
                             <div className="relative" ref={langRef}>
@@ -228,9 +247,52 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </header>
                 )}
 
-                <div className={cn("flex-1 overflow-y-auto", !isLoginPage && "bg-page-bg")}>
+                <div 
+                    className={cn(
+                        "flex-1",
+                        !isLoginPage && "bg-page-bg"
+                    )}
+                >
                     {children}
                 </div>
+
+                {/* Mobile Bottom Navigation (Airbnb Style) */}
+                {!isLoginPage && (
+                    <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-background/80 backdrop-blur-xl border-t border-border flex items-center justify-around px-6 z-50">
+                        <Link 
+                            href="/sources" 
+                            className={cn(
+                                "flex flex-col items-center gap-1 transition-all",
+                                pathname.startsWith("/sources") ? "text-brand" : "text-muted-foreground"
+                            )}
+                        >
+                            <LayoutGrid className={cn("w-5 h-5", pathname.startsWith("/sources") && "scale-110")} />
+                            <span className="text-[10px] font-bold uppercase tracking-tighter">Directory</span>
+                        </Link>
+                        
+                        <Link 
+                            href="/exports" 
+                            className={cn(
+                                "flex flex-col items-center gap-1 transition-all",
+                                pathname.startsWith("/exports") ? "text-brand" : "text-muted-foreground"
+                            )}
+                        >
+                            <SquarePen className={cn("w-5 h-5", pathname.startsWith("/exports") && "scale-110")} />
+                            <span className="text-[10px] font-bold uppercase tracking-tighter">Studio</span>
+                        </Link>
+                        
+                        <Link 
+                            href="/settings" 
+                            className={cn(
+                                "flex flex-col items-center gap-1 transition-all",
+                                pathname.startsWith("/settings") ? "text-brand" : "text-muted-foreground"
+                            )}
+                        >
+                            <UserCircle className={cn("w-5 h-5", pathname.startsWith("/settings") && "scale-110")} />
+                            <span className="text-[10px] font-bold uppercase tracking-tighter">Settings</span>
+                        </Link>
+                    </nav>
+                )}
             </main>
         </div>
     )

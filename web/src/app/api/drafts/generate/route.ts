@@ -16,7 +16,7 @@ export async function POST(request: Request) {
 
     const userId = session.user.id
 
-    const { transcriptId, stream = true, type, audience, tone } = await request.json()
+    const { transcriptId, draftId, stream = true, type, audience, tone } = await request.json()
 
     if (!transcriptId) {
         return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
@@ -136,13 +136,18 @@ export async function POST(request: Request) {
                             sendStatus("Finalizing draft architecture...")
                             // Persist draft and update usage
                             await prisma.$transaction([
-                                prisma.draft.create({
-                                    data: {
-                                        userId: userId,
-                                        title: source.title || `Draft for ${sourceId}`,
-                                        content: draftContent
-                                    }
-                                }),
+                                draftId 
+                                    ? prisma.draft.update({
+                                        where: { id: draftId, userId: userId },
+                                        data: { content: draftContent }
+                                      })
+                                    : prisma.draft.create({
+                                        data: {
+                                            userId: userId,
+                                            title: source.title || `Draft for ${sourceId}`,
+                                            content: draftContent
+                                        }
+                                    }),
                                 prisma.usage.upsert({
                                     where: { userId: userId },
                                     update: { draftsGenerated: { increment: 1 } },
@@ -156,12 +161,12 @@ export async function POST(request: Request) {
                                         }
                                     }
                                 })
-                            ]).catch(async (e) => {
+                            ]).catch(async () => {
                                 // Fallback for string-based completedStages if push fails
-                                await prisma.source.update({
+                                await (prisma as any).source.update({
                                     where: { id: sourceId, userId: userId },
                                     data: {
-                                        completedStages: 'draft'
+                                        completedStages: ['draft']
                                     }
                                 })
                             })
@@ -229,13 +234,18 @@ export async function POST(request: Request) {
     
     // Persist draft and update usage scoped to user
     await prisma.$transaction([
-        prisma.draft.create({
-            data: {
-                userId: userId,
-                title: source.title || `Draft for ${sourceId}`,
-                content: result.data || result
-            }
-        }),
+        draftId 
+            ? prisma.draft.update({
+                where: { id: draftId, userId: userId },
+                data: { content: result.data || result }
+              })
+            : prisma.draft.create({
+                data: {
+                    userId: userId,
+                    title: source.title || `Draft for ${sourceId}`,
+                    content: result.data || result
+                }
+            }),
         prisma.usage.upsert({
             where: { userId: userId },
             update: { draftsGenerated: { increment: 1 } },
@@ -249,12 +259,12 @@ export async function POST(request: Request) {
                 }
             }
         })
-    ]).catch(async (e) => {
+    ]).catch(async () => {
         // Fallback for string-based completedStages if push fails
-        await prisma.source.update({
+        await (prisma as any).source.update({
             where: { id: sourceId, userId: userId },
             data: {
-                completedStages: 'draft'
+                completedStages: ['draft']
             }
         })
     })

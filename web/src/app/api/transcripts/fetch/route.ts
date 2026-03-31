@@ -96,6 +96,36 @@ export async function POST(request: Request) {
                 result: result 
             })
         } else {
+            // Check if the error is a graceful "unavailable" status (e.g. Spotify DRM)
+            let isGracefulUnavailable = false
+            let errorDetail = scriptError as any
+            
+            try {
+                const parsedError = typeof scriptError === 'string' ? JSON.parse(scriptError) : scriptError
+                if (parsedError && parsedError.transcript_status === 'unavailable') {
+                    isGracefulUnavailable = true
+                    errorDetail = parsedError.error_detail || "Audio transcription unavailable"
+                }
+            } catch (e) { /* fallback to hard failure if not parseable JSON */ }
+
+            if (isGracefulUnavailable) {
+                // Rescue: Allow pipeline to proceed with metadata instead of hard failure
+                await prisma.source.update({
+                    where: { id: sourceId, userId: session.user.id },
+                    data: { 
+                        status: 'rescued_text',
+                        transcriptStatus: 'unavailable',
+                        completedStages: { push: 'transcript' }
+                    }
+                })
+                return NextResponse.json({ 
+                    message: "Transcription unavailable, proceeding with rescued metadata", 
+                    status: "unavailable",
+                    details: errorDetail
+                })
+            }
+
+            // Hard failure for actual script crashes or network issues
             await (prisma.source.update as any)({
                 where: { id: sourceId, userId: (session.user as any).id },
                 data: { 
@@ -106,7 +136,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ 
                 error: "Transcription failed", 
                 details: scriptError,
-                raw: scriptError // scriptError usually contains the stdout/stderr payload in runPythonScript failure
+                raw: scriptError 
             }, { status: 500 })
         }
 
