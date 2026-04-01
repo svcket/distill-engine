@@ -18,6 +18,7 @@ next-env.d.ts
 .agents/
 .antigravity/
 .cursorrules
+.gemini/
 AGENTS.md
 CLAUDE.md
 NORTHSTAR_PROFILE.md
@@ -26,3 +27,17 @@ directives/
 ideas/
 outcomes/
 systems/
+brain/
+skill_curator.md
+*.pen
+implementation_plan.md
+task.md
+walkthrough.md
+node_modules/
+.next/
+dist/
+build/
+coverage/
+.DS_Store
+*.log
+.eslintcache

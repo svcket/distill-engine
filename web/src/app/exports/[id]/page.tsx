@@ -21,7 +21,7 @@ import {
     Italic as ItalicIcon,
     List as ListIcon,
     Type,
-    Settings2,
+    ChevronDown,
     FileText as FileIcon,
     Check
 } from "lucide-react"
@@ -533,7 +533,7 @@ export default function DraftWorkspacePage() {
                                     <DropdownMenu>
                                         <DropdownMenuTrigger>
                                             <Button variant="outline" className="w-full justify-between h-9 text-xs">
-                                                {regenTone.charAt(0).toUpperCase() + regenTone.slice(1)} <Settings2 className="w-3 h-3 ml-2 opacity-40 " />
+                                                {regenTone.charAt(0).toUpperCase() + regenTone.slice(1)} <ChevronDown className="w-3 h-3 ml-2 opacity-60" />
                                             </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent>
@@ -552,7 +552,7 @@ export default function DraftWorkspacePage() {
                                     <DropdownMenu>
                                         <DropdownMenuTrigger>
                                             <Button variant="outline" className="w-full justify-between h-9 text-xs">
-                                                {regenIntent.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())} <Settings2 className="w-3 h-3 ml-2 opacity-40 " />
+                                                {regenIntent.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())} <ChevronDown className="w-3 h-3 ml-2 opacity-60" />
                                             </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent>

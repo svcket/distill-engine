@@ -36,8 +36,34 @@ export async function POST(request: Request) {
         orderBy: { createdAt: 'desc' }
     })
 
-    const draftPath = path.join(EXECUTION_DIR, '.tmp', 'drafts', `${sourceId}_draft.json`)
-    const summaryPath = path.join(EXECUTION_DIR, '.tmp', 'summaries', sourceId, `${sourceId}_summary.json`)
+    function resolveFilePath(baseDir: string, dir: string, sourceId: string, suffix: string): string {
+        const strictPath = path.join(baseDir, dir, `${sourceId}${suffix}`);
+        if (fs.existsSync(strictPath)) return strictPath;
+    
+        const strippedId = sourceId.replace(/^spotify_/, '');
+        const strippedPath = path.join(baseDir, dir, `${strippedId}${suffix}`);
+        if (fs.existsSync(strippedPath)) return strippedPath;
+    
+        if (!sourceId.startsWith('spotify_')) {
+            const prefixedPath = path.join(baseDir, dir, `spotify_${sourceId}${suffix}`);
+            if (fs.existsSync(prefixedPath)) return prefixedPath;
+        }
+
+        const altDir = path.join(baseDir, dir, sourceId);
+        const altStrictPath = path.join(altDir, `${sourceId}${suffix}`);
+        if (fs.existsSync(altStrictPath)) return altStrictPath;
+
+        const altStrippedPath = path.join(baseDir, dir, strippedId, `${strippedId}${suffix}`);
+        if (fs.existsSync(altStrippedPath)) return altStrippedPath;
+
+        const altPrefixedPath = !sourceId.startsWith('spotify_') ? path.join(baseDir, dir, `spotify_${sourceId}`, `spotify_${sourceId}${suffix}`) : '';
+        if (altPrefixedPath && fs.existsSync(altPrefixedPath)) return altPrefixedPath;
+        
+        return strictPath; // Default fallback if none found
+    }
+
+    const draftPath = resolveFilePath(EXECUTION_DIR, '.tmp/drafts', sourceId, '_draft.json')
+    const summaryPath = resolveFilePath(EXECUTION_DIR, '.tmp/summaries', sourceId, '_summary.json')
     const outputDir = path.join(EXECUTION_DIR, '.tmp', 'socialise')
     const outputPath = path.join(outputDir, `${sourceId}_thread.json`)
 
@@ -46,7 +72,6 @@ export async function POST(request: Request) {
     }
 
     // Pre-flight check: ensure the required files exist for the Python script
-    // We prefer the artifacts on disk over DB content to ensure consistency with what the script expects
     if (!fs.existsSync(draftPath)) {
         // If draft artifact is missing but we have it in DB, write it back to disk to satisfy the script
         if (draft?.content) {
@@ -54,12 +79,12 @@ export async function POST(request: Request) {
             if (!fs.existsSync(draftsDir)) fs.mkdirSync(draftsDir, { recursive: true })
             fs.writeFileSync(draftPath, JSON.stringify({ content: draft.content, sourceId }))
         } else {
-            return NextResponse.json({ error: "No draft artifact found. Please generate a draft first." }, { status: 102 })
+            return NextResponse.json({ error: "No draft artifact found. Please generate a draft first." }, { status: 400 })
         }
     }
 
     if (!fs.existsSync(summaryPath)) {
-        return NextResponse.json({ error: "No summary artifact found. Please generate a summary first." }, { status: 102 })
+        return NextResponse.json({ error: "No summary artifact found. Please generate a summary first." }, { status: 400 })
     }
 
     try {

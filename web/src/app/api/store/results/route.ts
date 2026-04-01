@@ -38,21 +38,36 @@ export async function GET(request: Request) {
     const baseDir = path.resolve(process.cwd(), '../execution/.tmp')
     const results: Record<string, unknown> = {}
 
-    // Map stage IDs to their output files
-    const stageFiles: Record<string, string> = {
-        insights: path.join(baseDir, 'insights', `${sourceId}_insights.json`),
-        angle: path.join(baseDir, 'angles', `${sourceId}_angle.json`),
-        draft: path.join(baseDir, 'drafts', `${sourceId}_draft.json`),
-        packet: path.join(baseDir, 'insight_packets', `${sourceId}_packet.json`),
-        blueprint: path.join(baseDir, 'outlines', `${sourceId}_outline.json`),
-        transcript: path.join(baseDir, 'transcripts', sourceId, `${sourceId}_raw.json`),
-        refine: path.join(baseDir, 'refined_transcripts', sourceId, `${sourceId}_refined.json`),
-        summary: path.join(baseDir, 'summaries', sourceId, `${sourceId}_summary.json`),
-        qa: path.join(baseDir, 'evaluations', `${sourceId}_eval.json`),
-        visual: path.join(baseDir, 'visual_plans', `${sourceId}_visual_plan.json`),
+    // Helper to try multiple file naming conventions to resolve sourceId misalignment
+    const resolveFilePath = (folder: string, prefix: string, suffix: string) => {
+        const primary = path.join(baseDir, folder, prefix, `${sourceId}${suffix}`);
+        if (fs.existsSync(primary)) return primary;
+
+        const withoutSpotify = sourceId.replace(/^spotify_/, '');
+        const alt1 = path.join(baseDir, folder, prefix, `${withoutSpotify}${suffix}`);
+        if (fs.existsSync(alt1)) return alt1;
+
+        const alt2 = path.join(baseDir, folder, prefix, `spotify_${withoutSpotify}${suffix}`);
+        if (fs.existsSync(alt2)) return alt2;
+
+        return primary; // fallback to primary if none exist for consistent error behavior
     }
 
-    for (const [stageId, filePath] of Object.entries(stageFiles)) {
+    // Map stage IDs to their output files
+    const resolvedFiles: Record<string, string> = {
+        insights: resolveFilePath('insights', '', '_insights.json'),
+        angle: resolveFilePath('angles', '', '_angle.json'),
+        draft: resolveFilePath('drafts', '', '_draft.json'),
+        packet: resolveFilePath('insight_packets', '', '_packet.json'),
+        blueprint: resolveFilePath('outlines', '', '_outline.json'),
+        transcript: resolveFilePath('transcripts', sourceId, `${sourceId}_raw.json`),
+        refine: resolveFilePath('refined_transcripts', sourceId, `${sourceId}_refined.json`),
+        summary: resolveFilePath('summaries', sourceId, `${sourceId}_summary.json`),
+        qa: resolveFilePath('evaluations', '', '_eval.json'),
+        visual: resolveFilePath('visual_plans', '', '_visual_plan.json'),
+    }
+
+    for (const [stageId, filePath] of Object.entries(resolvedFiles)) {
         if (fs.existsSync(filePath)) {
             try {
                 const raw = fs.readFileSync(filePath, 'utf-8')

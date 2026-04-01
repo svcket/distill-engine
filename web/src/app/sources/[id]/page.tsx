@@ -7,7 +7,7 @@ import { StageResultPanel } from "@/components/StageResultView"
 import { SourceCandidate } from "@/lib/mockData"
 import { 
     ArrowLeft, Loader2, FileText, Bot, Sparkles, Target, Edit3, 
-    ShieldCheck, Check, ChevronDown, ChevronUp, RefreshCw, Play, Share2, 
+    ShieldCheck, Check, ChevronDown, RefreshCw, Play, Share2, 
     ExternalLink, MoreHorizontal, Trash2, X, Calendar, Clock, BarChart3
 } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
@@ -212,9 +212,8 @@ export default function SourceMissionControl() {
 
     // Writing Intent states
     const [intentType, setIntentType] = useState<string>("blog_article")
-    const [intentAudience, setIntentAudience] = useState<string>("general_reader")
-    const [intentTone, setIntentTone] = useState<string>("conversational_editorial")
-    const [focusedField, setFocusedField] = useState<string | null>(null)
+    const [intentAudience, setIntentAudience] = useState<string>("general")
+    const [intentTone, setIntentTone] = useState<string>("professional")
 
     // Expanded accordion IDs
 
@@ -322,18 +321,21 @@ export default function SourceMissionControl() {
 
     // Determine the absolute next stage for the pipeline loop (including hidden)
     const getFirstIncompleteIndex = (): number => {
+        const tStatus = source.transcriptStatus
+        const isTranscriptDone = tStatus === "transcribed" || tStatus === "rescued_text" || tStatus === "unavailable"
+        
         for (let i = 0; i < STAGES.length; i++) {
-            if (!completedStages.has(STAGES[i].id)) return i
+            const s = STAGES[i]
+            if (s.id === "transcript" && isTranscriptDone) continue
+            if (!completedStages.has(s.id)) return i
         }
         return STAGES.length
     }
 
     // Determine the stage currently interactive in the UI (visible only)
     const getActiveVisibleIndex = (): number => {
-        for (let i = 0; i < STAGES.length; i++) {
-            if (!completedStages.has(STAGES[i].id) && !STAGES[i].hidden) return i
-        }
-        return STAGES.length
+        const index = STAGES.findIndex(s => !s.hidden && !completedStages.has(s.id))
+        return index === -1 ? STAGES.length : index
     }
 
     const activeIndex = getFirstIncompleteIndex()
@@ -348,12 +350,9 @@ export default function SourceMissionControl() {
         // Ensure transcript stage shows as completed if status is retrieved
         if (stage.id === "transcript" && (tStatus === "transcribed" || tStatus === "rescued_text" || tStatus === "unavailable")) return "completed"
         
-        // Hard Gate: Only lock if transcript explicitly FAILED (code error), not if it's just unavailable (DRM)
-        const isTranscriptDead = tStatus === "failed"
-        if (isTranscriptDead && (stage.id === "transcript" || index > STAGES.findIndex(s => s.id === "transcript"))) {
-            return "locked"
-        }
-
+        // Force angle to be active if insights are done - handles ghost stage blockage
+        if (stage.id === "angle" && (completedStages.has("insights") || activeVisibleIndex === index)) return "active"
+        
         // A stage is active if it's the next visible thing to do
         if (index === activeVisibleIndex) return "active"
         
@@ -627,17 +626,20 @@ export default function SourceMissionControl() {
         setIsRunningAll(true)
         setError(null)
 
-        const startIndex = getFirstIncompleteIndex()
+        const currentCompleted = new Set(completedStages)
         const currentResults: Record<string, StageResultData> = { ...stageResults }; // Local mutable copy for gating checks
+        const startIndex = getFirstIncompleteIndex()
 
-        for (let i = startIndex; i < STAGES.length; i++) {
+        for (let i = 0; i < STAGES.length; i++) {
             const stage = STAGES[i]
+
+            if (currentCompleted.has(stage.id)) continue
 
             // ─── CLUSTER OPTIMIZATION ───
             // If we are at 'refine' or 'summary' or 'insights', and the cluster has not run yet,
             // we trigger the Unified Cluster and propagate the results to all child stages.
             if ((stage.id === "cluster" || stage.id === "refine" || stage.id === "summary" || stage.id === "insights") && 
-                !completedStages.has("cluster")) {
+                !currentCompleted.has("cluster")) {
                 
                 setExecutingStage("cluster");
                 setLogs(prev => [{ event: "Initiating Unified Analysis Cluster...", time: "Just now", status: "info" }, ...prev]);
@@ -655,17 +657,16 @@ export default function SourceMissionControl() {
                     
                     // Propagate results to all clustered stages
                     const updateObj: Record<string, StageResultData> = { ...currentResults };
-                    const newCompletions = new Set(completedStages);
                     
-                    if (results.refine) { updateObj.refine = results.refine; newCompletions.add("refine"); }
-                    if (results.summary) { updateObj.summary = results.summary; newCompletions.add("summary"); }
-                    if (results.packet) { updateObj.packet = results.packet; newCompletions.add("packet"); }
-                    if (results.insights) { updateObj.insights = results.insights; newCompletions.add("insights"); }
+                    if (results.refine) { updateObj.refine = results.refine; currentResults.refine = results.refine; currentCompleted.add("refine"); }
+                    if (results.summary) { updateObj.summary = results.summary; currentResults.summary = results.summary; currentCompleted.add("summary"); }
+                    if (results.packet) { updateObj.packet = results.packet; currentResults.packet = results.packet; currentCompleted.add("packet"); }
+                    if (results.insights) { updateObj.insights = results.insights; currentResults.insights = results.insights; currentCompleted.add("insights"); }
                     
-                    newCompletions.add("cluster");
+                    currentCompleted.add("cluster");
                     
                     setStageResults(prev => ({ ...prev, ...updateObj }));
-                    setCompletedStages(newCompletions);
+                    setCompletedStages(new Set(currentCompleted));
                     
                     // Update local loop counter to skip the constituent stages
                     // We skip to 'angle'
@@ -687,7 +688,7 @@ export default function SourceMissionControl() {
 
             // ─── PARALLELIZATION OPTIMIZATION ───
             // After 'draft' is done, we can run 'qa' and 'socialise' in parallel.
-            if (stage.id === "qa" && completedStages.has("draft")) {
+            if (stage.id === "qa" && currentCompleted.has("draft")) {
                 setExecutingStage("qa");
                 setLogs(prev => [{ event: "Launching Parallel Verification & Socialisation...", time: "Just now", status: "info" }, ...prev]);
                 
@@ -723,6 +724,8 @@ export default function SourceMissionControl() {
                     
                     setStageResults(prev => ({ ...prev, qa: qaValue, socialise: socialValue }));
                     setCompletedStages(prev => new Set([...prev, "qa", "socialise"]));
+                    currentCompleted.add("qa");
+                    currentCompleted.add("socialise");
                     
                     setLogs(prev => [{ event: "Parallel verification and assets completed", time: "Just now", status: "success" }, ...prev]);
                     
@@ -787,6 +790,7 @@ export default function SourceMissionControl() {
                 setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
                 currentResults[stage.id] = resValue
                 setCompletedStages(prev => new Set([...prev, stage.id]))
+                currentCompleted.add(stage.id)
                 
                 // Persist to localStorage
                 const localKey = `distill_results_${id}`;
@@ -812,6 +816,7 @@ export default function SourceMissionControl() {
                     next.add(stage.id)
                     return next
                 })
+                currentCompleted.add(stage.id)
                 setLogs(prev => [{ event: `${stage.label} skipped (not implemented)`, time: "Just now", status: "info" }, ...prev])
                 continue
             }
@@ -915,13 +920,28 @@ export default function SourceMissionControl() {
                 // Store result
                 const resValue = (data?.result || data) as StageResultData
                 if (resValue) {
-                    setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
+                    setStageResults(prev => {
+                        const next = { ...prev, [stage.id]: resValue }
+                        if (stage.id === "cluster" && typeof resValue === "object") {
+                            const cr = resValue as Record<string, unknown>
+                            if (cr.summary) next.summary = cr.summary as StageResultData
+                            if (cr.packet) next.packet = cr.packet as StageResultData
+                            if (cr.insights) next.insights = cr.insights as StageResultData
+                        }
+                        return next
+                    })
                     currentResults[stage.id] = resValue // Update local copy for gating
+                    if (stage.id === "cluster" && typeof resValue === "object") {
+                        const cr = resValue as Record<string, unknown>
+                        if (cr.summary) currentResults.summary = cr.summary as StageResultData
+                        if (cr.packet) currentResults.packet = cr.packet as StageResultData
+                        if (cr.insights) currentResults.insights = cr.insights as StageResultData
+                    }
 
                     // ─── TRANSCRIPT GUARDRAIL ───
                     if (stage.id === "transcript") {
                         const tsData = (resValue as TranscriptResult);
-                        const segments = tsData?.segments || (resValue as { result?: { segments?: any[] } })?.result?.segments;
+                        const segments = tsData?.segments || (resValue as { result?: { segments?: unknown[] } })?.result?.segments;
                         if (!segments || segments.length === 0) {
                             const errorMsg = "Transcription failed: No text segments were extracted. Pipeline halted.";
                             setError({ message: errorMsg, type: "error" });
@@ -944,7 +964,23 @@ export default function SourceMissionControl() {
                 }
 
                 // Mark completed
-                setCompletedStages(prev => new Set([...prev, stage.id]))
+                setCompletedStages(prev => {
+                    const next = new Set([...prev, stage.id])
+                    if (stage.id === "cluster") {
+                        next.add("refine")
+                        next.add("summary")
+                        next.add("packet")
+                        next.add("insights")
+                    }
+                    return next
+                })
+                currentCompleted.add(stage.id)
+                if (stage.id === "cluster") {
+                    currentCompleted.add("refine")
+                    currentCompleted.add("summary")
+                    currentCompleted.add("packet")
+                    currentCompleted.add("insights")
+                }
 
                 // Update UI metadata
                 if (stage.id === "qa" && data && typeof data === 'object') {
@@ -1018,7 +1054,12 @@ export default function SourceMissionControl() {
         }
 
         setIsRunningAll(false)
-        setLogs(prev => [{ event: "Full pipeline completed successfully", time: "Just now", status: "success" }, ...prev])
+        setExecutingStage(null)
+        
+        // Only log overall success if we reached the final stage without halting
+        if (currentCompleted.has("socialise")) {
+            setLogs(prev => [{ event: "Full pipeline completed successfully", time: "Just now", status: "success" }, ...prev])
+        }
 
         // ═══ FINAL METADATA REFRESH ═══
         // Ensure the source metadata (score, status, etc.) is fully synced from the store
@@ -1340,94 +1381,73 @@ export default function SourceMissionControl() {
                                                                 </div>
                                                             </div>
 
-                                                    {/* Writing Intent Setup moved to Angle Stage Checkpoint - Always visible when stage is selected or done */}
-                                                    {stage.id === "angle" && isActive && (
+                                                    {/* Writing Intent Setup automatically appears when Insights are ready */}
+                                                    {stage.id === "angle" && (completedStages.has("insights") || status === "active" || status === "completed") && !completedStages.has("draft") && (
                                                         <div className="mt-8 p-8 rounded-[2rem] bg-card border border-border/80 shadow-soft animate-in fade-in slide-in-from-top-2 flex flex-col gap-6 w-full lg:max-w-3xl" onClick={e => e.stopPropagation()}>
                                                             <div className="flex items-center gap-2 mb-1">
                                                                 <Bot className="w-4 h-4 text-brand" />
                                                                 <h4 className="text-[12px] font-bold text-foreground uppercase tracking-wider font-serif">Writing Intent Strategy</h4>
                                                             </div>
-                                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                                                {/* Content Type */}
-                                                                <div className="space-y-1.5">
-                                                                    <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Format</label>
-                                                                    <div className="relative">
-                                                                        <select
-                                                                            value={intentType}
-                                                                            onChange={(e) => { setIntentType(e.target.value); invalidateStrategy(); }}
-                                                                            onFocus={() => setFocusedField('format')}
-                                                                            onBlur={() => setFocusedField(null)}
-                                                                            title="Select content format"
-                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none transition-all"
-                                                                        >
-                                                                            <option value="technical_explainer">Technical Explainer</option>
-                                                                            <option value="blog_article">Blog Article</option>
-                                                                            <option value="essay">Thematic Essay</option>
-                                                                            <option value="technical_breakdown">Technical Breakdown</option>
-                                                                            <option value="explainer">Explainer</option>
-                                                                            <option value="thought_leadership">Thought Leadership</option>
-                                                                        </select>
-                                                                        <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-                                                                            {focusedField === 'format' ? (
-                                                                                <ChevronUp className="h-4 w-4 text-brand transition-transform duration-200" />
-                                                                            ) : (
-                                                                                <ChevronDown className="h-4 w-4 text-muted-foreground/60 transition-transform duration-200" />
-                                                                            )}
+                                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                                                    {/* Content Type */}
+                                                                    <div className="space-y-1.5">
+                                                                        <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Format</label>
+                                                                        <div className="relative">
+                                                                                <select
+                                                                                    value={intentType}
+                                                                                    onChange={(e) => { setIntentType(e.target.value); invalidateStrategy(); }}
+                                                                                    title="Select content format"
+                                                                                    className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg !px-3 !pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none !bg-none transition-all"
+                                                                                >
+                                                                                <option value="blog_article">Blog Article</option>
+                                                                                <option value="essay">Thematic Essay</option>
+                                                                                <option value="technical_breakdown">Technical Breakdown</option>
+                                                                                <option value="explainer">Explainer</option>
+                                                                            </select>
+                                                                            <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                                                                                <ChevronDown className="h-3 w-3 text-muted-foreground/60" />
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="space-y-1.5">
+                                                                        <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Audience</label>
+                                                                        <div className="relative">
+                                                                                <select
+                                                                                    value={intentAudience}
+                                                                                    onChange={(e) => { setIntentAudience(e.target.value); invalidateStrategy(); }}
+                                                                                    title="Select target audience"
+                                                                                    className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg !px-3 !pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none !bg-none transition-all"
+                                                                                >
+                                                                                <option value="general">General Reader</option>
+                                                                                <option value="professional">Professional</option>
+                                                                                <option value="founder">Founder / Operator</option>
+                                                                                <option value="technical">Technical</option>
+                                                                            </select>
+                                                                            <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                                                                                <ChevronDown className="h-3 w-3 text-muted-foreground/60" />
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="space-y-1.5">
+                                                                        <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Tone</label>
+                                                                        <div className="relative">
+                                                                                <select
+                                                                                    value={intentTone}
+                                                                                    onChange={(e) => { setIntentTone(e.target.value); invalidateStrategy(); }}
+                                                                                    title="Select voice and tone"
+                                                                                    className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg !px-3 !pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none !bg-none transition-all"
+                                                                                >
+                                                                                <option value="professional">Professional</option>
+                                                                                <option value="witty">Witty & Sharp</option>
+                                                                                <option value="academic">Academic</option>
+                                                                                <option value="bold">Bold & Provocative</option>
+                                                                            </select>
+                                                                            <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                                                                                <ChevronDown className="h-3 w-3 text-muted-foreground/60" />
+                                                                            </div>
                                                                         </div>
                                                                     </div>
                                                                 </div>
-                                                                <div className="space-y-1.5">
-                                                                    <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Audience</label>
-                                                                    <div className="relative">
-                                                                        <select
-                                                                            value={intentAudience}
-                                                                            onChange={(e) => { setIntentAudience(e.target.value); invalidateStrategy(); }}
-                                                                            onFocus={() => setFocusedField('audience')}
-                                                                            onBlur={() => setFocusedField(null)}
-                                                                            title="Select target audience"
-                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none transition-all"
-                                                                        >
-                                                                            <option value="general_reader">General Reader</option>
-                                                                            <option value="beginner">Beginner</option>
-                                                                            <option value="professional">Professional / Peer</option>
-                                                                            <option value="founder">Founder / Operator</option>
-                                                                            <option value="technical">Technical Engineer</option>
-                                                                        </select>
-                                                                        <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-                                                                            {focusedField === 'audience' ? (
-                                                                                <ChevronUp className="h-4 w-4 text-brand transition-transform duration-200" />
-                                                                            ) : (
-                                                                                <ChevronDown className="h-4 w-4 text-muted-foreground/60 transition-transform duration-200" />
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="space-y-1.5">
-                                                                    <label className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">Tone</label>
-                                                                    <div className="relative">
-                                                                        <select
-                                                                            value={intentTone}
-                                                                            onChange={(e) => { setIntentTone(e.target.value); invalidateStrategy(); }}
-                                                                            onFocus={() => setFocusedField('tone')}
-                                                                            onBlur={() => setFocusedField(null)}
-                                                                            title="Select voice and tone"
-                                                                            className="h-9 text-xs bg-muted/20 border border-border/60 rounded-lg px-3 pr-8 w-full focus:ring-1 focus:ring-brand shadow-micro appearance-none transition-all"
-                                                                        >
-                                                                            <option value="conversational_editorial">Conversational</option>
-                                                                            <option value="formal_authoritative">Formal</option>
-                                                                            <option value="reflective_essay">Reflective</option>
-                                                                            <option value="dense_information">Direct</option>
-                                                                        </select>
-                                                                        <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-                                                                            {focusedField === 'tone' ? (
-                                                                                <ChevronUp className="h-4 w-4 text-brand transition-transform duration-200" />
-                                                                            ) : (
-                                                                                <ChevronDown className="h-4 w-4 text-muted-foreground/60 transition-transform duration-200" />
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
                                                             <div className="flex items-center justify-between mt-1 pt-4 border-t border-border/50">
                                                                 <p className="text-[11px] text-muted-foreground italic flex items-center gap-1.5">
                                                                     <Sparkles className="w-3 h-3" />
@@ -1528,7 +1548,7 @@ export default function SourceMissionControl() {
 
             {/* ═══ SIDE PANEL / DETAIL DRAWER ═══ */}
             {panelContent && (
-                <div className="fixed inset-y-0 right-0 z-50 w-full h-[100dvh] lg:static lg:w-[480px] lg:h-auto shrink-0 border-l border-border/60 bg-background/95 backdrop-blur-xl flex flex-col animate-in slide-in-from-right-4 duration-300">
+                <div className="fixed inset-y-0 right-0 z-50 w-full h-[100dvh] lg:static lg:w-[480px] lg:h-full shrink-0 border-l border-border/60 bg-background/95 backdrop-blur-xl flex flex-col animate-in slide-in-from-right-4 duration-300">
                     <div className="h-16 flex items-center justify-between px-6 border-b border-border/60 shrink-0">
                         <h3 className="text-[17px] font-semibold tracking-tight font-serif">{panelContent.title}</h3>
                         <button onClick={() => setPanelContent(null)} aria-label="Close panel" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all duration-200">

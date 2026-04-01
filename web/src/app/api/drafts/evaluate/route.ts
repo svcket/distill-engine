@@ -16,8 +16,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing sourceId" }, { status: 400 })
         }
 
-        // Run the evaluate_matrix.py script
-        const { success, data, error: scriptError } = await runPythonScript<Record<string, any>>('evaluate_matrix.py', [
+        // Run the evaluate_dqm.py script
+        const { success, data, error: scriptError } = await runPythonScript<Record<string, any>>('evaluate_dqm.py', [
             '--source-id', sourceId
         ])
         

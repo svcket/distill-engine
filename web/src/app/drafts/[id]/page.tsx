@@ -355,12 +355,32 @@ export default function DraftStudioPage() {
                         <CardHeader className="border-b bg-muted/20">
                             <CardDescription className="flex items-center gap-2">
                                 <FileText className="w-4 h-4" />
-                                <span>{draft.word_count || (draft.content?.split(/\s+/).length || 0)} Words</span>
+                                <span>{(() => {
+                                    if (draft?.word_count) return draft.word_count;
+                                    
+                                    const contentStr = draft?.content || '';
+                                    if (typeof contentStr === 'string' && contentStr.startsWith('{')) {
+                                        try {
+                                            const parsed = JSON.parse(contentStr);
+                                            return parsed.word_count || (parsed.content?.split(/\\s+/).length || 0);
+                                        } catch { /* ignore */ }
+                                    }
+                                    return contentStr?.split(/\\s+/).filter(Boolean).length || 0;
+                                })()} Words</span>
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="p-8 prose prose-zinc max-w-none">
                             <div className="whitespace-pre-wrap font-serif text-foreground/90 leading-relaxed">
-                                {draft.content}
+                                {(() => {
+                                    const contentStr = draft?.content || '';
+                                    if (typeof contentStr === 'string' && contentStr.startsWith('{')) {
+                                        try {
+                                            const parsed = JSON.parse(contentStr);
+                                            return parsed.content || contentStr;
+                                        } catch { /* ignore */ }
+                                    }
+                                    return contentStr;
+                                })()}
                             </div>
                         </CardContent>
                     </Card>

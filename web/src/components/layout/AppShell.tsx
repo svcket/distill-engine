@@ -195,9 +195,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
 
             {/* Main Content Area */}
-            <main className="flex-1 overflow-y-auto overscroll-contain scroll-smooth">
+            <main className="flex-1 flex flex-col min-h-0 overflow-hidden font-sans">
                 {!isLoginPage && (
-                    <header className="h-14 flex items-center justify-between px-4 lg:px-8 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-40">
+                    <header className="h-14 flex items-center justify-between px-4 lg:px-8 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-40 flex-shrink-0">
                         <div className="flex items-center gap-2 text-[10px] lg:text-sm text-muted-foreground truncate uppercase tracking-widest font-bold lg:normal-case lg:font-normal lg:tracking-normal">
                             <span className="hidden lg:inline">Distill Engine <span className="text-border">/</span></span> <span className="text-foreground font-serif font-medium">{breadcrumb}</span>
                         </div>
@@ -241,7 +241,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                             </button>
                                         ))}
                                     </div>
-                                )}
+                                    )}
                             </div>
                         </div>
                     </header>
@@ -249,7 +249,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                 <div 
                     className={cn(
-                        "flex-1",
+                        "flex-1 min-h-0 overflow-y-auto overflow-x-hidden scroll-smooth",
                         !isLoginPage && "bg-page-bg"
                     )}
                 >

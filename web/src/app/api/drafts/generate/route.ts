@@ -32,11 +32,24 @@ export async function POST(request: Request) {
     }
 
     const sourceId = transcriptId
-    const insightsPath = path.join(EXECUTION_DIR, '.tmp', 'insights', `${sourceId}_insights.json`)
-    const anglePath = path.join(EXECUTION_DIR, '.tmp', 'angles', `${sourceId}_angle.json`)
-    const outlinePath = path.join(EXECUTION_DIR, '.tmp', 'outlines', `${sourceId}_outline.json`)
-    const packetPath = path.join(EXECUTION_DIR, '.tmp', 'insight_packets', `${sourceId}_packet.json`)
-    const briefPath = path.join(EXECUTION_DIR, '.tmp', 'briefs', `${sourceId}_brief.json`)
+    const baseDir = path.resolve(process.cwd(), '../execution/.tmp')
+
+    const resolveFilePath = (folder: string, prefix: string, suffix: string) => {
+        const primary = path.join(baseDir, folder, prefix, `${sourceId}${suffix}`);
+        if (fs.existsSync(primary)) return primary;
+        const withoutSpotify = sourceId.replace(/^spotify_/, '');
+        const alt1 = path.join(baseDir, folder, prefix, `${withoutSpotify}${suffix}`);
+        if (fs.existsSync(alt1)) return alt1;
+        const alt2 = path.join(baseDir, folder, prefix, `spotify_${withoutSpotify}${suffix}`);
+        if (fs.existsSync(alt2)) return alt2;
+        return primary;
+    }
+
+    const insightsPath = resolveFilePath('insights', '', '_insights.json')
+    const anglePath = resolveFilePath('angles', '', '_angle.json')
+    const outlinePath = resolveFilePath('outlines', '', '_outline.json')
+    const packetPath = resolveFilePath('insight_packets', '', '_packet.json')
+    const briefPath = resolveFilePath('briefs', '', '_brief.json')
 
     if (stream) {
         const readable = new ReadableStream({
@@ -237,13 +250,13 @@ export async function POST(request: Request) {
         draftId 
             ? prisma.draft.update({
                 where: { id: draftId, userId: userId },
-                data: { content: result.data || result }
+                data: { content: result.data?.content || result.content || (typeof (result.data || result) === 'string' ? (result.data || result) : JSON.stringify(result.data || result)) }
               })
             : prisma.draft.create({
                 data: {
                     userId: userId,
                     title: source.title || `Draft for ${sourceId}`,
-                    content: result.data || result
+                    content: result.data?.content || result.content || (typeof (result.data || result) === 'string' ? (result.data || result) : JSON.stringify(result.data || result))
                 }
             }),
         prisma.usage.upsert({

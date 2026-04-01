@@ -15,21 +15,43 @@ export async function GET(
     const baseDir = path.resolve(process.cwd(), '../execution/.tmp')
     const results: Record<string, unknown> = {}
 
-    // Map stage IDs to their output files
-    const stageFiles: Record<string, string> = {
-        insights: path.join(baseDir, 'insights', `${sourceId}_insights.json`),
-        angle: path.join(baseDir, 'angles', `${sourceId}_angle.json`),
-        draft: path.join(baseDir, 'drafts', `${sourceId}_draft.json`),
-        packet: path.join(baseDir, 'insight_packets', `${sourceId}_packet.json`),
-        transcript: path.join(baseDir, 'transcripts', sourceId, `${sourceId}_raw.json`),
-        refine: path.join(baseDir, 'refined_transcripts', sourceId, `${sourceId}_refined.json`),
-        summary: path.join(baseDir, 'summaries', sourceId, `${sourceId}_summary.json`),
-        qa: path.join(baseDir, 'evaluations', `${sourceId}_eval.json`),
-        visual: path.join(baseDir, 'visual_plans', `${sourceId}_visual_plan.json`),
-        socialise: path.join(baseDir, 'socialise', `${sourceId}_thread.json`),
+    function resolveFilePath(baseDir: string, folder: string, id: string, suffix: string): string {
+        const strictPath = path.join(baseDir, folder, id, `${id}${suffix}`);
+        const shallowPath = path.join(baseDir, folder, `${id}${suffix}`);
+        if (fs.existsSync(strictPath)) return strictPath;
+        if (fs.existsSync(shallowPath)) return shallowPath;
+    
+        const strippedId = id.replace(/^spotify_/, '');
+        const strippedStrictPath = path.join(baseDir, folder, strippedId, `${strippedId}${suffix}`);
+        const strippedShallowPath = path.join(baseDir, folder, `${strippedId}${suffix}`);
+        if (fs.existsSync(strippedStrictPath)) return strippedStrictPath;
+        if (fs.existsSync(strippedShallowPath)) return strippedShallowPath;
+    
+        if (!id.startsWith('spotify_')) {
+            const prefixedStrictPath = path.join(baseDir, folder, `spotify_${id}`, `spotify_${id}${suffix}`);
+            const prefixedShallowPath = path.join(baseDir, folder, `spotify_${id}${suffix}`);
+            if (fs.existsSync(prefixedStrictPath)) return prefixedStrictPath;
+            if (fs.existsSync(prefixedShallowPath)) return prefixedShallowPath;
+        }
+
+        return strictPath; // Default fallback
     }
 
-    for (const [stageId, filePath] of Object.entries(stageFiles)) {
+    // Map stage IDs to their output files using the resolver
+    const stageResults: Record<string, string> = {
+        insights: resolveFilePath(baseDir, 'insights', sourceId, '_insights.json'),
+        angle: resolveFilePath(baseDir, 'angles', sourceId, '_angle.json'),
+        draft: resolveFilePath(baseDir, 'drafts', sourceId, '_draft.json'),
+        packet: resolveFilePath(baseDir, 'insight_packets', sourceId, '_packet.json'),
+        transcript: resolveFilePath(baseDir, 'transcripts', sourceId, '_raw.json'),
+        refine: resolveFilePath(baseDir, 'refined_transcripts', sourceId, '_refined.json'),
+        summary: resolveFilePath(baseDir, 'summaries', sourceId, '_summary.json'),
+        qa: resolveFilePath(baseDir, 'evaluations', sourceId, '_eval.json'),
+        visual: resolveFilePath(baseDir, 'visual_plans', sourceId, '_visual_plan.json'),
+        socialise: resolveFilePath(baseDir, 'socialise', sourceId, '_thread.json'),
+    }
+
+    for (const [stageId, filePath] of Object.entries(stageResults)) {
         if (fs.existsSync(filePath)) {
             try {
                 const raw = fs.readFileSync(filePath, 'utf-8')
