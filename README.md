@@ -4,8 +4,6 @@
 
 Distill Engine is an advanced, high-fidelity content transformation platform designed for modern digital agencies and editorial teams. It automates the extraction, synthesis, and creative restructuring of long-form audio and visual media into premium, brand-aligned digital assets.
 
-![Hero Banner](https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2000&auto=format&fit=crop)
-
 ## 🏛️ Core Architecture
 
 The system is built on a decoupled, three-tier architecture ensuring maximum reliability and performant data processing:
