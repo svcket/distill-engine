@@ -17,11 +17,14 @@ next-env.d.ts
 # AI & Agentic Workflow
 .agents/
 .antigravity/
+.agent/
 .cursorrules
 .gemini/
 AGENTS.md
 CLAUDE.md
 NORTHSTAR_PROFILE.md
+North_Star_profile.md
+NorthStar_profile.md
 build_log.md
 directives/
 ideas/
@@ -30,6 +33,10 @@ systems/
 brain/
 skill_curator.md
 *.pen
+skills/
+skills.md
+maintenance/
+tmp/
 implementation_plan.md
 task.md
 walkthrough.md

@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Distill Web
 
-## Getting Started
+> **High-Fidelity Editorial Dashboard Layer**
 
-First, run the development server:
+This repository contains the Next.js frontend of the Distill Engine. It provides a premium dashboard experience for managing sources, analyzing content with DQM, and refining drafts in the Studio.
 
+## 🎨 Design Philosophy
+
+Distill Web is designed with a **"High-Fidelity Industrial"** aesthetic.
+- **Glassmorphism**: Subtle backdrops and blurs for UI clarity.
+- **Micro-interactions**: Framer Motion animations for seamless state transitions.
+- **Consistency**: Standardized dropdowns, icons (Lucide), and viewport frame integrity.
+
+## 🛠️ Architecture
+
+- **App Router**: Leveraging Next.js 15+ App Router for performant data fetching and layouts.
+- **Prisma/Supabase**: Direct connection to the PostgreSQL persistence layer.
+- **SWR/React Query**: Potential client-side data management strategies.
+- **Tailwind v4**: Utilizing the latest CSS ecosystem features for atomic styling.
+
+## 📂 Directory Structure
+
+- `/src/app`: Root layouts, static pages, and API handlers.
+- `/src/components`: Atomic UI components and layout wrappers (`AppShell`, `Directory`, `Studio`).
+- `/src/hooks`: Custom React hooks for global state and logic.
+- `/src/lib`: Shared utilities and database initializers.
+
+## 📦 Local Development
+
+### Installation
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment Setup
+Create a `.env` in the root of the `web` folder:
+```bash
+DATABASE_URL="postgresql://..."
+AUTH_SECRET="..."
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Run Dev Server
+```bash
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## ⚖️ Quality Standards
+- No double arrows on dropdowns.
+- Fixed header and sidebar context.
+- High-contrast, brand-aligned color palettes.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+*Built with precision by [svcket](https://github.com/svcket)*
