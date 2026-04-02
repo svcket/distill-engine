@@ -133,11 +133,13 @@ export async function POST(request: Request) {
                     transcriptStatus: 'failed'
                 }
             })
+            // Soft failure: Return what we have instead of 500
             return NextResponse.json({ 
                 error: "Transcription failed", 
                 details: scriptError,
-                raw: scriptError 
-            }, { status: 500 })
+                message: "We encountered an issue fetching the full transcript. Some metadata may be missing.",
+                result: { status: 'failed' }
+            }, { status: 200 }) // Return 200 to allow the UI to handle it gracefully
         }
 
     } catch (err: unknown) {

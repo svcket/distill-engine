@@ -1,7 +1,26 @@
 import { auth } from "@/auth"
-import { prisma } from "@/lib/prisma"
+import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
+
+interface DQMEvaluationResponse {
+    status: string;
+    result: {
+        total_score: number;
+        scores: {
+            source_grounding: number;
+            insight_density: number;
+            humanness: number;
+            clarity: number;
+            structure: number;
+            seo: number;
+            aeo: number;
+            total_score: number;
+        };
+        suggestions: string[];
+        rationale: string;
+    }
+}
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -16,29 +35,34 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing sourceId" }, { status: 400 })
         }
 
-        // Run the evaluate_dqm.py script
-        const { success, data, error: scriptError } = await runPythonScript<Record<string, any>>('evaluate_dqm.py', [
+        // Run the evaluate_dqm.py script with typed response
+        const { success, data, error: scriptError } = await runPythonScript<DQMEvaluationResponse>('evaluate_dqm.py', [
             '--source-id', sourceId
         ])
         
         if (success && data) {
+            // Standardize: Python returns { "status": "success", "result": { "total_score": X, ... } }
             const result = data.result || data
+            const score = typeof result.total_score === 'number' ? result.total_score : 0
             
-            // Update the source record with completed state
-            await prisma.source.update({
-                where: { id: sourceId, userId: session.user.id },
+            console.log(`[Evaluate API] Evaluation success for ${sourceId}. Total Score: ${score}`)
+
+            // Update the source record with completed state and extracted score using withRetry
+            await withRetry(() => prisma.source.update({
+                where: { id: sourceId, userId: session.user?.id as string },
                 data: { 
                     completedStages: {
                         push: 'qa'
                     },
-                    score: typeof result.total_score === 'number' ? result.total_score : undefined
+                    score: score
                 }
-            })
+            }))
 
             return NextResponse.json({ 
                 message: "Draft evaluation completed", 
                 status: "success",
-                result: result
+                result: result,
+                score: score
             })
         } else {
             console.error("[Evaluate API Failure]:", scriptError)

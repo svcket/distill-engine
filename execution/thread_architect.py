@@ -20,10 +20,24 @@ class ThreadArchitect:
         self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
         self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
         
-        # Load directive
-        directive_path = os.path.join(os.path.dirname(__file__), "../directives/x_thread_architect.md")
-        with open(directive_path, "r") as f:
-            self.system_prompt = f.read()
+        # Load directive with multiple fallback paths
+        base_dir = os.path.dirname(__file__)
+        candidate_paths = [
+            os.path.join(base_dir, "../directives/x_thread_architect.md"),
+            os.path.join(base_dir, "directives/x_thread_architect.md"),
+            os.path.join(os.getcwd(), "directives/x_thread_architect.md")
+        ]
+        
+        self.system_prompt = None
+        for path in candidate_paths:
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    self.system_prompt = f.read()
+                break
+        
+        if not self.system_prompt:
+            logger.warning("Directive file x_thread_architect.md not found. Using default internal prompt.")
+            self.system_prompt = "You are a world-class social strategist. Generate a high-performance X thread from the provided content. Return ONLY JSON."
 
     def generate_thread(self, draft_content: str, transcript_summary: str, source_url: Optional[str] = None) -> Dict[str, Any]:
         logger.info("Generating X Thread from draft and transcript context...")

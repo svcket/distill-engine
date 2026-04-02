@@ -52,6 +52,7 @@ interface Draft {
 
 interface DQMResult {
     scores: {
+        total_score: number
         publishability: number
         seo: number
         aeo: number

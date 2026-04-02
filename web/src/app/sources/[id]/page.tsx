@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Badge } from "@/components/ui/Badge"
 import { Button } from "@/components/ui/Button"
 import { StageResultPanel } from "@/components/StageResultView"
@@ -135,8 +135,8 @@ export default function SourceMissionControl() {
 
     const [source, setSource] = useState<SourceCandidate>({
         id: id,
-        title: "Loading Source...",
-        channel: "Loading...",
+        title: "...",
+        channel: "...",
         url: "#",
         published: "—",
         duration: "—",
@@ -158,8 +158,8 @@ export default function SourceMissionControl() {
             const dqmPayload = (qa.payload || qa.data || qa.result || qa) as Record<string, unknown>;
             const scores = (dqmPayload?.scores || dqmPayload) as Record<string, number | undefined>;
             const score = scores?.publishability || scores?.total_score || scores?.score;
-            if (score && score !== source.score) {
-                setSource(s => ({ ...s, score }));
+            if (score !== undefined && score !== source.score) {
+                setSource(s => ({ ...s, score: Number(score) }));
             }
         }
         
@@ -214,19 +214,490 @@ export default function SourceMissionControl() {
     const [intentType, setIntentType] = useState<string>("blog_article")
     const [intentAudience, setIntentAudience] = useState<string>("general")
     const [intentTone, setIntentTone] = useState<string>("professional")
+    const [autoStart, setAutoStart] = useState<boolean>(false)
 
     // Expanded accordion IDs
-
-    // Dropdown state
     const [isExportOpen, setIsExportOpen] = useState(false)
 
+
     // Processing logs
-    const [logs, setLogs] = useState<{ event: string; time: string; status: "success" | "info" | "error" }[]>([
-        { event: "Discovered via Scouter Agent", time: "Today", status: "info" }
-    ])
+    const [logs, setLogs] = useState<{ event: string; time: string; status: "success" | "info" | "error" }[]>([])
+
+    // ════ HELPER FUNCTIONS ════
+
+    // Determine the absolute next stage for the pipeline loop (including hidden)
+    const getFirstIncompleteIndex = useCallback((): number => {
+        const tStatus = source.transcriptStatus
+        const isTranscriptDone = tStatus === "transcribed" || tStatus === "rescued_text" || tStatus === "unavailable"
+        
+        for (let i = 0; i < STAGES.length; i++) {
+            const s = STAGES[i]
+            if (s.id === "transcript" && isTranscriptDone) continue
+            if (!completedStages.has(s.id)) return i
+        }
+        return STAGES.length
+    }, [completedStages, source.transcriptStatus]);
+
+    // ════ DATA FETCHING ════
+
+    const runFullPipeline = useCallback(async (resuming = false) => {
+        setIsRunningAll(true)
+        setError(null)
+
+        const currentCompleted = new Set(completedStages)
+        const currentResults: Record<string, StageResultData> = { ...stageResults }; 
+        const startIndex = getFirstIncompleteIndex()
+
+        for (let i = 0; i < STAGES.length; i++) {
+            const stage = STAGES[i]
+
+            if (currentCompleted.has(stage.id)) continue
+
+            // ─── CLUSTER OPTIMIZATION ───
+            if ((stage.id === "cluster" || stage.id === "refine" || stage.id === "summary" || stage.id === "insights") && 
+                !currentCompleted.has("cluster")) {
+                
+                setExecutingStage("cluster");
+                setLogs(prev => [{ event: "Initiating Unified Analysis Cluster...", time: "Just now", status: "info" }, ...prev]);
+                
+                try {
+                    const clusterRes = await fetch("/api/pipeline/cluster", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ sourceId: id })
+                    });
+                    
+                    if (!clusterRes.ok) throw new Error("Analysis Cluster failed");
+                    const clusterData = await clusterRes.json();
+                    const results = clusterData.result; 
+                    
+                    const updateObj: Record<string, StageResultData> = { ...currentResults };
+                    
+                    if (results.refine) { updateObj.refine = results.refine; currentResults.refine = results.refine; currentCompleted.add("refine"); }
+                    if (results.summary) { updateObj.summary = results.summary; currentResults.summary = results.summary; currentCompleted.add("summary"); }
+                    if (results.packet) { updateObj.packet = results.packet; currentResults.packet = results.packet; currentCompleted.add("packet"); }
+                    if (results.insights) { updateObj.insights = results.insights; currentResults.insights = results.insights; currentCompleted.add("insights"); }
+                    
+                    currentCompleted.add("cluster");
+                    
+                    setStageResults(prev => ({ ...prev, ...updateObj }));
+                    setCompletedStages(new Set(currentCompleted));
+                    
+                    const angleIndex = STAGES.findIndex(s => s.id === "angle");
+                    i = angleIndex - 1; 
+                    
+                    setLogs(prev => [{ event: "Analysis Cluster completed (Refine, Summary, Insights)", time: "Just now", status: "success" }, ...prev]);
+                    setExecutingStage(null);
+                    continue; 
+                    
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : 'Unknown error'
+                    setError({ message: msg, type: "error" });
+                    setIsRunningAll(false);
+                    setExecutingStage(null);
+                    break;
+                }
+            }
+
+            // ─── PARALLELIZATION OPTIMIZATION ───
+            if (stage.id === "qa" && currentCompleted.has("draft")) {
+                setExecutingStage("qa");
+                setLogs(prev => [{ event: "Launching Parallel Verification & Socialisation...", time: "Just now", status: "info" }, ...prev]);
+                
+                try {
+                    const qaStage = STAGES.find(s => s.id === "qa")!;
+                    const socialiseStage = STAGES.find(s => s.id === "socialise")!;
+                    
+                    // Stagger the calls slightly to prevent literal simultaneous DB connections
+                    const qaPromise = fetch(qaStage.apiEndpoint!, { 
+                        method: "POST", 
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(qaStage.apiBody!(id))
+                    });
+
+                    const socialPromise = new Promise(r => setTimeout(r, 250)).then(() => 
+                        fetch(socialiseStage.apiEndpoint!, { 
+                            method: "POST", 
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(socialiseStage.apiBody!(id))
+                        })
+                    );
+                    
+                    const [qaRes, socialRes] = await Promise.all([qaPromise, socialPromise]);
+                    
+                    if (!qaRes.ok || !socialRes.ok) {
+                        // Even if one failed, try to update the one that succeeded to fix the "View" button state
+                        if (qaRes.ok) {
+                            const qaData = await qaRes.json();
+                            const qaValue = (qaData.result || qaData) as StageResultData;
+                            setStageResults(prev => ({ ...prev, qa: qaValue }));
+                            setCompletedStages(prev => new Set([...prev, "qa"]));
+                            currentCompleted.add("qa");
+                        }
+                        
+                        const qaError = !qaRes.ok ? await qaRes.text() : "";
+                        const socialError = !socialRes.ok ? await socialRes.text() : "";
+                        throw new Error(`Parallel execution failed: ${qaError || socialError || "One or more stages failed"}`);
+                    }
+
+                    const qaData = await qaRes.json();
+                    const socialData = await socialRes.json();
+                    
+                    const qaValue = (qaData.result || qaData) as StageResultData;
+                    const socialValue = (socialData.result || socialData) as StageResultData;
+                    
+                    setStageResults(prev => ({ ...prev, qa: qaValue, socialise: socialValue }));
+                    setCompletedStages(prev => new Set([...prev, "qa", "socialise"]));
+                    currentCompleted.add("qa");
+                    currentCompleted.add("socialise");
+                    
+                    setLogs(prev => [{ event: "Parallel verification and assets completed", time: "Just now", status: "success" }, ...prev]);
+                    
+                    const qaResult = qaValue as Record<string, unknown>;
+                    if (qaResult && typeof qaResult.total_score === 'number') {
+                        setSource(s => ({ ...s, score: qaResult.total_score as number, status: "done" }));
+                    }
+                    
+                    i = STAGES.length; 
+                    setExecutingStage(null);
+                    setShowCelebration(true);
+                    break;
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : 'Unknown error'
+                    setError({ message: msg, type: "error" });
+                    setIsRunningAll(false);
+                    setExecutingStage(null);
+                    break;
+                }
+            }
+
+            const gate = validateStageGating(stage.id, currentResults)
+            if (!gate.valid) {
+                if (gate.type === "info") {
+                    setLogs(prev => [{ event: `Pipeline paused for review. Please check insights and configure Framing/Intent.`, time: "Just now", status: "info" }, ...prev])
+                    setError({ message: `Pipeline waiting for Editorial Strategy. Please confirm your intent options below.`, type: "info" })
+                } else {
+                    setLogs(prev => [{ event: `Pipeline halted: ${stage.label} is missing ${gate.missing}`, time: "Just now", status: "info" }, ...prev])
+                    setError({ message: `Pipeline stopped at ${stage.label} due to missing ${gate.missing}`, type: "info" })
+                }
+                setIsRunningAll(false)
+                break
+            }
+            
+            if (id.startsWith("local-")) {
+                await new Promise(r => setTimeout(r, 100))
+                
+                const isAudio = id.toLowerCase().includes("mp3") || id.toLowerCase().includes("wav") || id.toLowerCase().includes("m4a") || id.toLowerCase().includes("audio");
+                
+                let mockData: Record<string, unknown> = { status: "success" }
+                if (stage.id === "judge") mockData = { result: { title: source.title, channel: isAudio ? "Local Audio" : "Local Video", url: "file://local", score: 8 } }
+                if (stage.id === "transcript") mockData = { result: { segments: [{ start: 0, text: isAudio ? "Mock transcript for audio meeting..." : "Transcript for local media..." }] } }
+                if (stage.id === "refine") mockData = { result: { segments: [{ text: "Refined local transcript..." }] } }
+                if (stage.id === "insights") mockData = { result: { core_argument: "Local data insights.", key_claims: ["Analysis ready"], memorable_quotes: ["Direct from source."] } }
+                if (stage.id === "angle") mockData = { result: { recommended_format: "Article", framing_angle: "Local focus", working_titles: ["The Local Edge"] } }
+                if (stage.id === "draft") mockData = { result: { title: "Draft from Local", content: "# Local Draft\n\nGenerated for local media." } }
+                if (stage.id === "qa") mockData = { 
+                    result: { 
+                        total_score: 82, 
+                        decision: "Publish Ready", 
+                        scores: { publishability: 82, seo: 85, aeo: 75 },
+                        dimensions: { density: 8, depth: 8, utility: 8 },
+                        rationale: "Good local baseline." 
+                    } 
+                }
+
+                const data = mockData as Record<string, unknown>
+                const resValue = (data.result || data) as StageResultData
+                setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
+                currentResults[stage.id] = resValue
+                setCompletedStages(prev => new Set([...prev, stage.id]))
+                currentCompleted.add(stage.id)
+                
+                const localKey = `distill_results_${id}`;
+                const existing = JSON.parse(localStorage.getItem(localKey) || "{}");
+                localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: resValue }));
+                
+                if (stage.id === "qa") {
+                    const resObj = (data as StagePayload).result || data;
+                    if (resObj && ((resObj as QAResult).total_score !== undefined || (resObj as QAResult).scores)) {
+                        const scoreValue = (resObj as QAResult).total_score ?? (resObj as QAResult).scores?.publishability;
+                        setSource(s => ({ ...s!, score: scoreValue }));
+                    }
+                }
+
+                setLogs(prev => [{ event: `${stage.label} (Local Mode) completed`, time: "Just now", status: "success" }, ...prev])
+                continue
+            }
+
+            if (!stage.apiEndpoint || !stage.apiBody) {
+                setCompletedStages(prev => {
+                    const next = new Set(prev)
+                    next.add(stage.id)
+                    return next
+                })
+                currentCompleted.add(stage.id)
+                setLogs(prev => [{ event: `${stage.label} skipped (not implemented)`, time: "Just now", status: "info" }, ...prev])
+                continue
+            }
+
+            if (i !== startIndex) {
+                await new Promise(resolve => setTimeout(resolve, 100))
+            }
+
+            if (stage.id === "angle" && !resuming) {
+                setIsRunningAll(false)
+                setExecutingStage(null)
+                setLogs(prev => [{ event: `Pipeline paused. Select your Writing Intent Strategy below, then click Continue.`, time: "Just now", status: "info" }, ...prev])
+                setError({ message: "Select your writing intent strategy below, then click Continue Pipeline.", type: "info" })
+                break
+            }
+
+            setExecutingStage(stage.id)
+
+            try {
+                const bodyPayload = (stage.id === "draft" || stage.id === "angle")
+                    ? { 
+                        ...stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone }), 
+                        transcriptId: id,
+                        stream: stage.id === "draft",
+                      }
+                    : stage.apiBody(id)
+
+                const res = await fetch(stage.apiEndpoint, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(bodyPayload)
+                })
+
+                let data: StagePayload | null = null;
+                if ((stage.id === "draft" || stage.id === "insights") && res.body) {
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
+                    let fullContent = "";
+                    let buffer = "";
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split("\n");
+                        buffer = lines.pop() || "";
+
+                        for (const line of lines) {
+                            if (!line.trim()) continue;
+                            try {
+                                const parsed = JSON.parse(line);
+                                if (parsed.type === "status") {
+                                    setLogs(prev => [{ event: parsed.text, time: "Just now", status: "info" as const }, ...prev]);
+                                } else if (parsed.type === "chunk" && (parsed as StreamChunk).text) {
+                                    fullContent += (parsed as StreamChunk).text as string;
+                                    const wordCount = fullContent.trim().split(/\s+/).filter(Boolean).length;
+                                    setStageResults(prev => {
+                                        const updated = { 
+                                            ...prev, 
+                                            [stage.id]: { 
+                                                result: { 
+                                                    content: fullContent, 
+                                                    title: "Generating Draft...",
+                                                    word_count: wordCount
+                                                } 
+                                            } 
+                                        };
+                                        if (panelContent && panelContent.stageId === stage.id) {
+                                            setPanelContent({
+                                                ...panelContent,
+                                                data: updated[stage.id]
+                                            });
+                                        }
+                                        return updated;
+                                    });
+                                } else if (parsed.type === "error") {
+                                    return; 
+                                } else if (parsed.status === "success" || (parsed as StagePayload).data || parsed.result) {
+                                    data = parsed as StagePayload;
+                                }
+                            } catch (e) {
+                                console.error("Error parsing stream chunk:", e, line);
+                            }
+                        }
+                    }
+                    if (!data && fullContent) {
+                        data = { status: "success", result: { content: fullContent } };
+                    }
+                } else {
+                    data = await res.json()
+                    if (!res.ok) throw new Error(data?.error || "Execution failed")
+                }
+
+                const resValue = (data?.result || data) as StageResultData
+                if (resValue) {
+                    setStageResults(prev => {
+                        const next = { ...prev, [stage.id]: resValue }
+                        if (stage.id === "cluster" && typeof resValue === "object") {
+                            const cr = resValue as Record<string, unknown>
+                            if (cr.summary) next.summary = cr.summary as StageResultData
+                            if (cr.packet) next.packet = cr.packet as StageResultData
+                            if (cr.insights) next.insights = cr.insights as StageResultData
+                        }
+                        return next
+                    })
+                    currentResults[stage.id] = resValue 
+                    if (stage.id === "cluster" && typeof resValue === "object") {
+                        const cr = resValue as Record<string, unknown>
+                        if (cr.summary) currentResults.summary = cr.summary as StageResultData
+                        if (cr.packet) currentResults.packet = cr.packet as StageResultData
+                        if (cr.insights) currentResults.insights = cr.insights as StageResultData
+                    }
+
+                    if (stage.id === "transcript") {
+                        const tsData = (resValue as TranscriptResult);
+                        const segments = tsData?.segments || (resValue as { result?: { segments?: unknown[] } })?.result?.segments;
+                        if (!segments || segments.length === 0) {
+                            const errorMsg = "Transcription failed: No text segments were extracted. Pipeline halted.";
+                            setError({ message: errorMsg, type: "error" });
+                            setLogs(prev => [{ event: errorMsg, time: "Just now", status: "error" }, ...prev]);
+                            setIsRunningAll(false);
+                            break;
+                        }
+                    }
+
+                    if (panelContent && panelContent.stageId === stage.id) {
+                        setPanelContent({
+                            ...panelContent,
+                            data: resValue
+                        });
+                    }
+                }
+
+                setCompletedStages(prev => {
+                    const next = new Set([...prev, stage.id])
+                    if (stage.id === "cluster") {
+                        next.add("refine")
+                        next.add("summary")
+                        next.add("packet")
+                        next.add("insights")
+                    }
+                    return next
+                })
+                currentCompleted.add(stage.id)
+                if (stage.id === "cluster") {
+                    currentCompleted.add("refine")
+                    currentCompleted.add("summary")
+                    currentCompleted.add("packet")
+                    currentCompleted.add("insights")
+                }
+
+                if (stage.id === "qa" && data && typeof data === 'object') {
+                    const resObj = (data as StagePayload).result || data;
+                    const dqmPayload = (resObj as QAResult);
+                    const scoreValue = dqmPayload?.scores?.publishability || dqmPayload?.total_score;
+                    
+                    if (scoreValue !== undefined) {
+                        setSource(s => ({
+                            ...s,
+                            score: scoreValue,
+                            status: scoreValue >= 80 ? "done" : "failed",
+                        }))
+                        localStorage.setItem(`dqm_${id}`, JSON.stringify(dqmPayload))
+                    }
+                }
+                
+                if (data && data.result) {
+                    if (stage.id === "judge") {
+                        const judgeData = (data as StagePayload).result as JudgeResult || data;
+                        const updatedSource = {
+                            title: judgeData.title || source.title,
+                            channel: judgeData.channel || source.channel,
+                            url: judgeData.url || source.url,
+                        }
+                        setSource(s => ({
+                            ...s,
+                            ...updatedSource
+                        }))
+                        try {
+                            await fetch("/api/store", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ 
+                                    action: "upsert", 
+                                    source: { id, ...updatedSource } 
+                                })
+                            })
+                        } catch { /* silently fail */ }
+                    }
+                    if (stage.id === "transcript") {
+                        const d = data as StagePayload;
+                        const duration = d.duration || (d.result as TranscriptResult)?.duration;
+                        if (duration) {
+                            setSource(s => ({ ...s!, duration: typeof duration === 'number' ? `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')}` : duration }));
+                        }
+                    }
+                }
+
+                setLogs(prev => [{ event: `${stage.label} completed`, time: "Just now", status: "success" }, ...prev])
+
+                try {
+                    await fetch("/api/store", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "complete_stage", sourceId: id, stageId: stage.id })
+                    })
+                } catch { /* silently fail */ }
+
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : "Unknown error"
+                setError({ message: msg, type: "error" })
+                setLogs(prev => [{ event: `Pipeline stopped: ${stage.label} failed — ${msg}`, time: "Just now", status: "error" }, ...prev])
+                setIsRunningAll(false)
+                break 
+            } finally {
+                setExecutingStage(null)
+            }
+        }
+
+        setIsRunningAll(false)
+        setExecutingStage(null)
+        
+        if (currentCompleted.has("socialise")) {
+            setLogs(prev => [{ event: "Full pipeline completed successfully", time: "Just now", status: "success" }, ...prev])
+        }
+
+        try {
+            const res = await fetch("/api/store")
+            if (res.ok) {
+                const data = await res.json()
+                const refreshed = (data.sources || []).find((s: Record<string, unknown>) => s.id === id)
+                if (refreshed) {
+                    setSource(s => ({ ...s, ...refreshed }))
+                    
+                    if (refreshed.completedStages?.includes("socialise")) {
+                        const resApi = await fetch(`/api/sources/${id}/results`);
+                        const resultData = await resApi.json();
+                        if (resultData?.results) {
+                            setStageResults(resultData.results);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Failed final metadata refresh:", e)
+        }
+    }, [completedStages, getFirstIncompleteIndex, id, intentAudience, intentTone, intentType, panelContent, source.channel, source.title, source.url, stageResults]);
 
     // Load persisted state on mount
     useEffect(() => {
+        async function fetchPrefs() {
+            try {
+                const res = await fetch("/api/user/preferences")
+                if (res.ok) {
+                    const data = await res.json()
+                    setAutoStart(!!data.autoStartPipeline)
+                }
+            } catch { /* fail silent */ }
+        }
+        fetchPrefs()
+        
         async function loadPersistedState() {
             // ═══ LOCAL MOCK BYPASS ═══
             if (id.startsWith("local-")) {
@@ -319,18 +790,6 @@ export default function SourceMissionControl() {
         return () => document.removeEventListener("mousedown", handler)
     }, [isExportOpen])
 
-    // Determine the absolute next stage for the pipeline loop (including hidden)
-    const getFirstIncompleteIndex = (): number => {
-        const tStatus = source.transcriptStatus
-        const isTranscriptDone = tStatus === "transcribed" || tStatus === "rescued_text" || tStatus === "unavailable"
-        
-        for (let i = 0; i < STAGES.length; i++) {
-            const s = STAGES[i]
-            if (s.id === "transcript" && isTranscriptDone) continue
-            if (!completedStages.has(s.id)) return i
-        }
-        return STAGES.length
-    }
 
     // Determine the stage currently interactive in the UI (visible only)
     const getActiveVisibleIndex = (): number => {
@@ -362,18 +821,23 @@ export default function SourceMissionControl() {
         return "locked"
     }
 
-    // Auto-start disabled as per user request for manual control
-    /*
+    // Auto-start Harvesting Automation
     useEffect(() => {
-        if (autoStart && activeIndex < STAGES.length && !isRunningAll && !executingStage) {
-            // Wait a bit for state to settle
+        // Trigger only if autoStart is on, the pipeline is idle, and not already running
+        // GATING: Only trigger auto-start for sources created in the last 15 minutes to avoid re-running legacy data
+        const createdAt = source.createdAt ? new Date(source.createdAt).getTime() : 0;
+        const isFresh = createdAt > 0 && (Date.now() - createdAt < 15 * 60 * 1000);
+
+        if (autoStart && activeIndex < STAGES.length && !isRunningAll && !executingStage && source.status === "idle" && isFresh) {
             const timer = setTimeout(() => {
-                runFullPipeline()
-            }, 500)
-            return () => clearTimeout(timer)
+                if (source.status === "idle") {
+                    console.log(`[AutoStart] Triggering fresh pipeline for source: ${id}`);
+                    runFullPipeline();
+                }
+            }, 1500); 
+            return () => clearTimeout(timer);
         }
-    }, [autoStart, activeIndex, isRunningAll, executingStage])
-    */
+    }, [autoStart, activeIndex, isRunningAll, executingStage, source.status, source.createdAt, id, runFullPipeline]);
 
     const runStage = async (stageId: StageId) => {
         const stage = STAGES.find(s => s.id === stageId)
@@ -617,472 +1081,6 @@ export default function SourceMissionControl() {
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : "Unknown error"
             setError({ message: msg, type: "error" })
-        }
-    }
-
-    // Run full pipeline — auto-chains all remaining stages
-    // resuming: when true (Continue Pipeline flow), bypasses the mandatory 'angle' pause
-    const runFullPipeline = async (resuming = false) => {
-        setIsRunningAll(true)
-        setError(null)
-
-        const currentCompleted = new Set(completedStages)
-        const currentResults: Record<string, StageResultData> = { ...stageResults }; // Local mutable copy for gating checks
-        const startIndex = getFirstIncompleteIndex()
-
-        for (let i = 0; i < STAGES.length; i++) {
-            const stage = STAGES[i]
-
-            if (currentCompleted.has(stage.id)) continue
-
-            // ─── CLUSTER OPTIMIZATION ───
-            // If we are at 'refine' or 'summary' or 'insights', and the cluster has not run yet,
-            // we trigger the Unified Cluster and propagate the results to all child stages.
-            if ((stage.id === "cluster" || stage.id === "refine" || stage.id === "summary" || stage.id === "insights") && 
-                !currentCompleted.has("cluster")) {
-                
-                setExecutingStage("cluster");
-                setLogs(prev => [{ event: "Initiating Unified Analysis Cluster...", time: "Just now", status: "info" }, ...prev]);
-                
-                try {
-                    const clusterRes = await fetch("/api/pipeline/cluster", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ sourceId: id })
-                    });
-                    
-                    if (!clusterRes.ok) throw new Error("Analysis Cluster failed");
-                    const clusterData = await clusterRes.json();
-                    const results = clusterData.result; // This contains { refine, summary, packet, insights }
-                    
-                    // Propagate results to all clustered stages
-                    const updateObj: Record<string, StageResultData> = { ...currentResults };
-                    
-                    if (results.refine) { updateObj.refine = results.refine; currentResults.refine = results.refine; currentCompleted.add("refine"); }
-                    if (results.summary) { updateObj.summary = results.summary; currentResults.summary = results.summary; currentCompleted.add("summary"); }
-                    if (results.packet) { updateObj.packet = results.packet; currentResults.packet = results.packet; currentCompleted.add("packet"); }
-                    if (results.insights) { updateObj.insights = results.insights; currentResults.insights = results.insights; currentCompleted.add("insights"); }
-                    
-                    currentCompleted.add("cluster");
-                    
-                    setStageResults(prev => ({ ...prev, ...updateObj }));
-                    setCompletedStages(new Set(currentCompleted));
-                    
-                    // Update local loop counter to skip the constituent stages
-                    // We skip to 'angle'
-                    const angleIndex = STAGES.findIndex(s => s.id === "angle");
-                    i = angleIndex - 1; 
-                    
-                    setLogs(prev => [{ event: "Analysis Cluster completed (Refine, Summary, Insights)", time: "Just now", status: "success" }, ...prev]);
-                    setExecutingStage(null);
-                    continue; // Move to next loop iteration (which will be 'angle')
-                    
-                } catch (err: unknown) {
-                    const msg = err instanceof Error ? err.message : 'Unknown error'
-                    setError({ message: msg, type: "error" });
-                    setIsRunningAll(false);
-                    setExecutingStage(null);
-                    break;
-                }
-            }
-
-            // ─── PARALLELIZATION OPTIMIZATION ───
-            // After 'draft' is done, we can run 'qa' and 'socialise' in parallel.
-            if (stage.id === "qa" && currentCompleted.has("draft")) {
-                setExecutingStage("qa");
-                setLogs(prev => [{ event: "Launching Parallel Verification & Socialisation...", time: "Just now", status: "info" }, ...prev]);
-                
-                try {
-                    const qaStage = STAGES.find(s => s.id === "qa")!;
-                    const socialiseStage = STAGES.find(s => s.id === "socialise")!;
-                    
-                    // Run both simultaneously
-                    const [qaRes, socialRes] = await Promise.all([
-                        fetch(qaStage.apiEndpoint!, { 
-                            method: "POST", 
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(qaStage.apiBody!(id))
-                        }),
-                        fetch(socialiseStage.apiEndpoint!, { 
-                            method: "POST", 
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(socialiseStage.apiBody!(id))
-                        })
-                    ]);
-                    
-                    if (!qaRes.ok || !socialRes.ok) {
-                        const qaError = !qaRes.ok ? await qaRes.text() : "";
-                        const socialError = !socialRes.ok ? await socialRes.text() : "";
-                        throw new Error(`Execution failed: ${qaError || socialError || "Server responded with an update error"}`);
-                    }
-
-                    const qaData = await qaRes.json();
-                    const socialData = await socialRes.json();
-                    
-                    const qaValue = (qaData.result || qaData) as StageResultData;
-                    const socialValue = (socialData.result || socialData) as StageResultData;
-                    
-                    setStageResults(prev => ({ ...prev, qa: qaValue, socialise: socialValue }));
-                    setCompletedStages(prev => new Set([...prev, "qa", "socialise"]));
-                    currentCompleted.add("qa");
-                    currentCompleted.add("socialise");
-                    
-                    setLogs(prev => [{ event: "Parallel verification and assets completed", time: "Just now", status: "success" }, ...prev]);
-                    
-                    // Update source score from QA
-                    const qaResult = qaValue as Record<string, unknown>;
-                    if (qaResult && typeof qaResult.total_score === 'number') {
-                        setSource(s => ({ ...s, score: qaResult.total_score as number, status: "done" }));
-                    }
-                    
-                    i = STAGES.length; // End loop
-                    setExecutingStage(null);
-                    setShowCelebration(true);
-                    break;
-                } catch (err: unknown) {
-                    const msg = err instanceof Error ? err.message : 'Unknown error'
-                    setError({ message: `Parallel execution failed: ${msg}`, type: "error" });
-                    setIsRunningAll(false);
-                    setExecutingStage(null);
-                    break;
-                }
-            }
-
-            // ════ STAGE GATING ════
-            const gate = validateStageGating(stage.id, currentResults)
-            if (!gate.valid) {
-                if (gate.type === "info") {
-                    setLogs(prev => [{ event: `Pipeline paused for review. Please check insights and configure Framing/Intent.`, time: "Just now", status: "info" }, ...prev])
-                    setError({ message: `Pipeline waiting for Editorial Strategy. Please confirm your intent options below.`, type: "info" })
-                } else {
-                    setLogs(prev => [{ event: `Pipeline halted: ${stage.label} is missing ${gate.missing}`, time: "Just now", status: "info" }, ...prev])
-                    setError({ message: `Pipeline stopped at ${stage.label} due to missing ${gate.missing}`, type: "info" })
-                }
-                setIsRunningAll(false)
-                break
-            }
-            
-            // ═══ LOCAL MOCK BYPASS ═══
-            if (id.startsWith("local-")) {
-                await new Promise(r => setTimeout(r, 100))
-                
-                const isAudio = id.toLowerCase().includes("mp3") || id.toLowerCase().includes("wav") || id.toLowerCase().includes("m4a") || id.toLowerCase().includes("audio");
-                
-                let mockData: Record<string, unknown> = { status: "success" }
-                if (stage.id === "judge") mockData = { result: { title: source.title, channel: isAudio ? "Local Audio" : "Local Video", url: "file://local", score: 8 } }
-                if (stage.id === "transcript") mockData = { result: { segments: [{ start: 0, text: isAudio ? "Mock transcript for audio meeting..." : "Transcript for local media..." }] } }
-                if (stage.id === "refine") mockData = { result: { segments: [{ text: "Refined local transcript..." }] } }
-                if (stage.id === "insights") mockData = { result: { core_argument: "Local data insights.", key_claims: ["Analysis ready"], memorable_quotes: ["Direct from source."] } }
-                if (stage.id === "angle") mockData = { result: { recommended_format: "Article", framing_angle: "Local focus", working_titles: ["The Local Edge"] } }
-                if (stage.id === "draft") mockData = { result: { title: "Draft from Local", content: "# Local Draft\n\nGenerated for local media." } }
-                if (stage.id === "qa") mockData = { 
-                    result: { 
-                        total_score: 82, 
-                        decision: "Publish Ready", 
-                        scores: { publishability: 82, seo: 85, aeo: 75 },
-                        dimensions: { density: 8, depth: 8, utility: 8 },
-                        rationale: "Good local baseline." 
-                    } 
-                }
-
-                const data = mockData as Record<string, unknown>
-                const resValue = (data.result || data) as StageResultData
-                setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
-                currentResults[stage.id] = resValue
-                setCompletedStages(prev => new Set([...prev, stage.id]))
-                currentCompleted.add(stage.id)
-                
-                // Persist to localStorage
-                const localKey = `distill_results_${id}`;
-                const existing = JSON.parse(localStorage.getItem(localKey) || "{}");
-                localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: resValue }));
-                
-                if (stage.id === "qa") {
-                    const resObj = (data as StagePayload).result || data;
-                    if (resObj && ((resObj as QAResult).total_score !== undefined || (resObj as QAResult).scores)) {
-                        const scoreValue = (resObj as QAResult).total_score ?? (resObj as QAResult).scores?.publishability;
-                        setSource(s => ({ ...s!, score: scoreValue }));
-                    }
-                }
-
-                setLogs(prev => [{ event: `${stage.label} (Local Mode) completed`, time: "Just now", status: "success" }, ...prev])
-                continue
-            }
-
-            if (!stage.apiEndpoint || !stage.apiBody) {
-                // Skip stages without API endpoints (e.g., QA stub)
-                setCompletedStages(prev => {
-                    const next = new Set(prev)
-                    next.add(stage.id)
-                    return next
-                })
-                currentCompleted.add(stage.id)
-                setLogs(prev => [{ event: `${stage.label} skipped (not implemented)`, time: "Just now", status: "info" }, ...prev])
-                continue
-            }
-
-            // 1. Add human rhythm delay: pause briefly between stages so user can visually see progress
-            if (i !== startIndex) {
-                await new Promise(resolve => setTimeout(resolve, 100))
-            }
-
-            // 2. CRITICAL GATE: Pause at 'angle' (Editorial Strategy) to let users confirm writing intent.
-            // This is a mandatory UX checkpoint — the user must explicitly click "Continue Pipeline".
-            // If resuming is true, we skip the break and actually EXECUTE the angle stage.
-            if (stage.id === "angle" && !resuming) {
-                setIsRunningAll(false)
-                setExecutingStage(null)
-                setLogs(prev => [{ event: `Pipeline paused. Select your Writing Intent Strategy below, then click Continue.`, time: "Just now", status: "info" }, ...prev])
-                setError({ message: "Select your writing intent strategy below, then click Continue Pipeline.", type: "info" })
-                break
-            }
-
-            setExecutingStage(stage.id)
-
-            try {
-                const bodyPayload = (stage.id === "draft" || stage.id === "angle")
-                    ? { 
-                        ...stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone }), 
-                        transcriptId: id,
-                        stream: stage.id === "draft",
-                      }
-                    : stage.apiBody(id)
-
-                const res = await fetch(stage.apiEndpoint, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(bodyPayload)
-                })
-
-                let data: StagePayload | null = null;
-                if ((stage.id === "draft" || stage.id === "insights") && res.body) {
-                    const reader = res.body.getReader();
-                    const decoder = new TextDecoder();
-                    let fullContent = "";
-                    let buffer = "";
-
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-
-                        buffer += decoder.decode(value, { stream: true });
-                        const lines = buffer.split("\n");
-                        buffer = lines.pop() || "";
-
-                        for (const line of lines) {
-                            if (!line.trim()) continue;
-                            try {
-                                const parsed = JSON.parse(line);
-                                if (parsed.type === "status") {
-                                    setLogs(prev => [{ event: parsed.text, time: "Just now", status: "info" as const }, ...prev]);
-                                } else if (parsed.type === "chunk" && (parsed as StreamChunk).text) {
-                                    fullContent += (parsed as StreamChunk).text as string;
-                                    const wordCount = fullContent.trim().split(/\s+/).filter(Boolean).length;
-                                    setStageResults(prev => {
-                                        const updated = { 
-                                            ...prev, 
-                                            [stage.id]: { 
-                                                result: { 
-                                                    content: fullContent, 
-                                                    title: "Generating Draft...",
-                                                    word_count: wordCount
-                                                } 
-                                            } 
-                                        };
-                                        // Sync with panel if open for real-time visual movement
-                                        if (panelContent && panelContent.stageId === stage.id) {
-                                            setPanelContent({
-                                                ...panelContent,
-                                                data: updated[stage.id]
-                                            });
-                                        }
-                                        return updated;
-                                    });
-                                } else if (parsed.type === "error") {
-                                    return; // Break the runFullPipeline loop
-                                } else if (parsed.status === "success" || (parsed as StagePayload).data || parsed.result) {
-                                    // Capture final payload for structured stages like insights
-                                    data = parsed as StagePayload;
-                                }
-                            } catch (e) {
-                                console.error("Error parsing stream chunk:", e, line);
-                            }
-                        }
-                    }
-                    if (!data && fullContent) {
-                        data = { status: "success", result: { content: fullContent } };
-                    }
-                } else {
-                    data = await res.json()
-                    if (!res.ok) throw new Error(data?.error || "Execution failed")
-                }
-
-                // Store result
-                const resValue = (data?.result || data) as StageResultData
-                if (resValue) {
-                    setStageResults(prev => {
-                        const next = { ...prev, [stage.id]: resValue }
-                        if (stage.id === "cluster" && typeof resValue === "object") {
-                            const cr = resValue as Record<string, unknown>
-                            if (cr.summary) next.summary = cr.summary as StageResultData
-                            if (cr.packet) next.packet = cr.packet as StageResultData
-                            if (cr.insights) next.insights = cr.insights as StageResultData
-                        }
-                        return next
-                    })
-                    currentResults[stage.id] = resValue // Update local copy for gating
-                    if (stage.id === "cluster" && typeof resValue === "object") {
-                        const cr = resValue as Record<string, unknown>
-                        if (cr.summary) currentResults.summary = cr.summary as StageResultData
-                        if (cr.packet) currentResults.packet = cr.packet as StageResultData
-                        if (cr.insights) currentResults.insights = cr.insights as StageResultData
-                    }
-
-                    // ─── TRANSCRIPT GUARDRAIL ───
-                    if (stage.id === "transcript") {
-                        const tsData = (resValue as TranscriptResult);
-                        const segments = tsData?.segments || (resValue as { result?: { segments?: unknown[] } })?.result?.segments;
-                        if (!segments || segments.length === 0) {
-                            const errorMsg = "Transcription failed: No text segments were extracted. Pipeline halted.";
-                            setError({ message: errorMsg, type: "error" });
-                            setLogs(prev => [{ event: errorMsg, time: "Just now", status: "error" }, ...prev]);
-                            setIsRunningAll(false);
-                            break;
-                        }
-                    }
-                    // ───────────────────────────
-
-                    // ─── REACTIVE PANEL SYNC ───
-                    // If the panel is open for this stage, refresh it immediately
-                    if (panelContent && panelContent.stageId === stage.id) {
-                        setPanelContent({
-                            ...panelContent,
-                            data: resValue
-                        });
-                    }
-                    // ───────────────────────────
-                }
-
-                // Mark completed
-                setCompletedStages(prev => {
-                    const next = new Set([...prev, stage.id])
-                    if (stage.id === "cluster") {
-                        next.add("refine")
-                        next.add("summary")
-                        next.add("packet")
-                        next.add("insights")
-                    }
-                    return next
-                })
-                currentCompleted.add(stage.id)
-                if (stage.id === "cluster") {
-                    currentCompleted.add("refine")
-                    currentCompleted.add("summary")
-                    currentCompleted.add("packet")
-                    currentCompleted.add("insights")
-                }
-
-                // Update UI metadata
-                if (stage.id === "qa" && data && typeof data === 'object') {
-                    const resObj = (data as StagePayload).result || data;
-                    const dqmPayload = (resObj as QAResult);
-                    const scoreValue = dqmPayload?.scores?.publishability || dqmPayload?.total_score;
-                    
-                    if (scoreValue !== undefined) {
-                        setSource(s => ({
-                            ...s,
-                            score: scoreValue,
-                            status: scoreValue >= 80 ? "done" : "failed",
-                        }))
-                        localStorage.setItem(`dqm_${id}`, JSON.stringify(dqmPayload))
-                    }
-                }
-                
-                if (data && data.result) {
-                    if (stage.id === "judge") {
-                        const judgeData = (data as StagePayload).result as JudgeResult || data;
-                        const updatedSource = {
-                            title: judgeData.title || source.title,
-                            channel: judgeData.channel || source.channel,
-                            url: judgeData.url || source.url,
-                        }
-                        setSource(s => ({
-                            ...s,
-                            ...updatedSource
-                        }))
-                        try {
-                            await fetch("/api/store", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ 
-                                    action: "upsert", 
-                                    source: { id, ...updatedSource } 
-                                })
-                            })
-                        } catch { /* silently fail */ }
-                    }
-                    if (stage.id === "transcript") {
-                        const d = data as StagePayload;
-                        const duration = d.duration || (d.result as TranscriptResult)?.duration;
-                        if (duration) {
-                            setSource(s => ({ ...s!, duration: typeof duration === 'number' ? `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')}` : duration }));
-                        }
-                    }
-                }
-
-                // Add log
-                setLogs(prev => [{ event: `${stage.label} completed`, time: "Just now", status: "success" }, ...prev])
-
-                // Persist stage completion
-                try {
-                    await fetch("/api/store", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ action: "complete_stage", sourceId: id, stageId: stage.id })
-                    })
-                } catch { /* silently fail */ }
-
-            } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : "Unknown error"
-                setError({ message: msg, type: "error" })
-                setLogs(prev => [{ event: `Pipeline stopped: ${stage.label} failed — ${msg}`, time: "Just now", status: "error" }, ...prev])
-                setIsRunningAll(false)
-                break // Stop pipeline on error
-            } finally {
-                setExecutingStage(null)
-            }
-        }
-
-        setIsRunningAll(false)
-        setExecutingStage(null)
-        
-        // Only log overall success if we reached the final stage without halting
-        if (currentCompleted.has("socialise")) {
-            setLogs(prev => [{ event: "Full pipeline completed successfully", time: "Just now", status: "success" }, ...prev])
-        }
-
-        // ═══ FINAL METADATA REFRESH ═══
-        // Ensure the source metadata (score, status, etc.) is fully synced from the store
-        try {
-            const res = await fetch("/api/store")
-            if (res.ok) {
-                const data = await res.json()
-                const refreshed = (data.sources || []).find((s: Record<string, unknown>) => s.id === id)
-                if (refreshed) {
-                    setSource(s => ({ ...s, ...refreshed }))
-                    
-                    // Force refresh results if socialise was the last stage
-                    if (refreshed.completedStages?.includes("socialise")) {
-                        const resApi = await fetch(`/api/sources/${id}/results`);
-                        const resultData = await resApi.json();
-                        if (resultData?.results) {
-                            setStageResults(resultData.results);
-                        }
-                    }
-                }
-            }
-        } catch (e) {
-            console.error("Failed final metadata refresh:", e)
         }
     }
 
@@ -1382,7 +1380,7 @@ export default function SourceMissionControl() {
                                                             </div>
 
                                                     {/* Writing Intent Setup automatically appears when Insights are ready */}
-                                                    {stage.id === "angle" && (completedStages.has("insights") || status === "active" || status === "completed") && !completedStages.has("draft") && (
+                                                    {stage.id === "angle" && (completedStages.has("insights") || status === "active" || status === "completed") && !completedStages.has("draft") && !isRunningAll && !executingStage && (
                                                         <div className="mt-8 p-8 rounded-[2rem] bg-card border border-border/80 shadow-soft animate-in fade-in slide-in-from-top-2 flex flex-col gap-6 w-full lg:max-w-3xl" onClick={e => e.stopPropagation()}>
                                                             <div className="flex items-center gap-2 mb-1">
                                                                 <Bot className="w-4 h-4 text-brand" />

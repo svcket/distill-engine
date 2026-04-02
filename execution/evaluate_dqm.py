@@ -78,10 +78,6 @@ def evaluate_dqm(source_id: str):
     draft_file = os.path.join(base, ".tmp", "drafts", f"{source_id}_draft.json")
     
     if not os.path.exists(draft_file):
-        print(json.dumps({"status": "error", "error_detail": f"Draft '{source_id}' not found."}), file=sys.stderr)
-        sys.exit(1)
-        
-    if not os.path.exists(draft_file):
         print(json.dumps({
             "status": "failed", 
             "error": f"Draft file not found at {draft_file}. Please generate the draft first.",
@@ -94,15 +90,25 @@ def evaluate_dqm(source_id: str):
         
     # Standardize content extraction from the WrittenDraft bundle
     # The WrittenDraft bundle from writer.py is { "status": "success", "data": { "title": "...", "content": "..." } }
-    data_payload = draft_bundle.get("data", {})
-    if isinstance(data_payload, dict):
-        content = data_payload.get("content", "")
+    if isinstance(draft_bundle, dict):
+        data_payload = draft_bundle.get("data", {})
+        if isinstance(data_payload, dict):
+            content = data_payload.get("content") or data_payload.get("text") or ""
+        else:
+            content = ""
+            
+        if not content:
+            # Fallback to direct keys or nested draft keys
+            content = draft_bundle.get("content") or draft_bundle.get("text") or ""
+            
+        if not content and "draft" in draft_bundle:
+            draft_obj = draft_bundle["draft"]
+            if isinstance(draft_obj, dict):
+                content = draft_obj.get("content") or draft_obj.get("text") or ""
+            elif isinstance(draft_obj, str):
+                content = draft_obj
     else:
-        content = draft_bundle.get("content", "")
-    
-    if not content:
-        # Fallback to keys that might be present in direct models
-        content = draft_bundle.get("content", "") or ""
+        content = str(draft_bundle)
     
     # Load brief for grounding context
     brief_file = os.path.join(base, ".tmp", "briefs", f"{source_id}_brief.json")
@@ -124,13 +130,14 @@ def evaluate_dqm(source_id: str):
                 "structure": 80,
                 "seo": 75,
                 "aeo": 82,
-                "publishability": 78
+                "total_score": 78
             },
+            "total_score": 78,
             "strengths": ["Clear section hierarchy", "Strong readability", "Good word count volume"],
             "risks": ["Predictable AI rhythmic patterns", "Generic conclusion wrapper"],
             "suggestions": ["Introduce more transition variety", "Replace 'In conclusion' with a summary insight"]
         }
-        print(json.dumps({"status": "success", "data": result}))
+        print(json.dumps({"status": "success", "result": result}))
         return
 
     client = OpenAI()
@@ -193,8 +200,10 @@ BRIEF CONTEXT (for Grounding):
                 "structure": extracted.structure,
                 "seo": extracted.seo,
                 "aeo": extracted.aeo,
-                "publishability": publishability
+                "publishability": publishability,
+                "total_score": publishability
             },
+            "total_score": publishability,
             "suggestions": extracted.suggestions,
             "rationale": extracted.rationale
         }
@@ -203,16 +212,16 @@ BRIEF CONTEXT (for Grounding):
         eval_dir = os.path.join(base, ".tmp", "evaluations")
         os.makedirs(eval_dir, exist_ok=True)
         with open(os.path.join(eval_dir, f"{source_id}_eval.json"), "w", encoding="utf-8") as f:
-            json.dump({"status": "success", "data": result}, f, indent=2)
+            json.dump({"status": "success", "result": result}, f, indent=2)
             
-        print(json.dumps({"status": "success", "data": result}))
+        print(json.dumps({"status": "success", "result": result}))
         
     except Exception as e:
         print(json.dumps({"status": "error", "error_detail": str(e)}), file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--source-id", required=True)
+    parser = argparse.ArgumentParser(description="Evaluate a draft via DQM Matrix.")
+    parser.add_argument("--source-id", "--video-id", dest="source_id", required=True)
     args = parser.parse_args()
     evaluate_dqm(args.source_id)

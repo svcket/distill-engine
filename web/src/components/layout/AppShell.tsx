@@ -75,11 +75,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // Derive breadcrumb from pathname
     const breadcrumb = (() => {
         const segs = pathname.split('/').filter(Boolean)
-        if (segs.length === 0) return t("sources")
+        if (segs.length === 0) return t("sources") || "Directory"
+        
         const key = segs[0].toLowerCase()
-        if (key === 'sources' && segs.length > 1) return 'Directory Detail'
-        if (key === 'sources') return t("sources")
-        return t(key) || segs[0].charAt(0).toUpperCase() + segs[0].slice(1)
+        if (key === 'sources' && segs.length > 1) {
+            return (
+                <div className="flex items-center gap-2">
+                    <span className="opacity-50">{t("sources") || "Directory"}</span>
+                    <ChevronDown className="w-3 h-3 -rotate-90 opacity-30" />
+                    <span>Source Detail</span>
+                </div>
+            )
+        }
+        
+        if (key === 'exports' && segs.length > 1) {
+            return (
+                <div className="flex items-center gap-2">
+                    <span className="opacity-50">{t("exports") || "Studio"}</span>
+                    <ChevronDown className="w-3 h-3 -rotate-90 opacity-30" />
+                    <span>Draft Detail</span>
+                </div>
+            )
+        }
+
+        const label = t(key) || segs[0].charAt(0).toUpperCase() + segs[0].slice(1)
+        return label
     })()
 
     // Conditionally hide shell elements on login page
@@ -211,9 +231,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                         isLangOpen && "ring-2 ring-brand/10 border-brand/50"
                                     )}
                                 >
-                                    <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
-                                    <span>{lang}</span>
-                                    <ChevronDown className={cn("w-3 h-3 transition-transform", isLangOpen && "rotate-180")} />
+                                    <div className="w-1.5 h-1.5 rounded-full bg-brand/40" />
+                                    <span className="tracking-wide uppercase text-[10px] font-bold">{lang}</span>
+                                    <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground/50 transition-transform duration-300", isLangOpen && "rotate-180 text-brand")} />
                                 </button>
                                 
                                 {isLangOpen && (
