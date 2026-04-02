@@ -47,6 +47,25 @@ function getNum(obj: Record<string, unknown>, key: string, fallback = 0): number
     return typeof val === "number" ? val : fallback
 }
 
+const ENTITY_NORMALIZATION: Record<string, string> = {
+    "mold ga": "Mo Gawdat",
+    "mo gaddat": "Mo Gawdat",
+    "mo gadat": "Mo Gawdat",
+    "mo chat": "Mo Gawdat",
+    "aeo": "Answer Engine Optimization",
+    "dqm": "Digital Quality Matrix"
+}
+
+function normalizeText(text: string): string {
+    if (!text) return text
+    let normalized = text
+    Object.entries(ENTITY_NORMALIZATION).forEach(([key, value]) => {
+        const regex = new RegExp(`\\b${key}\\b`, "gi")
+        normalized = normalized.replace(regex, value)
+    })
+    return normalized
+}
+
 // ─── Per-Stage Renderers ────────────────────────────────────────
 
 function JudgeResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
@@ -104,7 +123,7 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
 
     segments.forEach((seg) => {
         const s = seg as Record<string, unknown>;
-        const rawText = getStr(s, "text").trim();
+        const rawText = normalizeText(getStr(s, "text").trim());
         const start = getNum(s, "start");
 
         // Split text by speaker marker in case multiple speakers are in one segment
@@ -209,7 +228,7 @@ function RefineResult({ data, compact }: { data: Record<string, unknown>; compac
                     const s = seg as Record<string, unknown>
                     return (
                         <p key={i} className="my-6 first:mt-0 last:mb-0">
-                            {getStr(s, "text")}
+                            {normalizeText(getStr(s, "text"))}
                         </p>
                     )
                 })}
@@ -219,7 +238,7 @@ function RefineResult({ data, compact }: { data: Record<string, unknown>; compac
 }
 
 function SummaryResult({ data }: { data: Record<string, unknown> | string }) {
-    const summary = typeof data === "string" ? data : getStr(data as Record<string, unknown>, "summary", "")
+    const summary = normalizeText(typeof data === "string" ? data : getStr(data as Record<string, unknown>, "summary", ""))
 
     return (
                 <ul className="space-y-4 list-none">

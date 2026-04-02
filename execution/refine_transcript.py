@@ -31,12 +31,28 @@ def refine_source_transcript(source_id: str) -> Dict[str, Any]:
     output_path = os.path.join(os.path.dirname(__file__), ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
     return refine_transcript(input_path, output_path)
 
+ENTITY_NORMALIZATION = {
+    r"\bmold ga\b": "Mo Gawdat",
+    r"\bmo gaddat\b": "Mo Gawdat",
+    r"\bmo gadat\b": "Mo Gawdat",
+    r"\bmo chat\b": "Mo Gawdat",
+    r"\bmold gadat\b": "Mo Gawdat",
+    r"\baeo\b": "Answer Engine Optimization",
+    r"\bdqm\b": "Digital Quality Matrix"
+}
+
 def clean_text(text: str) -> str:
-    """Removes standard transcript noise like [Music], [Applause], and obvious filler."""
+    """Removes standard transcript noise and normalizes misheard entities."""
     # Remove system tags
     text = re.sub(r'\[.*?\]', '', text)
-    # Remove standalone filler words (case insensitive, bounded by spaces or punctuation)
+    
+    # Remove standalone filler words
     text = re.sub(r'\b(um|uh|ahs|umm)\b', '', text, flags=re.IGNORECASE)
+    
+    # Apply Entity Normalization
+    for pattern, replacement in ENTITY_NORMALIZATION.items():
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        
     # Clean up double spaces from removals
     text = re.sub(r'\s{2,}', ' ', text)
     return text.strip()

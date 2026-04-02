@@ -1,5 +1,5 @@
 import { auth } from "@/auth"
-import { prisma } from "@/lib/prisma"
+import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import path from 'path'
@@ -36,27 +36,28 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Pipeline Truth Error: Ingest reported success but artifact is missing.', id: result.source_id }, { status: 500 })
         }
         
+        const userId = session.user.id
         // SELF-HEALING: Recreate user if deleted during migration but session persists
-        const userExists = await prisma.user.findUnique({ where: { id: session.user.id } })
+        const userExists = await withRetry(() => prisma.user.findUnique({ where: { id: userId } }))
         if (!userExists) {
-            await prisma.user.create({
+            await withRetry(() => prisma.user.create({
                 data: {
-                    id: session.user.id,
+                    id: userId,
                     name: session.user.name,
                     email: session.user.email,
                     image: session.user.image,
                 }
-            })
+            }))
         }
 
         // Persist the source to Postgres scoped to the user
         // We first check if it's already owned by someone else to prevent hijacking
-        const existingSource = await prisma.source.findUnique({ where: { id: result.source_id } })
-        if (existingSource && existingSource.userId !== session.user.id) {
+        const existingSource = await withRetry(() => prisma.source.findUnique({ where: { id: result.source_id } }))
+        if (existingSource && existingSource.userId !== userId) {
              return NextResponse.json({ error: 'This source ID is already managed by another user. Collaborative sourcing is not yet supported in Beta.' }, { status: 403 })
         }
 
-        const source = await prisma.source.upsert({
+        const source = await withRetry(() => prisma.source.upsert({
             where: { id: result.source_id },
             update: {
                 title: result.title || 'Unknown Source',
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
             },
             create: {
                 id: result.source_id,
-                userId: session.user.id,
+                userId: userId,
                 title: result.title || 'Unknown Source',
                 url: result.url || url,
                 type: result.source_type || 'youtube',
@@ -74,15 +75,15 @@ export async function POST(request: Request) {
                 score: result.score || 0,
                 completedStages: [],
             }
-        })
+        }))
 
 
         // Reset usage count logic (Stage 6 prep)
-        await prisma.usage.upsert({
-            where: { userId: session.user.id },
+        await withRetry(() => prisma.usage.upsert({
+            where: { userId: userId },
             update: { sourcesProcessed: { increment: 1 } },
-            create: { userId: session.user.id, sourcesProcessed: 1 }
-        })
+            create: { userId: userId, sourcesProcessed: 1 }
+        }))
 
         // AUTOMATION: Pipeline now strictly user-triggered to avoid unintended consumption
         // Previously triggered /api/transcripts/fetch here

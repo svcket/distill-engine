@@ -238,6 +238,18 @@ export default function SourceMissionControl() {
         return STAGES.length
     }, [completedStages, source.transcriptStatus]);
 
+    const persistStageCompletion = useCallback(async (stageId: StageId) => {
+        try {
+            await fetch("/api/store", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "complete_stage", sourceId: id, stageId })
+            })
+        } catch (e) {
+            console.error(`Failed to persist completion for ${stageId}:`, e)
+        }
+    }, [id]);
+
     // ════ DATA FETCHING ════
 
     const runFullPipeline = useCallback(async (resuming = false) => {
@@ -283,6 +295,15 @@ export default function SourceMissionControl() {
                     setStageResults(prev => ({ ...prev, ...updateObj }));
                     setCompletedStages(new Set(currentCompleted));
                     
+                    // Persist all clustered stages to DB
+                    await Promise.all([
+                        persistStageCompletion("cluster"),
+                        persistStageCompletion("refine"),
+                        persistStageCompletion("summary"),
+                        persistStageCompletion("packet"),
+                        persistStageCompletion("insights")
+                    ]);
+
                     const angleIndex = STAGES.findIndex(s => s.id === "angle");
                     i = angleIndex - 1; 
                     
@@ -351,6 +372,12 @@ export default function SourceMissionControl() {
                     currentCompleted.add("qa");
                     currentCompleted.add("socialise");
                     
+                    // Persist parallel stages to DB
+                    await Promise.all([
+                        persistStageCompletion("qa"),
+                        persistStageCompletion("socialise")
+                    ]);
+
                     setLogs(prev => [{ event: "Parallel verification and assets completed", time: "Just now", status: "success" }, ...prev]);
                     
                     const qaResult = qaValue as Record<string, unknown>;
@@ -683,7 +710,7 @@ export default function SourceMissionControl() {
         } catch (e) {
             console.error("Failed final metadata refresh:", e)
         }
-    }, [completedStages, getFirstIncompleteIndex, id, intentAudience, intentTone, intentType, panelContent, source.channel, source.title, source.url, stageResults]);
+    }, [completedStages, getFirstIncompleteIndex, id, intentAudience, intentTone, intentType, panelContent, source.channel, source.title, source.url, stageResults, persistStageCompletion]);
 
     // Load persisted state on mount
     useEffect(() => {
@@ -757,10 +784,18 @@ export default function SourceMissionControl() {
                         const criticalArtifactStages: StageId[] = ["transcript", "summary", "insights", "angle", "draft", "qa", "socialise"]
                         
                         criticalArtifactStages.forEach(sid => {
-                            if (prev.has(sid) && !data.results[sid]) {
-                                validated.delete(sid)
+                            if (data.results[sid]) {
+                                validated.add(sid) // Add if artifact exists even if DB missed it
+                            } else if (prev.has(sid)) {
+                                validated.delete(sid) // Remove if artifact missing but DB had it
                             }
                         })
+                        
+                        // If socialise is done, ensure the whole pipeline is effectively closed
+                        if (data.results.socialise) {
+                            ["refine", "cluster", "packet"].forEach(sid => validated.add(sid as StageId));
+                        }
+                        
                         return validated
                     })
                 }
@@ -1380,7 +1415,7 @@ export default function SourceMissionControl() {
                                                             </div>
 
                                                     {/* Writing Intent Setup automatically appears when Insights are ready */}
-                                                    {stage.id === "angle" && (completedStages.has("insights") || status === "active" || status === "completed") && !completedStages.has("draft") && !isRunningAll && !executingStage && (
+                                                    {stage.id === "angle" && (completedStages.has("insights") || status === "active" || status === "completed") && !completedStages.has("draft") && activeIndex <= STAGES.findIndex(s => s.id === "angle") && !isRunningAll && !executingStage && (
                                                         <div className="mt-8 p-8 rounded-[2rem] bg-card border border-border/80 shadow-soft animate-in fade-in slide-in-from-top-2 flex flex-col gap-6 w-full lg:max-w-3xl" onClick={e => e.stopPropagation()}>
                                                             <div className="flex items-center gap-2 mb-1">
                                                                 <Bot className="w-4 h-4 text-brand" />
@@ -1554,8 +1589,7 @@ export default function SourceMissionControl() {
                         </button>
                     </div>
                     <div 
-                        className="flex-1 overflow-y-auto overscroll-contain p-6 pb-[calc(1.5rem+64px)] lg:pb-6"
-                        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+                        className="flex-1 overflow-y-auto overscroll-contain p-6 pb-[calc(1.5rem+64px)] lg:pb-6 touch-pan-y"
                     >
                         {panelContent.stageId && (
                             <StageResultPanel stageId={panelContent.stageId} data={panelContent.data as Record<string, unknown>} sourceId={id} />
