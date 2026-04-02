@@ -1,16 +1,5 @@
-import { Inter, Outfit } from "next/font/google"
 import "@/app/globals.css"
 import { cn } from "@/lib/utils"
-
-const outfit = Outfit({ 
-  subsets: ["latin"],
-  variable: "--font-outfit",
-})
-
-const inter = Inter({ 
-  subsets: ["latin"],
-  variable: "--font-inter",
-})
 
 export default function AdminLayout({
   children,
@@ -19,9 +8,7 @@ export default function AdminLayout({
 }) {
   return (
     <div className={cn(
-      "min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans antialiased",
-      outfit.variable,
-      inter.variable
+      "min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans antialiased"
     )}>
       {/* Isolated Admin Navigation (Very Minimal) */}
       <nav className="h-16 border-b border-border/40 bg-card/50 backdrop-blur-md flex items-center px-8 justify-between sticky top-0 z-50">

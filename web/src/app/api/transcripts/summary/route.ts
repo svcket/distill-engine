@@ -11,6 +11,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const userId = session.user.id
+
     try {
         const { transcriptId } = await request.json()
 
@@ -31,10 +33,11 @@ export async function POST(request: Request) {
         }
 
         // Parse result from Python output
-        let result: any = {}
+        let result: { summary?: string } = { summary: "" }
         try {
             const lastLine = rawOutput?.trim().split('\n').pop() || "{}"
-            result = JSON.parse(lastLine)
+            const parsedOutput = JSON.parse(lastLine)
+            result = { ...parsedOutput }
             
             // Hydration: Read the actual summary content from the JSON file
             const summaryJsonPath = path.join(executionDir, '.tmp', 'summaries', transcriptId, `${transcriptId}_summary.json`)
@@ -48,19 +51,19 @@ export async function POST(request: Request) {
         }
 
         // Persist stage completion
-        await (prisma as any).source.update({
-            where: { id: transcriptId, userId: session.user.id },
+        await prisma.source.update({
+            where: { id: transcriptId, userId },
             data: {
                 completedStages: {
                     push: 'summary'
                 }
             }
-        }).catch((e: any) => {
+        }).catch(() => {
             // Fallback for string-based completedStages if push fails
             return prisma.source.update({
-                where: { id: transcriptId, userId: session.user.id },
+                where: { id: transcriptId, userId },
                 data: {
-                    completedStages: 'summary'
+                    completedStages: ['summary']
                 }
             })
         })

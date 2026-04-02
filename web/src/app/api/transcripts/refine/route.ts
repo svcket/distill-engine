@@ -11,6 +11,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const userId = session.user.id
+
     try {
         const { transcriptId } = await request.json()
 
@@ -33,19 +35,19 @@ export async function POST(request: Request) {
         const result = adaptRefinerResponse(rawOutput || "")
 
         // Persist stage completion
-        await (prisma as any).source.update({
-            where: { id: transcriptId, userId: session.user.id },
+        await prisma.source.update({
+            where: { id: transcriptId, userId },
             data: {
                 completedStages: {
                     push: 'refine'
                 }
             }
-        }).catch((e: any) => {
+        }).catch(() => {
             // Fallback for string-based completedStages if push fails
             return prisma.source.update({
-                where: { id: transcriptId, userId: session.user.id },
+                where: { id: transcriptId, userId },
                 data: {
-                    completedStages: 'refine' // Minimal fallback
+                    completedStages: ['refine'] // Array-based fallback
                 }
             })
         })

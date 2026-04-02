@@ -24,7 +24,7 @@ export async function POST(request: Request) {
 
     // 1. Verify source ownership
     const source = await prisma.source.findUnique({
-        where: { id: transcriptId, userId: session.user.id }
+        where: { id: transcriptId, userId }
     })
 
     if (!source) {
@@ -166,7 +166,7 @@ export async function POST(request: Request) {
                                     update: { draftsGenerated: { increment: 1 } },
                                     create: { userId: userId, draftsGenerated: 1 }
                                 }),
-                                (prisma as any).source.update({
+                                prisma.source.update({
                                     where: { id: sourceId, userId: userId },
                                     data: {
                                         completedStages: {
@@ -176,7 +176,7 @@ export async function POST(request: Request) {
                                 })
                             ]).catch(async () => {
                                 // Fallback for string-based completedStages if push fails
-                                await (prisma as any).source.update({
+                                await prisma.source.update({
                                     where: { id: sourceId, userId: userId },
                                     data: {
                                         completedStages: ['draft']
@@ -264,7 +264,7 @@ export async function POST(request: Request) {
             update: { draftsGenerated: { increment: 1 } },
             create: { userId: userId, draftsGenerated: 1 }
         }),
-        (prisma as any).source.update({
+        prisma.source.update({
             where: { id: sourceId, userId: userId },
             data: {
                 completedStages: {
@@ -274,7 +274,7 @@ export async function POST(request: Request) {
         })
     ]).catch(async () => {
         // Fallback for string-based completedStages if push fails
-        await (prisma as any).source.update({
+        await prisma.source.update({
             where: { id: sourceId, userId: userId },
             data: {
                 completedStages: ['draft']

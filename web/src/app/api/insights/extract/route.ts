@@ -10,6 +10,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const userId = session.user.id
+
     try {
         const { transcriptId } = await request.json()
 
@@ -49,7 +51,7 @@ export async function POST(request: Request) {
                     } else {
                         // Persist stage completion on success
                         await prisma.source.update({
-                            where: { id: transcriptId, userId: session.user.id },
+                            where: { id: transcriptId, userId },
                             data: {
                                 completedStages: {
                                     push: 'insights'
@@ -70,7 +72,8 @@ export async function POST(request: Request) {
             },
         })
 
-    } catch (err: any) {
-        return NextResponse.json({ error: err.message }, { status: 500 })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        return NextResponse.json({ error: message }, { status: 500 })
     }
 }
