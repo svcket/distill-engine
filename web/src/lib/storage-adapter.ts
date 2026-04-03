@@ -12,8 +12,15 @@ export const StorageAdapter = {
    * Tries local disk first (for dev performance), falls back to cloud storage.
    */
   async getJson(category: string, filename: string): Promise<Record<string, unknown> | null> {
-    const localDir = path.resolve(process.cwd(), '../execution/.tmp', category)
-    const localPath = path.join(localDir, filename)
+    const baseDir = path.resolve(process.cwd(), '../execution/.tmp')
+    const localDir = path.join(baseDir, path.normalize(category).replace(/^(\.\.(\/|\\|$))+/, ''))
+    const localPath = path.join(localDir, path.normalize(filename).replace(/^(\.\.(\/|\\|$))+/, ''))
+
+    // Verify the resolved path is still inside baseDir
+    if (!localPath.startsWith(baseDir)) {
+      console.warn(`[StorageAdapter] Potential path traversal attempt rejected: ${category}/${filename}`)
+      return null
+    }
 
     // 1. Try local disk (Development)
     if (fs.existsSync(localPath)) {

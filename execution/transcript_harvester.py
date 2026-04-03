@@ -995,11 +995,14 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
         json_path = os.path.join(output_dir, f"{source_id}_raw.json")
         txt_path = os.path.join(output_dir, f"{source_id}_raw.txt")
 
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(transcript_list, f, indent=2)
+
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write(text)
 
         # --- CLOUD BRIDGE ---
-        upload_artifact("transcripts", source_id, json_path, filename=f"{source_id}_raw.json")
+        upload_artifact("transcripts", source_id, json_path)
 
         return {
             "source_id": source_id,

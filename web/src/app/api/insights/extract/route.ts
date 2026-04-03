@@ -23,6 +23,15 @@ export async function POST(request: Request) {
         const scriptPath = path.join(executionDir, 'insight_extractor.py')
         const packetPath = path.join(executionDir, '.tmp', 'insight_packets', `${transcriptId}_packet.json`)
 
+        // SECURITY: Verify ownership before spawning worker (closes ID-guessing vulnerability)
+        const source = await prisma.source.findUnique({
+            where: { id: transcriptId, userId }
+        })
+
+        if (!source) {
+            return NextResponse.json({ error: "Source not found or access denied." }, { status: 404 })
+        }
+
         const encoder = new TextEncoder()
         
         const stream = new ReadableStream({

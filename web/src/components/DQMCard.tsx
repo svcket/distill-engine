@@ -79,7 +79,7 @@ const DQMCard = ({
                                 !dqm && "text-muted-foreground/40",
                                 dqm && "text-foreground"
                             )}>
-                                {dqm && dqm.scores ? (dqm.scores.total_score || dqm.scores.publishability) : "—"}
+                                {dqm && dqm.scores ? (dqm.scores.total_score ?? dqm.scores.publishability ?? 0) : "—"}
                             </span>
                             <span className="text-[14px] text-muted-foreground/40 font-medium ml-1.5 self-end mb-1">/ 100</span>
                         </div>
@@ -92,10 +92,10 @@ const DQMCard = ({
                                         className={cn(
                                             "h-full rounded-full transition-all duration-1000 ease-out",
                                             ((dqm && dqm.scores) 
-                                                ? ((dqm.scores.total_score || dqm.scores.publishability) >= 90 ? "bg-emerald-500" : (dqm.scores.total_score || dqm.scores.publishability) >= 75 ? "bg-brand" : "bg-amber-500")
+                                                ? ((dqm.scores.total_score ?? dqm.scores.publishability ?? 0) >= 90 ? "bg-emerald-500" : (dqm.scores.total_score ?? dqm.scores.publishability ?? 0) >= 75 ? "bg-brand" : "bg-amber-500")
                                                 : "bg-muted")
                                         )} 
-                                        style={{ width: `${(dqm && dqm.scores) ? (dqm.scores.total_score || dqm.scores.publishability) : 0}%` } as React.CSSProperties} 
+                                        style={{ width: `${(dqm && dqm.scores) ? (dqm.scores.total_score ?? dqm.scores.publishability ?? 0) : 0}%` } as React.CSSProperties} 
                                     />
                             </div>
                         )}
@@ -141,7 +141,7 @@ const DQMCard = ({
                                 <p className={cn(
                                     "text-sm font-bold text-foreground",
                                     !dqm && "text-muted-foreground/30"
-                                )}>{(dqm && dqm.scores) ? dqm.scores.seo : "-"}</p>
+                                )}>{(dqm && dqm.scores) ? (dqm.scores.seo ?? 0) : "-"}</p>
                             </div>
                             <div className="bg-muted/30 p-3 rounded-xl border border-border/50 transition-colors hover:border-cyan-500/30">
                                 <div className="flex items-center justify-between mb-1">
@@ -170,7 +170,7 @@ const DQMCard = ({
                                 <p className={cn(
                                     "text-sm font-bold text-foreground",
                                     !dqm && "text-muted-foreground/30"
-                                )}>{(dqm && dqm.scores) ? dqm.scores.aeo : "-"}</p>
+                                )}>{(dqm && dqm.scores) ? (dqm.scores.aeo ?? 0) : "-"}</p>
                             </div>
                         </div>
                     </div>

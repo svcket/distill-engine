@@ -1,4 +1,5 @@
 import os
+import sys
 from typing import Optional
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -11,11 +12,11 @@ key: Optional[str] = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 def get_supabase_client() -> Optional[Client]:
     if not url or not key:
-        print("[Supabase] Missing URL or SERVICE_KEY. Skipping cloud upload.")
+        print("[Supabase] Warning: Missing URL or SERVICE_KEY. Skipping cloud upload.", file=sys.stderr)
         return None
     return create_client(url, key)
 
-def upload_artifact(category: str, source_id: str, local_path: str, filename: str = None):
+def upload_artifact(category: str, source_id: str, local_path: str, filename: Optional[str] = None):
     """
     Upload a local .tmp file to the corresponding Supabase Storage bucket.
     """
@@ -31,7 +32,7 @@ def upload_artifact(category: str, source_id: str, local_path: str, filename: st
     
     try:
         with open(local_path, 'rb') as f:
-            print(f"[Supabase] Uploading {category}: {remote_path}...")
+            print(f"[Supabase] Uploading {category}: {remote_path}...", file=sys.stderr)
             client.storage.from_(category).upload(
                 path=remote_path,
                 file=f,
@@ -39,5 +40,5 @@ def upload_artifact(category: str, source_id: str, local_path: str, filename: st
             )
         return True
     except Exception as e:
-        print(f"[Supabase] Upload failed for {remote_path}: {e}")
+        print(f"[Supabase] Error: Upload failed for {remote_path}: {e}", file=sys.stderr)
         return False

@@ -43,39 +43,55 @@ export async function POST(request: Request) {
             await withRetry(() => prisma.user.create({
                 data: {
                     id: userId,
-                    name: session.user.name,
-                    email: session.user.email,
-                    image: session.user.image,
+                    name: session.user?.name || 'Anonymous User',
+                    email: session.user?.email || '',
+                    image: session.user?.image || '',
                 }
             }))
         }
 
-        // Persist the source to Postgres scoped to the user
-        // We first check if it's already owned by someone else to prevent hijacking
-        const existingSource = await withRetry(() => prisma.source.findUnique({ where: { id: result.source_id } }))
-        if (existingSource && existingSource.userId !== userId) {
-             return NextResponse.json({ error: 'This source ID is already managed by another user. Collaborative sourcing is not yet supported in Beta.' }, { status: 403 })
-        }
+        // Persist the source to Postgres scoped to the user (Atomic Ownership Logic)
+        let source;
+        try {
+            source = await withRetry(() => prisma.source.create({
+                data: {
+                    id: result.source_id,
+                    userId: userId,
+                    title: result.title || 'Unknown Source',
+                    url: result.url || url,
+                    type: result.source_type || 'youtube',
+                    status: 'idle',
+                    published: result.published || 'Recently',
+                    duration: result.duration || '—',
+                    score: result.score || 0,
+                    completedStages: [],
+                }
+            }))
+        } catch (err: unknown) {
+            // P2002 is Prisma's code for Unique Constraint Violation
+            if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'P2002') {
+                // Verify ownership before updating
+                const existing = await withRetry(() => prisma.source.findUnique({ 
+                    where: { id: result.source_id } 
+                }))
+                
+                if (existing && existing.userId !== userId) {
+                    return NextResponse.json({ 
+                        error: 'This source ID is already managed by another user. Collaborative sourcing is not yet supported in Beta.' 
+                    }, { status: 403 })
+                }
 
-        const source = await withRetry(() => prisma.source.upsert({
-            where: { id: result.source_id },
-            update: {
-                title: result.title || 'Unknown Source',
-                status: 'idle', 
-            },
-            create: {
-                id: result.source_id,
-                userId: userId,
-                title: result.title || 'Unknown Source',
-                url: result.url || url,
-                type: result.source_type || 'youtube',
-                status: 'idle',
-                published: result.published || 'Recently',
-                duration: result.duration || '—',
-                score: result.score || 0,
-                completedStages: [],
+                source = await withRetry(() => prisma.source.update({
+                    where: { id: result.source_id },
+                    data: {
+                        title: result.title || 'Unknown Source',
+                        status: 'idle', 
+                    }
+                }))
+            } else {
+                throw err;
             }
-        }))
+        }
 
 
         // Reset usage count logic (Stage 6 prep)

@@ -83,7 +83,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="flex items-center gap-2">
                     <span className="opacity-50">{t("sources") || "Directory"}</span>
                     <ChevronDown className="w-3 h-3 -rotate-90 opacity-30" />
-                    <span>Source Detail</span>
+                    <span>{t("sourceDetail") || "Source Detail"}</span>
                 </div>
             )
         }
@@ -93,7 +93,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="flex items-center gap-2">
                     <span className="opacity-50">{t("exports") || "Studio"}</span>
                     <ChevronDown className="w-3 h-3 -rotate-90 opacity-30" />
-                    <span>Draft Detail</span>
+                    <span>{t("draftDetail") || "Draft Detail"}</span>
                 </div>
             )
         }
@@ -287,7 +287,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             )}
                         >
                             <LayoutGrid className={cn("w-5 h-5", pathname.startsWith("/sources") && "scale-110")} />
-                            <span className="text-[10px] font-bold uppercase tracking-tighter">Directory</span>
+                            <span className="text-[10px] font-bold uppercase tracking-tighter">{t("directory") || "Directory"}</span>
                         </Link>
                         
                         <Link 
@@ -298,7 +298,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             )}
                         >
                             <SquarePen className={cn("w-5 h-5", pathname.startsWith("/exports") && "scale-110")} />
-                            <span className="text-[10px] font-bold uppercase tracking-tighter">Studio</span>
+                            <span className="text-[10px] font-bold uppercase tracking-tighter">{t("studio") || "Studio"}</span>
                         </Link>
                         
                         <Link 
@@ -309,7 +309,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             )}
                         >
                             <UserCircle className={cn("w-5 h-5", pathname.startsWith("/settings") && "scale-110")} />
-                            <span className="text-[10px] font-bold uppercase tracking-tighter">Settings</span>
+                            <span className="text-[10px] font-bold uppercase tracking-tighter">{t("settings") || "Settings"}</span>
                         </Link>
                     </nav>
                 )}

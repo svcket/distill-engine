@@ -14,8 +14,13 @@ export async function POST(request: Request) {
     try {
         const { sourceId } = await request.json()
         
-        if (!sourceId) {
-            return NextResponse.json({ error: "Missing sourceId" }, { status: 400 })
+        // SECURITY: Verify ownership before spawning compute-heavy worker
+        const source = await prisma.source.findUnique({
+            where: { id: sourceId, userId }
+        })
+
+        if (!source) {
+            return NextResponse.json({ error: "Source not found or access denied." }, { status: 404 })
         }
 
         // The cluster script runs Summary, Packet, and Insights in a single process
