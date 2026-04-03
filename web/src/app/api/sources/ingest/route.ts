@@ -70,24 +70,26 @@ export async function POST(request: Request) {
         } catch (err: unknown) {
             // P2002 is Prisma's code for Unique Constraint Violation
             if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'P2002') {
-                // Verify ownership before updating
-                const existing = await withRetry(() => prisma.source.findUnique({ 
-                    where: { id: result.source_id } 
-                }))
-                
-                if (existing && existing.userId !== userId) {
-                    return NextResponse.json({ 
-                        error: 'This source ID is already managed by another user. Collaborative sourcing is not yet supported in Beta.' 
-                    }, { status: 403 })
-                }
-
-                source = await withRetry(() => prisma.source.update({
-                    where: { id: result.source_id },
+                // ATOMIC SECURITY: Combined check and update using updateMany to prevent race-condition bypass
+                const updateResult = await withRetry(() => prisma.source.updateMany({
+                    where: { 
+                        id: result.source_id,
+                        userId: userId 
+                    },
                     data: {
                         title: result.title || 'Unknown Source',
                         status: 'idle', 
                     }
                 }))
+                
+                if (updateResult.count === 0) {
+                    return NextResponse.json({ 
+                        error: 'Authorization Error: Update failed. This source may be managed by another user or does not exist.' 
+                    }, { status: 403 })
+                }
+
+                // Success - retrieve source details (findUnique is safe here as the row existed to trigger P2002)
+                source = await withRetry(() => prisma.source.findUnique({ where: { id: result.source_id } }))
             } else {
                 throw err;
             }
