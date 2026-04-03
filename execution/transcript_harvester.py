@@ -999,7 +999,7 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
             f.write(text)
 
         # --- CLOUD BRIDGE ---
-        upload_artifact("transcripts", f"{source_id}/{source_id}_raw.json", json_path)
+        upload_artifact("transcripts", source_id, json_path, filename=f"{source_id}_raw.json")
 
         return {
             "source_id": source_id,
@@ -1025,7 +1025,7 @@ def finish_transcript(source_id: str, transcript_list: list, output_dir: str) ->
         f.write(" ".join(str(c.get("text", "")) for c in transcript_list))
 
     # --- CLOUD BRIDGE ---
-    upload_artifact("transcripts", f"{source_id}/{source_id}_raw.json", json_path)
+    upload_artifact("transcripts", source_id, json_path, filename=f"{source_id}_raw.json")
 
     return {
         "source_id": source_id,

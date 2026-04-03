@@ -39,7 +39,7 @@ ENTITY_NORMALIZATION = {
     r"\bmo chat\b": "Mo Gawdat",
     r"\bmold gadat\b": "Mo Gawdat",
     r"\baeo\b": "Answer Engine Optimization",
-    r"\bdqm\b": "Digital Quality Matrix"
+    r"\bdqm\b": "Distill Quality Matrix"
 }
 
 def clean_text(text: str) -> str:

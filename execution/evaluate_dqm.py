@@ -210,13 +210,15 @@ BRIEF CONTEXT (for Grounding):
         }
         
         # Save to .tmp/evaluations
+        eval_dir = os.path.join(base, ".tmp", "evaluations")
+        os.makedirs(eval_dir, exist_ok=True)
         eval_path = os.path.join(eval_dir, f"{source_id}_eval.json")
         with open(eval_path, "w", encoding="utf-8") as f:
             json.dump({"status": "success", "result": result}, f, indent=2)
 
         # --- CLOUD BRIDGE ---
         # Upload the JSON result to Supabase Storage
-        upload_artifact("evaluations", f"{source_id}_eval.json", eval_path)
+        upload_artifact("evaluations", source_id, eval_path)
             
         print(json.dumps({"status": "success", "result": result}))
         

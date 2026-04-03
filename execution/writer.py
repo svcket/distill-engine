@@ -293,7 +293,7 @@ def _save_draft(source_id: str, bundle: dict):
 
     # --- CLOUD BRIDGE ---
     # Upload the JSON draft to Supabase Storage
-    upload_artifact("drafts", f"{source_id}_draft.json", path)
+    upload_artifact("drafts", source_id, path)
 
 
 if __name__ == "__main__":

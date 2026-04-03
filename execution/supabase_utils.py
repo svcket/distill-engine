@@ -1,14 +1,15 @@
 import os
+from typing import Optional
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # SUPABASE CONFIG
-url: str = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-key: str = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+url: Optional[str] = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+key: Optional[str] = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
-def get_supabase_client() -> Client:
+def get_supabase_client() -> Optional[Client]:
     if not url or not key:
         print("[Supabase] Missing URL or SERVICE_KEY. Skipping cloud upload.")
         return None
