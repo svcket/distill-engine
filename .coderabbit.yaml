@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit Configuration v2 for Distill Engine
+
+language: "en-US"
+
+reviews:
+  profile: "chill"
+  auto_review:
+    enabled: true
+    drafts: false
+  
+# The AI reviewer will automatically detect our project context 
+# without needing rigid instruction blocks if the repo description is clear.

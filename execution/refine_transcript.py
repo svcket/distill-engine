@@ -5,6 +5,7 @@ import os
 import re
 import glob
 from typing import List, Dict, Any
+from supabase_utils import upload_artifact
 
 def refine_source_transcript(source_id: str) -> Dict[str, Any]:
     """
@@ -123,6 +124,11 @@ def refine_transcript(transcript_path: str, output_path: str) -> Dict[str, Any]:
             
         with open(md_path, 'w', encoding='utf-8') as f:
             f.write("\n".join(md_lines))
+
+        # --- CLOUD BRIDGE ---
+        # Upload the JSON result to Supabase Storage
+        source_id = os.path.basename(os.path.dirname(output_path))
+        upload_artifact("refined_transcripts", source_id, output_path)
             
         result = {
             "status": "success",

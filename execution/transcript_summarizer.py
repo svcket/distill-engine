@@ -4,6 +4,7 @@ import json
 import os
 from openai import OpenAI
 from typing import Dict, Any
+from supabase_utils import upload_artifact
 
 def summarize_transcript(source_id: str) -> Dict[str, Any]:
     """Convenience wrapper for the Unified Analysis Cluster."""
@@ -68,9 +69,13 @@ def generate_summary(transcript_path: str, output_path: str) -> Dict[str, Any]:
             f.write(summary_text)
             
         # Also save as structured JSON for API consistency
-        json_path = output_path.replace('.md', '.json')
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump({"summary": summary_text}, f, indent=2)
+
+        # --- CLOUD BRIDGE ---
+        # Upload the JSON result to Supabase Storage
+        source_id = os.path.basename(json_path).replace('_summary.json', '')
+        upload_artifact("summaries", source_id, json_path)
             
         result = {
             "status": "success",

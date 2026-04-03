@@ -26,6 +26,7 @@ class ContentPlan(BaseModel):
     concrete_examples: list[str] = Field(description="Specific, non-abstract examples from the source to illustrate claims.")
 
 from typing import Optional
+from supabase_utils import upload_artifact
 
 def generate_draft(outline_path: str, insights_path: str, packet_path: str, brief_path: Optional[str] = None, feedback: Optional[str] = None, stream: bool = False):
     if not os.path.exists(outline_path) or not os.path.exists(insights_path) or not os.path.exists(packet_path):
@@ -289,6 +290,10 @@ def _save_draft(source_id: str, bundle: dict):
     path = os.path.join(out_dir, f"{source_id}_draft.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(bundle, f, indent=2)
+
+    # --- CLOUD BRIDGE ---
+    # Upload the JSON draft to Supabase Storage
+    upload_artifact("drafts", f"{source_id}_draft.json", path)
 
 
 if __name__ == "__main__":

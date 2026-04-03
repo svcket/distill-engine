@@ -19,6 +19,7 @@ import re
 from pydantic import BaseModel, Field
 from openai import OpenAI
 from typing import List, Dict
+from supabase_utils import upload_artifact
 
 class DQMMetrics(BaseModel):
     source_grounding: int = Field(description="Score 0-100 on how strongly the draft reflects the original source/brief.")
@@ -209,10 +210,13 @@ BRIEF CONTEXT (for Grounding):
         }
         
         # Save to .tmp/evaluations
-        eval_dir = os.path.join(base, ".tmp", "evaluations")
-        os.makedirs(eval_dir, exist_ok=True)
-        with open(os.path.join(eval_dir, f"{source_id}_eval.json"), "w", encoding="utf-8") as f:
+        eval_path = os.path.join(eval_dir, f"{source_id}_eval.json")
+        with open(eval_path, "w", encoding="utf-8") as f:
             json.dump({"status": "success", "result": result}, f, indent=2)
+
+        # --- CLOUD BRIDGE ---
+        # Upload the JSON result to Supabase Storage
+        upload_artifact("evaluations", f"{source_id}_eval.json", eval_path)
             
         print(json.dumps({"status": "success", "result": result}))
         
