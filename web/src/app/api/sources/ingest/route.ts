@@ -88,8 +88,14 @@ export async function POST(request: Request) {
                     }, { status: 403 })
                 }
 
-                // Success - retrieve source details (findUnique is safe here as the row existed to trigger P2002)
-                source = await withRetry(() => prisma.source.findUnique({ where: { id: result.source_id } }))
+                // HARDEN RE-READ: Ensure retrieved source is strictly scoped to authenticated user to fail closed
+                source = await withRetry(() => prisma.source.findFirst({ 
+                    where: { id: result.source_id, userId: userId } 
+                }))
+                
+                if (!source) {
+                    throw new Error('Verification Error: Source was updated but retrieval failed. Potential race condition detected.')
+                }
             } else {
                 throw err;
             }
