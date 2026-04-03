@@ -1,5 +1,5 @@
 import { auth } from "@/auth"
-import { prisma } from "@/lib/prisma"
+import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import path from 'path'
 import fs from 'fs'
@@ -21,10 +21,10 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
     }
 
-    // 1. Verify source ownership
-    const source = await prisma.source.findUnique({
-        where: { id: sourceId, userId: session.user.id }
-    })
+    // 1. Verify source ownership with retry
+    const source = await withRetry(() => prisma.source.findUnique({
+        where: { id: sourceId, userId: session.user?.id as string }
+    }))
 
     if (!source) {
         return NextResponse.json({ error: "Source not found or access denied" }, { status: 404 })
@@ -105,23 +105,25 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Thread generation failed", details: error }, { status: 500 })
         }
 
-        await prisma.source.update({
-            where: { id: sourceId, userId: session.user.id },
+        await withRetry(() => prisma.source.update({
+            where: { id: sourceId, userId: session.user?.id },
             data: { 
                 status: 'completed',
                 completedStages: {
                     push: 'socialise'
                 }
             }
-        });
+        }));
 
         // 4. Dispatch Push Notification
-        await sendPushNotification(
-            session.user.id, 
-            "Distillation Complete", 
-            `Your analysis for "${source.title}" is ready.`,
-            `${process.env.NEXT_PUBLIC_APP_URL}/sources?id=${sourceId}`
-        );
+        if (session.user?.id) {
+            await sendPushNotification(
+                session.user.id, 
+                "Distillation Complete", 
+                `Your analysis for "${source.title}" is ready.`,
+                `${process.env.NEXT_PUBLIC_APP_URL}/sources?id=${sourceId}`
+            );
+        }
 
         return NextResponse.json({ 
             result: data,

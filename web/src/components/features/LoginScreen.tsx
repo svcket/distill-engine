@@ -8,7 +8,6 @@ import { Mail, ArrowRight } from "lucide-react"
 export default function LoginScreen() {
   const [email, setEmail] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [isSent, setIsSent] = useState(false)
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -16,7 +15,6 @@ export default function LoginScreen() {
     try {
       // In dev, NextAuth will log the verification link to the console
       await signIn("resend", { email })
-      setIsSent(true)
     } catch (error) {
       console.error("Login bug, dawg:", error)
     } finally {
@@ -131,14 +129,16 @@ export default function LoginScreen() {
               Sign in with Google
             </button>
 
-            <button
-              onClick={handleDevLogin}
-              className="w-full h-10 text-[10px] text-white/20 hover:text-white/40 transition-all uppercase tracking-[0.2em]"
-            >
-              — Developer Access —
-            </button>
+            {process.env.NODE_ENV === "development" && (
+              <button
+                onClick={handleDevLogin}
+                className="w-full h-10 text-[10px] text-white/20 hover:text-white/40 transition-all uppercase tracking-[0.2em]"
+              >
+                — Developer Access —
+              </button>
+            )}
 
-            {email === "nsikan.design@gmail.com" && (
+            {process.env.NODE_ENV === "development" && email === "nsikan.design@gmail.com" && (
               <button
                 onClick={async () => {
                   setIsLoading(true)

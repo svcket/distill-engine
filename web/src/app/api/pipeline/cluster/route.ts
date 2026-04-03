@@ -9,11 +9,18 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const userId = session.user.id
+
     try {
         const { sourceId } = await request.json()
         
-        if (!sourceId) {
-            return NextResponse.json({ error: "Missing sourceId" }, { status: 400 })
+        // SECURITY: Verify ownership before spawning compute-heavy worker
+        const source = await prisma.source.findUnique({
+            where: { id: sourceId, userId }
+        })
+
+        if (!source) {
+            return NextResponse.json({ error: "Source not found or access denied." }, { status: 404 })
         }
 
         // The cluster script runs Summary, Packet, and Insights in a single process
@@ -29,7 +36,7 @@ export async function POST(request: Request) {
             
             // Update the source record with completed stages
             await prisma.source.update({
-                where: { id: sourceId, userId: session.user.id },
+                where: { id: sourceId, userId },
                 data: { 
                     completedStages: {
                         push: stages

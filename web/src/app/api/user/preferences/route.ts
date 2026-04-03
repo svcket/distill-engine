@@ -1,5 +1,5 @@
 import { auth } from "@/auth"
-import { prisma } from "@/lib/prisma"
+import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from "next/server"
 
 export async function GET() {
@@ -8,29 +8,30 @@ export async function GET() {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const userId = session.user.id
     try {
-        let preferences = await prisma.userPreferences.findUnique({
-            where: { userId: session.user.id }
-        })
+        let preferences = await withRetry(() => prisma.userPreferences.findUnique({
+            where: { userId }
+        }))
 
         // SELF-HEALING: Recreate user if lost during migration/reset
-        let user = await prisma.user.findUnique({ where: { id: session.user.id } })
+        let user = await withRetry(() => prisma.user.findUnique({ where: { id: userId } }))
         if (!user) {
-            user = await prisma.user.create({
+            user = await withRetry(() => prisma.user.create({
                 data: {
-                    id: session.user.id,
-                    name: session.user.name,
-                    email: session.user.email,
-                    image: session.user.image,
+                    id: userId,
+                    name: session.user!.name,
+                    email: session.user!.email,
+                    image: session.user!.image,
                 }
-            })
+            }))
         }
 
         // Initialize if doesn't exist
         if (!preferences) {
-            preferences = await prisma.userPreferences.create({
-                data: { userId: session.user.id }
-            })
+            preferences = await withRetry(() => prisma.userPreferences.create({
+                data: { userId }
+            }))
         }
 
         return NextResponse.json(preferences)
@@ -46,18 +47,19 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const userId = session.user.id
     try {
         // SELF-HEALING: Recreate user if lost during migration/reset
-        let user = await prisma.user.findUnique({ where: { id: session.user.id } })
+        let user = await withRetry(() => prisma.user.findUnique({ where: { id: userId } }))
         if (!user) {
-            user = await prisma.user.create({
+            user = await withRetry(() => prisma.user.create({
                 data: {
-                    id: session.user.id,
-                    name: session.user.name,
-                    email: session.user.email,
-                    image: session.user.image,
+                    id: userId,
+                    name: session.user!.name,
+                    email: session.user!.email,
+                    image: session.user!.image,
                 }
-            })
+            }))
         }
 
         const body = await request.json()
@@ -65,21 +67,21 @@ export async function PATCH(request: Request) {
 
         // 1. Update User level fields if provided
         if (oneSignalUserId !== undefined) {
-            await prisma.user.update({
-                where: { id: session.user.id },
+            await withRetry(() => prisma.user.update({
+                where: { id: userId },
                 data: { oneSignalUserId }
-            })
+            }))
         }
         
         // 2. Update Preferences
-        const preferences = await prisma.userPreferences.upsert({
-            where: { userId: session.user.id },
+        const preferences = await withRetry(() => prisma.userPreferences.upsert({
+            where: { userId },
             update: rest as any,
             create: {
-                userId: session.user.id,
+                userId,
                 ...(rest as any)
             }
-        })
+        }))
 
         return NextResponse.json(preferences)
     } catch (error) {

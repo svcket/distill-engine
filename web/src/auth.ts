@@ -5,6 +5,8 @@ import Credentials from "next-auth/providers/credentials"
 import { PrismaAdapter } from "@auth/prisma-adapter"
 import { prisma } from "@/lib/prisma"
 
+import { withRetry } from "@/lib/prisma"
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
@@ -77,18 +79,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           const targetEmail = (credentials?.email as string) || "operator@distill.agency"
           console.log(`Authorize: Operator Bypass for ${targetEmail}`)
           
-          let user = await prisma.user.findUnique({
+          let user = await withRetry(() => prisma.user.findUnique({
             where: { email: targetEmail }
-          })
+          }))
           
           if (!user && targetEmail === "operator@distill.agency") {
-            user = await prisma.user.create({
+            user = await withRetry(() => prisma.user.create({
               data: {
                 id: "operator-uuid",
                 name: "Operator",
                 email: "operator@distill.agency",
               }
-            })
+            }))
           }
           
           return user
@@ -123,9 +125,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             return true // Allow in dev if the table is missing
           }
 
-          const whitelisted = await betaWhitelist.findUnique({
+          const whitelisted = await withRetry(() => betaWhitelist.findUnique({
             where: { email: user.email! }
-          })
+          }))
           
           if (!whitelisted) {
             console.warn(`SignIn: Denied. ${user.email} not in betaWhitelist table.`)
@@ -148,9 +150,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           
           // Fetch plan safely
           if (user.id) {
-            const usage = await prisma.usage.findUnique({
+            const usage = await withRetry(() => prisma.usage.findUnique({
               where: { userId: user.id }
-            })
+            }))
             token.plan = usage?.currentPlan || "free"
           } else {
             token.plan = "free"

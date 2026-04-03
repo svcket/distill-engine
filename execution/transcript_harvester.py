@@ -17,6 +17,7 @@ from dataclasses import dataclass
 # Ensure execution dir is in path for relative imports if run as script
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from monitoring import log_rescue_attempt
+from supabase_utils import upload_artifact
 
 def determine_transcript_strategy(source_id: str, metadata: dict) -> tuple[str, str]:
     """
@@ -996,8 +997,12 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
 
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(transcript_list, f, indent=2)
+
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write(text)
+
+        # --- CLOUD BRIDGE ---
+        upload_artifact("transcripts", source_id, json_path)
 
         return {
             "source_id": source_id,
@@ -1021,6 +1026,9 @@ def finish_transcript(source_id: str, transcript_list: list, output_dir: str) ->
 
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(" ".join(str(c.get("text", "")) for c in transcript_list))
+
+    # --- CLOUD BRIDGE ---
+    upload_artifact("transcripts", source_id, json_path, filename=f"{source_id}_raw.json")
 
     return {
         "source_id": source_id,

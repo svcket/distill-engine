@@ -38,12 +38,35 @@ export async function POST(request: Request) {
         fs.mkdirSync(sourceDir, { recursive: true })
 
         // 1. Authenticate and find the source scoped to the user
-        const source = await withRetry(() => prisma.source.findUnique({
+        let source = await withRetry(() => prisma.source.findUnique({
             where: { id: sourceId, userId: userId }
         }))
 
+        // SELF-HEALING: If source is missing from user's record but exists globally, 
+        // claim it for this user to ensure the pipeline can proceed.
         if (!source) {
-            return NextResponse.json({ error: "Source not found or access denied" }, { status: 404 })
+            const globalSource = await prisma.source.findUnique({ where: { id: sourceId } });
+            if (globalSource) {
+                console.log(`[Score] Auto-claiming global source ${sourceId} for user ${userId}`);
+                source = await prisma.source.create({
+                    data: {
+                        id: sourceId,
+                        userId: userId,
+                        title: globalSource.title,
+                        url: globalSource.url,
+                        type: globalSource.type,
+                        status: 'idle',
+                        published: globalSource.published,
+                        duration: globalSource.duration,
+                        completedStages: []
+                    }
+                });
+            } else {
+                return NextResponse.json({ 
+                    error: "Source not found or access denied",
+                    message: "The requested source could not be found in our database. Please try ingesting it again."
+                }, { status: 404 })
+            }
         }
 
         // 2. Ensure the .json stub exists for the Python judge

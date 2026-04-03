@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma"
 import { Resend } from "resend"
 import { DigestEmail } from "@/components/emails/DigestEmail"
 import { NextResponse } from "next/server"
-import { subHours, subDays, startOfDay } from "date-fns"
+import { subHours, subDays } from "date-fns"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -24,12 +24,12 @@ export async function GET(request: Request) {
 
         const results = []
 
-        for (const window of windows) {
+        for (const digestWindow of windows) {
             // 3. Find Users for this window
             const users = await prisma.user.findMany({
                 where: {
                     preferences: {
-                        notifyEmailDigest: window.type
+                        notifyEmailDigest: digestWindow.type
                     }
                 },
                 include: { preferences: true }
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
                     where: {
                         userId: user.id,
                         status: 'completed',
-                        createdAt: { gte: window.since }
+                        createdAt: { gte: digestWindow.since }
                     },
                     orderBy: { createdAt: 'desc' },
                     take: 5 // Limit to top 5 major insights
@@ -62,11 +62,8 @@ export async function GET(request: Request) {
                         await resend.emails.send({
                             from: 'Distill <onboarding@resend.dev>', // Update with verify domain later
                             to: [user.email || ""],
-                            subject: `Your ${window.type === 'daily' ? 'Daily' : 'Weekly'} Distill Digest: ${insights.length} New Insights`,
-                            react: DigestEmail({
-                                userName: user.name || "User",
-                                insights: digestInsights
-                            })
+                            subject: `Your ${digestWindow.type === 'daily' ? 'Daily' : 'Weekly'} Distill Digest: ${insights.length} New Insights`,
+                            react: renderDigest(user.name || "User", digestInsights)
                         })
                         results.push({ userId: user.id, status: 'sent', count: insights.length })
                     } catch (emailErr) {
@@ -82,4 +79,14 @@ export async function GET(request: Request) {
         console.error("Cron Digest failed:", error)
         return NextResponse.json({ success: false, error: String(error) }, { status: 500 })
     }
+}
+
+// Helper to avoid JSX in try/catch lint error
+function renderDigest(userName: string, insights: Array<{ title: string; type: string; url: string; date: string; summary?: string }>) {
+    return (
+        <DigestEmail 
+            userName={userName}
+            insights={insights}
+        />
+    )
 }

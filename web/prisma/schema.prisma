@@ -46,8 +46,9 @@ model User {
   drafts        Draft[]
   sessions      Session[]
   sources       Source[]
-  usage         Usage?
-  preferences   UserPreferences?
+  oneSignalUserId String?
+  usage           Usage?
+  preferences     UserPreferences?
 }
 
 model BetaWhitelist {

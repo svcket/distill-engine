@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/auth'
-import path from 'path'
-import { promises as fs } from 'fs'
 import { deleteSourceFiles } from '@/lib/storage-utils'
+import { StorageAdapter } from '@/lib/storage-adapter'
+
+interface SourceUpdate {
+    title?: string;
+    duration?: string;
+    score?: number;
+}
 
 export async function GET() {
     const session = await auth()
@@ -18,50 +23,42 @@ export async function GET() {
         })
 
         // Hydration fix: If a source is missing metrics or title, try to find them in the .tmp artifacts
-        const webDir = path.resolve(process.cwd())
-        const baseDir = webDir.endsWith('web') 
-            ? path.resolve(webDir, '../execution/.tmp')
-            : path.resolve(webDir, 'execution/.tmp')
-
         const hydratedSources = await Promise.all(data.map(async (s) => {
-            const updates: Partial<typeof s> = {}
+            const updates: SourceUpdate = {}
             const source = {
                 ...s,
                 source_type: s.type,
-                completedStages: Array.isArray(s.completedStages) ? s.completedStages : []
+                completedStages: Array.isArray(s.completedStages) ? (s.completedStages as string[]) : []
             }
             
-            // 1. Hydrate Title
+            // 1. Hydrate Title (Primary source: Transcripts/Metadata)
             if (source.title === 'Unknown Source' || !source.title || source.title === 'New Source' || source.title === 'Podcast Episode') {
-                const metaPath = path.join(baseDir, 'transcripts', source.id, 'metadata.json')
                 try {
-                    const stats = await fs.stat(metaPath).catch(() => null)
-                    if (stats && stats.isFile()) {
-                        const metaStr = await fs.readFile(metaPath, 'utf-8')
-                        const meta = JSON.parse(metaStr)
-                        if (meta.title && meta.title !== 'Unknown Source' && meta.title !== 'Podcast Episode') {
-                            source.title = meta.title
-                            updates.title = meta.title
-                        }
-                    }
+                   const meta = await StorageAdapter.getJson('transcripts', `${source.id}/metadata.json`) as Record<string, string> | null
+                   if (meta?.title && meta.title !== 'Unknown Source' && meta.title !== 'Podcast Episode') {
+                        source.title = meta.title
+                        updates.title = meta.title
+                   }
                 } catch { /* ignore */ }
             }
 
             // 2. Hydrate Duration
             if (!source.duration || source.duration === '—' || source.duration === 'PT0S') {
-                const transcriptPath = path.join(baseDir, 'transcripts', source.id, `${source.id}_raw.json`)
                 try {
-                    const stats = await fs.stat(transcriptPath).catch(() => null)
-                    if (stats && stats.isFile()) {
-                        const transcriptStr = await fs.readFile(transcriptPath, 'utf-8')
-                        const transcriptData = JSON.parse(transcriptStr);
+                    const transcriptData = await StorageAdapter.getJson('transcripts', `${source.id}/${source.id}_raw.json`) as unknown as Record<string, unknown> | Record<string, unknown>[] | null
+                    if (transcriptData) {
                         let totalSecs = 0;
                         if (Array.isArray(transcriptData) && transcriptData.length > 0) {
-                            const last = transcriptData[transcriptData.length - 1];
-                            totalSecs = (last.start || 0) + (last.duration || 0);
-                        } else {
-                            const payload = transcriptData.payload || transcriptData.data || transcriptData.result || transcriptData;
-                            totalSecs = payload.duration || payload.metadata?.duration || payload.result?.duration;
+                            const last = transcriptData[transcriptData.length - 1] as Record<string, unknown>;
+                            totalSecs = ((last.start as number) || 0) + ((last.duration as number) || 0);
+                        } else if (transcriptData && !Array.isArray(transcriptData)) {
+                            // Extract duration from various possible JSON structures
+                            const p = (transcriptData.payload || transcriptData.data || transcriptData.result || transcriptData) as { 
+                                duration?: number, 
+                                metadata?: { duration?: number }, 
+                                result?: { duration?: number } 
+                            };
+                            totalSecs = p.duration || p.metadata?.duration || p.result?.duration || 0;
                         }
 
                         if (totalSecs > 0) {
@@ -80,13 +77,10 @@ export async function GET() {
 
             // 3. Hydrate DQM Score
             if (!source.score || source.score === 0) {
-                const evalPath = path.join(baseDir, 'evaluations', `${source.id}_eval.json`)
                 try {
-                    const stats = await fs.stat(evalPath).catch(() => null)
-                    if (stats && stats.isFile()) {
-                        const evalStr = await fs.readFile(evalPath, 'utf-8')
-                        const evalData = JSON.parse(evalStr)
-                        const dqmPayload = evalData.payload || evalData.data || evalData
+                    const evalData = await StorageAdapter.getJson('evaluations', `${source.id}_eval.json`)
+                    if (evalData) {
+                        const dqmPayload = (evalData.payload || evalData.data || evalData) as Record<string, any>
                         const score = dqmPayload?.scores?.publishability || dqmPayload?.publishability
                         if (score) {
                             source.score = score
@@ -97,24 +91,19 @@ export async function GET() {
             }
             
             // 4. Hydrate Draft Metadata (Snippet, Word Count, Content Type)
-            const draftPath = path.join(baseDir, 'drafts', `${source.id}_draft.json`)
             try {
-                const stats = await fs.stat(draftPath).catch(() => null)
-                if (stats && stats.isFile()) {
-                    const draftStr = await fs.readFile(draftPath, 'utf-8')
-                    const draftData = JSON.parse(draftStr)
-                    const payload = draftData.data || draftData.payload || draftData
-                    
+                const draftData = await StorageAdapter.getJson('drafts', `${source.id}_draft.json`)
+                if (draftData) {
+                    const payload = (draftData.data || draftData.payload || draftData) as Record<string, any>
                     if (payload.content) {
-                        // Extract a clean snippet (approx. 200 chars)
-                        const cleanContent = payload.content.replace(/[#*`]/g, '').trim()
-                        ;(source as any).draftSnippet = cleanContent.length > 200 ? cleanContent.substring(0, 200) + '...' : cleanContent
+                        const cleanContent = (payload.content as string).replace(/[#*`]/g, '').trim()
+                        ;(source as { draftSnippet?: string }).draftSnippet = cleanContent.length > 200 ? cleanContent.substring(0, 200) + '...' : cleanContent
                     }
                     if (payload.word_count || payload.wordCount) {
-                        ;(source as any).wordCount = payload.word_count || payload.wordCount
+                        ;(source as { wordCount?: number }).wordCount = payload.word_count || payload.wordCount
                     }
                     if (draftData.content_type || draftData.contentType || payload.contentType) {
-                        ;(source as any).contentType = draftData.content_type || draftData.contentType || payload.contentType
+                        ;(source as { contentType?: string }).contentType = draftData.content_type || draftData.contentType || payload.contentType
                     }
                 }
             } catch { /* ignore */ }

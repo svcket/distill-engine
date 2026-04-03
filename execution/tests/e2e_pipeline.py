@@ -90,6 +90,10 @@ def test_e2e(url):
     res, _ = run_stage(os.path.join(execution_dir, "writer.py"), ["--outline_input", angle_path, "--insights_input", insights_path, "--packet_input", packet_path])
     if not res: return False
     
+    # 8. Evaluation (Takes source-id, produces eval.json and updates DB in production)
+    res, _ = run_stage(os.path.join(execution_dir, "evaluate_dqm.py"), ["--source-id", source_id])
+    if not res: return False
+
     total_duration = time.time() - total_start
     print(f"\n✅ E2E PIPELINE COMPLETE IN {total_duration:.2f}s")
     

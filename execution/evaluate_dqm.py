@@ -19,6 +19,7 @@ import re
 from pydantic import BaseModel, Field
 from openai import OpenAI
 from typing import List, Dict
+from supabase_utils import upload_artifact
 
 class DQMMetrics(BaseModel):
     source_grounding: int = Field(description="Score 0-100 on how strongly the draft reflects the original source/brief.")
@@ -33,54 +34,35 @@ class DQMMetrics(BaseModel):
     suggestions: List[str] = Field(description="Actionable improvements.")
     rationale: str = Field(description="A concise summary explaining the scores and the overall publishability decision.")
 
-def calculate_deterministic_metrics(content: str) -> Dict:
-    metrics = {}
+def _persist_evaluation(source_id: str, result: Dict, base_dir: str):
+    """
+    Shared helper to save evaluation result to disk and upload to cloud storage.
+    Ensures the JSON is wrapped in a 'payload' envelope for web-side hydration.
+    """
+    eval_dir = os.path.join(base_dir, ".tmp", "evaluations")
+    os.makedirs(eval_dir, exist_ok=True)
     
-    # Word count
-    words = content.split()
-    metrics['word_count'] = len(words)
+    eval_path = os.path.join(eval_dir, f"{source_id}_eval.json")
     
-    # Paragraphs
-    paragraphs = [p for p in content.split('\n\n') if p.strip()]
-    metrics['paragraph_count'] = len(paragraphs)
-    metrics['avg_paragraph_length'] = len(words) / max(1, len(paragraphs))
+    # HYDRATION WRAPPER: Web side (StorageAdapter) expects a 'payload' or 'data' key
+    final_json = {
+        "status": "success",
+        "timestamp": os.environ.get("TIMESTAMP", ""),
+        "payload": result,
+        "source_id": source_id
+    }
     
-    # Headings
-    headings = re.findall(r'^#+ ', content, re.MULTILINE)
-    metrics['heading_count'] = len(headings)
+    with open(eval_path, "w", encoding="utf-8") as f:
+        json.dump(final_json, f, indent=2)
     
-    # Sentence length variation
-    sentences = re.split(r'[.!?]+', content)
-    sentence_lengths = [len(s.split()) for s in sentences if s.strip()]
-    if sentence_lengths:
-        metrics['sentence_variation'] = max(sentence_lengths) - min(sentence_lengths)
-    else:
-        metrics['sentence_variation'] = 0
-        
-    # AI Cliche detection
-    cliches = [
-        "in today's rapidly evolving landscape",
-        "it is important to note that",
-        "as we move forward",
-        "in conclusion",
-        "digital age",
-        "tapestry",
-        "delve",
-        "unlock"
-    ]
-    found_cliches = [c for c in cliches if c in content.lower()]
-    metrics['cliche_count'] = len(found_cliches)
-    
-    return metrics
+    # Cloud Bridge
+    upload_artifact("evaluations", source_id, eval_path)
+    return final_json
 
 def evaluate_dqm(source_id: str):
     base = os.path.dirname(__file__)
     draft_file = os.path.join(base, ".tmp", "drafts", f"{source_id}_draft.json")
     
-    if not os.path.exists(draft_file):
-        print(json.dumps({"status": "error", "error_detail": f"Draft '{source_id}' not found."}), file=sys.stderr)
-        sys.exit(1)
-        
     if not os.path.exists(draft_file):
         print(json.dumps({
             "status": "failed", 
@@ -92,17 +74,34 @@ def evaluate_dqm(source_id: str):
     with open(draft_file, "r", encoding="utf-8") as f:
         draft_bundle = json.load(f)
         
-    # Standardize content extraction from the WrittenDraft bundle
-    # The WrittenDraft bundle from writer.py is { "status": "success", "data": { "title": "...", "content": "..." } }
-    data_payload = draft_bundle.get("data", {})
-    if isinstance(data_payload, dict):
-        content = data_payload.get("content", "")
+    # Content extraction
+    if isinstance(draft_bundle, dict):
+        data_payload = draft_bundle.get("data", {})
+        if isinstance(data_payload, dict):
+            content = data_payload.get("content") or data_payload.get("text") or ""
+        else:
+            content = ""
+            
+        if not content:
+            content = draft_bundle.get("content") or draft_bundle.get("text") or ""
+            
+        if not content and "draft" in draft_bundle:
+            draft_obj = draft_bundle["draft"]
+            if isinstance(draft_obj, dict):
+                content = draft_obj.get("content") or draft_obj.get("text") or ""
+            elif isinstance(draft_obj, str):
+                content = draft_obj
     else:
-        content = draft_bundle.get("content", "")
-    
-    if not content:
-        # Fallback to keys that might be present in direct models
-        content = draft_bundle.get("content", "") or ""
+        content = str(draft_bundle)
+
+    # SAFETY CHECK: Fail early if content is empty or only whitespace
+    if not content or not content.strip():
+        print(json.dumps({
+            "status": "failed",
+            "error": "Extracted content is empty. Cannot evaluate an empty draft.",
+            "source_id": source_id
+        }), file=sys.stderr)
+        sys.exit(1)
     
     # Load brief for grounding context
     brief_file = os.path.join(base, ".tmp", "briefs", f"{source_id}_brief.json")
@@ -124,13 +123,16 @@ def evaluate_dqm(source_id: str):
                 "structure": 80,
                 "seo": 75,
                 "aeo": 82,
-                "publishability": 78
+                "publishability": 78,
+                "total_score": 78
             },
-            "strengths": ["Clear section hierarchy", "Strong readability", "Good word count volume"],
+            "total_score": 78,
+            "strengths": ["Clear section hierarchy (Mock)", "Strong readability", "Good word count volume"],
             "risks": ["Predictable AI rhythmic patterns", "Generic conclusion wrapper"],
             "suggestions": ["Introduce more transition variety", "Replace 'In conclusion' with a summary insight"]
         }
-        print(json.dumps({"status": "success", "data": result}))
+        final_json = _persist_evaluation(source_id, result, base)
+        print(json.dumps(final_json))
         return
 
     client = OpenAI()
@@ -150,14 +152,14 @@ SCORING RULES:
 50-69: Average, needs significant editorial intervention.
 Below 50: Weak, failed logic or excessive AI artifacts.
 
-COMPOSITE WEIGHTS (For your internal calc, but return all scores):
+COMPOSITE WEIGHTS:
 20% Grounding, 15% Insight, 15% Humanness, 10% Clarity, 10% Structure, 15% SEO, 15% AEO.
 """
 
     user_prompt = f"""DRAFT CONTENT:
 {content}
 
-BRIEF CONTEXT (for Grounding):
+BRIEF CONTEXT:
 {brief_content[:2000]}
 """
 
@@ -173,7 +175,6 @@ BRIEF CONTEXT (for Grounding):
         
         extracted = completion.choices[0].message.parsed
         
-        # Calculate Publishability
         publishability = int(
             (extracted.source_grounding * 0.20) +
             (extracted.insight_density * 0.15) +
@@ -193,26 +194,23 @@ BRIEF CONTEXT (for Grounding):
                 "structure": extracted.structure,
                 "seo": extracted.seo,
                 "aeo": extracted.aeo,
-                "publishability": publishability
+                "publishability": publishability,
+                "total_score": publishability
             },
+            "total_score": publishability,
             "suggestions": extracted.suggestions,
             "rationale": extracted.rationale
         }
         
-        # Save to .tmp/evaluations
-        eval_dir = os.path.join(base, ".tmp", "evaluations")
-        os.makedirs(eval_dir, exist_ok=True)
-        with open(os.path.join(eval_dir, f"{source_id}_eval.json"), "w", encoding="utf-8") as f:
-            json.dump({"status": "success", "data": result}, f, indent=2)
-            
-        print(json.dumps({"status": "success", "data": result}))
+        final_json = _persist_evaluation(source_id, result, base)
+        print(json.dumps(final_json))
         
     except Exception as e:
         print(json.dumps({"status": "error", "error_detail": str(e)}), file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--source-id", required=True)
+    parser = argparse.ArgumentParser(description="Evaluate a draft via DQM Matrix.")
+    parser.add_argument("--source-id", "--video-id", dest="source_id", required=True)
     args = parser.parse_args()
     evaluate_dqm(args.source_id)

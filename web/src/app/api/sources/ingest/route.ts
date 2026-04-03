@@ -1,5 +1,5 @@
 import { auth } from "@/auth"
-import { prisma } from "@/lib/prisma"
+import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import path from 'path'
@@ -36,53 +36,78 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Pipeline Truth Error: Ingest reported success but artifact is missing.', id: result.source_id }, { status: 500 })
         }
         
+        const userId = session.user.id
         // SELF-HEALING: Recreate user if deleted during migration but session persists
-        const userExists = await prisma.user.findUnique({ where: { id: session.user.id } })
+        const userExists = await withRetry(() => prisma.user.findUnique({ where: { id: userId } }))
         if (!userExists) {
-            await prisma.user.create({
+            await withRetry(() => prisma.user.create({
                 data: {
-                    id: session.user.id,
-                    name: session.user.name,
-                    email: session.user.email,
-                    image: session.user.image,
+                    id: userId,
+                    name: session.user?.name || 'Anonymous User',
+                    email: session.user?.email || '',
+                    image: session.user?.image || '',
                 }
-            })
+            }))
         }
 
-        // Persist the source to Postgres scoped to the user
-        // We first check if it's already owned by someone else to prevent hijacking
-        const existingSource = await prisma.source.findUnique({ where: { id: result.source_id } })
-        if (existingSource && existingSource.userId !== session.user.id) {
-             return NextResponse.json({ error: 'This source ID is already managed by another user. Collaborative sourcing is not yet supported in Beta.' }, { status: 403 })
-        }
+        // Persist the source to Postgres scoped to the user (Atomic Ownership Logic)
+        let source;
+        try {
+            source = await withRetry(() => prisma.source.create({
+                data: {
+                    id: result.source_id,
+                    userId: userId,
+                    title: result.title || 'Unknown Source',
+                    url: result.url || url,
+                    type: result.source_type || 'youtube',
+                    status: 'idle',
+                    published: result.published || 'Recently',
+                    duration: result.duration || '—',
+                    score: result.score || 0,
+                    completedStages: [],
+                }
+            }))
+        } catch (err: unknown) {
+            // P2002 is Prisma's code for Unique Constraint Violation
+            if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'P2002') {
+                // ATOMIC SECURITY: Combined check and update using updateMany to prevent race-condition bypass
+                const updateResult = await withRetry(() => prisma.source.updateMany({
+                    where: { 
+                        id: result.source_id,
+                        userId: userId 
+                    },
+                    data: {
+                        title: result.title || 'Unknown Source',
+                        status: 'idle', 
+                    }
+                }))
+                
+                if (updateResult.count === 0) {
+                    return NextResponse.json({ 
+                        error: 'Authorization Error: Update failed. This source may be managed by another user or does not exist.' 
+                    }, { status: 403 })
+                }
 
-        const source = await prisma.source.upsert({
-            where: { id: result.source_id },
-            update: {
-                title: result.title || 'Unknown Source',
-                status: 'idle', 
-            },
-            create: {
-                id: result.source_id,
-                userId: session.user.id,
-                title: result.title || 'Unknown Source',
-                url: result.url || url,
-                type: result.source_type || 'youtube',
-                status: 'idle',
-                published: result.published || 'Recently',
-                duration: result.duration || '—',
-                score: result.score || 0,
-                completedStages: [],
+                // HARDEN RE-READ: Ensure retrieved source is strictly scoped to authenticated user to fail closed
+                source = await withRetry(() => prisma.source.findFirst({ 
+                    where: { id: result.source_id, userId: userId } 
+                }))
+                
+                if (!source) {
+                    throw new Error('Verification Error: Source was updated but retrieval failed. Potential race condition detected.')
+                }
+            } else {
+                throw err;
             }
-        })
+        }
 
 
         // Reset usage count logic (Stage 6 prep)
-        await prisma.usage.upsert({
-            where: { userId: session.user.id },
+        await withRetry(() => prisma.usage.upsert({
+            where: { userId: userId },
             update: { sourcesProcessed: { increment: 1 } },
-            create: { userId: session.user.id, sourcesProcessed: 1 }
-        })
+            create: { userId: userId, sourcesProcessed: 1 }
+        }))
 
         // AUTOMATION: Pipeline now strictly user-triggered to avoid unintended consumption
         // Previously triggered /api/transcripts/fetch here

@@ -74,7 +74,7 @@ export const DigestEmail: React.FC<Readonly<DigestEmailProps>> = ({
     }}>
       <p>This is an automated digest from your Distill Engine.</p>
       <p>
-        <a href="http://localhost:3000/settings" style={{ color: '#10b981', textDecoration: 'none' }}>
+        <a href={`${process.env.NEXT_PUBLIC_APP_URL}/settings`} style={{ color: '#10b981', textDecoration: 'none' }}>
           Manage Preferences
         </a>
       </p>

@@ -10,6 +10,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const userId = session.user.id
+
     try {
         const { transcriptId } = await request.json()
 
@@ -20,6 +22,15 @@ export async function POST(request: Request) {
         const executionDir = path.resolve(process.cwd(), '../execution')
         const scriptPath = path.join(executionDir, 'insight_extractor.py')
         const packetPath = path.join(executionDir, '.tmp', 'insight_packets', `${transcriptId}_packet.json`)
+
+        // SECURITY: Verify ownership before spawning worker (closes ID-guessing vulnerability)
+        const source = await prisma.source.findUnique({
+            where: { id: transcriptId, userId }
+        })
+
+        if (!source) {
+            return NextResponse.json({ error: "Source not found or access denied." }, { status: 404 })
+        }
 
         const encoder = new TextEncoder()
         
@@ -49,7 +60,7 @@ export async function POST(request: Request) {
                     } else {
                         // Persist stage completion on success
                         await prisma.source.update({
-                            where: { id: transcriptId, userId: session.user.id },
+                            where: { id: transcriptId, userId },
                             data: {
                                 completedStages: {
                                     push: 'insights'
@@ -70,7 +81,8 @@ export async function POST(request: Request) {
             },
         })
 
-    } catch (err: any) {
-        return NextResponse.json({ error: err.message }, { status: 500 })
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        return NextResponse.json({ error: message }, { status: 500 })
     }
 }

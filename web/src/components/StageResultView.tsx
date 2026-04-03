@@ -47,6 +47,25 @@ function getNum(obj: Record<string, unknown>, key: string, fallback = 0): number
     return typeof val === "number" ? val : fallback
 }
 
+const ENTITY_NORMALIZATION: Record<string, string> = {
+    "mold ga": "Mo Gawdat",
+    "mo gaddat": "Mo Gawdat",
+    "mo gadat": "Mo Gawdat",
+    "mo chat": "Mo Gawdat",
+    "aeo": "Answer Engine Optimization",
+    "dqm": "Digital Quality Matrix"
+}
+
+function normalizeText(text: string): string {
+    if (!text) return text
+    let normalized = text
+    Object.entries(ENTITY_NORMALIZATION).forEach(([key, value]) => {
+        const regex = new RegExp(`\\b${key}\\b`, "gi")
+        normalized = normalized.replace(regex, value)
+    })
+    return normalized
+}
+
 // ─── Per-Stage Renderers ────────────────────────────────────────
 
 function JudgeResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
@@ -104,7 +123,7 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
 
     segments.forEach((seg) => {
         const s = seg as Record<string, unknown>;
-        const rawText = getStr(s, "text").trim();
+        const rawText = normalizeText(getStr(s, "text").trim());
         const start = getNum(s, "start");
 
         // Split text by speaker marker in case multiple speakers are in one segment
@@ -155,7 +174,7 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/40 border border-border/60">
                     <div className="w-2 h-2 rounded-full bg-brand animate-pulse" />
                     <span className="text-[10px] font-bold uppercase tracking-wider text-foreground">
-                        Engine Output: {segmentCount} {isRescued ? "blocks" : "segments"}
+                        {segmentCount} {isRescued ? "blocks" : "segments"}
                     </span>
                 </div>
                 {isRescued && (
@@ -209,7 +228,7 @@ function RefineResult({ data, compact }: { data: Record<string, unknown>; compac
                     const s = seg as Record<string, unknown>
                     return (
                         <p key={i} className="my-6 first:mt-0 last:mb-0">
-                            {getStr(s, "text")}
+                            {normalizeText(getStr(s, "text"))}
                         </p>
                     )
                 })}
@@ -219,7 +238,7 @@ function RefineResult({ data, compact }: { data: Record<string, unknown>; compac
 }
 
 function SummaryResult({ data }: { data: Record<string, unknown> | string }) {
-    const summary = typeof data === "string" ? data : getStr(data as Record<string, unknown>, "summary", "")
+    const summary = normalizeText(typeof data === "string" ? data : getStr(data as Record<string, unknown>, "summary", ""))
 
     return (
                 <ul className="space-y-4 list-none">
@@ -826,8 +845,8 @@ function SocialiseResult({ data, sourceId }: { data: Record<string, unknown>; so
 }
 
 function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
-    const dqmData = ((data.result || data.payload || data.data || data) as unknown) as DQMData
-    const pubScore = dqmData?.scores?.publishability || 0
+    const dqmData = ((data.result || data.payload || data.data || data) as unknown) as (DQMData & { total_score?: number })
+    const pubScore = dqmData?.scores?.publishability ?? dqmData?.scores?.total_score ?? dqmData?.total_score ?? 0
     const normalizedScore = pubScore > 10 ? pubScore : pubScore * 10
     
     if (compact) {
@@ -892,7 +911,7 @@ export function StageResultView({ stageId, data, sourceId, compact = false }: St
 
 // Export for use in Inspect panel with full detail
 export function StageResultPanel({ stageId, data, sourceId }: { stageId: StageId; data: Record<string, unknown>; sourceId?: string }) {
-    const d = (data.data as Record<string, unknown>) || data.result || data;
+    const d = data?.result || data?.payload || data?.data || data;
     const wordCount = stageId === "draft" 
         ? (getNum(d as Record<string, unknown>, "word_count") || 
            getStr(d as Record<string, unknown>, "content", "").trim().split(/\s+/).filter(Boolean).length) 

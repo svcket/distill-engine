@@ -16,11 +16,10 @@ export default function DraftStudioPage() {
     const router = useRouter()
     
     // Hooks MUST be top-level
-    const [strategy, setStrategy] = useState<any>(null)
-    const [blueprint, setBlueprint] = useState<any>(null)
-    const [draft, setDraft] = useState<any>(null)
+    const [strategy, setStrategy] = useState<Record<string, any> | null>(null)
+    const [blueprint, setBlueprint] = useState<Record<string, any> | null>(null)
+    const [draft, setDraft] = useState<Record<string, any> | null>(null)
     const [isLoading, setIsLoading] = useState(true)
-    const [isSaving, setIsSaving] = useState(false)
 
     // Angle Strategist State
     const [isStrategizing, setIsStrategizing] = useState(false)
@@ -80,14 +79,16 @@ export default function DraftStudioPage() {
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
 
-            if (data.result && data.result.payload) {
-                setStrategy(data.result.payload)
+            const payload = data.result?.data || data.result
+            if (payload) {
+                setStrategy(payload)
             } else {
                 throw new Error("Adapter did not return angle payload.")
             }
 
-        } catch (err: any) {
-            setError(err.message)
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err)
+            setError(message)
         } finally {
             setIsStrategizing(false)
         }
@@ -105,14 +106,16 @@ export default function DraftStudioPage() {
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
 
-            if (data.result && data.result.payload) {
-                setBlueprint(data.result.payload)
+            const payload = data.result?.data || data.result
+            if (payload) {
+                setBlueprint(payload)
             } else {
                 throw new Error("Adapter did not return blueprint payload.")
             }
 
-        } catch (err: any) {
-            setArchitectError(err.message)
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err)
+            setArchitectError(message)
         } finally {
             setIsArchitecting(false)
         }
@@ -125,19 +128,22 @@ export default function DraftStudioPage() {
             const res = await fetch("/api/drafts/generate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ transcriptId: id })
+                body: JSON.stringify({ transcriptId: id, stream: false })
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
 
-            if (data.result && data.result.payload) {
-                setDraft(data.result.payload)
+            // Normalize result extraction - the API returns { result: { ... } }
+            const payload = data.result?.data || data.result
+            if (payload) {
+                setDraft(payload)
             } else {
                 throw new Error("Adapter did not return draft payload.")
             }
 
-        } catch (err: any) {
-            setWriteError(err.message)
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err)
+            setWriteError(message)
         } finally {
             setIsWriting(false)
         }
@@ -355,18 +361,18 @@ export default function DraftStudioPage() {
                         <CardHeader className="border-b bg-muted/20">
                             <CardDescription className="flex items-center gap-2">
                                 <FileText className="w-4 h-4" />
-                                <span>{(() => {
-                                    if (draft?.word_count) return draft.word_count;
-                                    
-                                    const contentStr = draft?.content || '';
-                                    if (typeof contentStr === 'string' && contentStr.startsWith('{')) {
-                                        try {
-                                            const parsed = JSON.parse(contentStr);
-                                            return parsed.word_count || (parsed.content?.split(/\\s+/).length || 0);
-                                        } catch { /* ignore */ }
-                                    }
-                                    return contentStr?.split(/\\s+/).filter(Boolean).length || 0;
-                                })()} Words</span>
+                                    <span>{(() => {
+                                        if (draft?.word_count) return draft.word_count;
+                                        
+                                        const contentStr = draft?.content || '';
+                                        if (typeof contentStr === 'string' && contentStr.startsWith('{')) {
+                                            try {
+                                                const parsed = JSON.parse(contentStr);
+                                                return parsed.word_count || (parsed.content?.split(/\s+/).length || 0);
+                                            } catch { /* ignore */ }
+                                        }
+                                        return contentStr?.split(/\s+/).filter(Boolean).length || 0;
+                                    })()} Words</span>
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="p-8 prose prose-zinc max-w-none">
