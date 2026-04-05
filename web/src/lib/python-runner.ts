@@ -71,6 +71,18 @@ export async function runPythonScript<T = unknown>(
             env: childEnv as any, 
         })
 
+        // Persistent Logging: Write output to .tmp/logs for observability
+        try {
+            const logDir = path.join(executionDir, '.tmp', 'logs')
+            if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true })
+            const logFile = path.join(logDir, `${scriptName.replace(/\.py$/, '')}.log`)
+            const timestamp = new Date().toISOString()
+            const logContent = `\n--- ${timestamp} ---\nCOMMAND: python3 ${scriptName} ${args.join(' ')}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}\n`
+            fs.appendFileSync(logFile, logContent)
+        } catch (logErr) {
+            console.error('[Python Runner] Failed to write to log file:', logErr)
+        }
+
         if (stderr && stderr.trim() !== '') {
             // Some modules write warnings to stderr, but we log them.
             console.warn(`[Python Runner] Warning/Stderr from ${scriptName}:`, stderr)
@@ -102,8 +114,7 @@ export async function runPythonScript<T = unknown>(
             }
         }
 
-        // The scripts currently just print status messages (e.g. "Scouting for... (Not implemented)").
-        // If they returned valid JSON, we would parse it here.
+        // Parse result from Python output
         try {
             const lines = output.split('\n')
             // Reversing so if there are multiple JSON-like lines (e.g. warnings), we get the actual final output payload
@@ -123,8 +134,20 @@ export async function runPythonScript<T = unknown>(
         }
 
     } catch (error: unknown) {
-        const err = error as { message?: string; stdout?: string }
+        const err = error as { message?: string; stdout?: string; stderr?: string }
         console.error(`[Python Runner] Error executing ${scriptName}:`, err)
+        
+        // Ensure failed attempts are also logged
+        try {
+            const executionDir = path.resolve(process.cwd(), '../execution')
+            const logDir = path.join(executionDir, '.tmp', 'logs')
+            if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true })
+            const logFile = path.join(logDir, `${scriptName.replace(/\.py$/, '')}.log`)
+            const timestamp = new Date().toISOString()
+            const logContent = `\n--- ${timestamp} ---\nERROR: ${err.message}\nSTDOUT:\n${err.stdout}\nSTDERR:\n${err.stderr}\n`
+            fs.appendFileSync(logFile, logContent)
+        } catch {}
+
         return {
             success: false,
             error: err.message || 'Unknown execution error',

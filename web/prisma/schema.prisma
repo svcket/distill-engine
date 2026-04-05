@@ -35,18 +35,18 @@ model Session {
 }
 
 model User {
-  id            String           @id @default(cuid())
-  name          String?
-  email         String?          @unique
-  emailVerified DateTime?
-  image         String?
-  role          String           @default("USER")
-  isBeta        Boolean          @default(false)
-  accounts      Account[]
-  drafts        Draft[]
-  sessions      Session[]
-  sources       Source[]
+  id              String           @id @default(cuid())
+  name            String?
+  email           String?          @unique
+  emailVerified   DateTime?
+  image           String?
+  role            String           @default("USER")
+  isBeta          Boolean          @default(false)
   oneSignalUserId String?
+  accounts        Account[]
+  drafts          Draft[]
+  sessions        Session[]
+  sources         Source[]
   usage           Usage?
   preferences     UserPreferences?
 }

@@ -69,6 +69,7 @@ def generate_summary(transcript_path: str, output_path: str) -> Dict[str, Any]:
             f.write(summary_text)
             
         # Also save as structured JSON for API consistency
+        json_path = output_path.replace(".md", ".json")
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump({"summary": summary_text}, f, indent=2)
 

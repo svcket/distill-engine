@@ -110,31 +110,29 @@ class PodcastAdapter(BaseAdapter):
         # If we successfully found an MP3, we override the URL so yt-dlp downloads the raw audio natively
         final_extract_url = mp3_url if mp3_url else url
 
-        # If we couldn't resolve a Spotify/Apple feed to an actual MP3, warn the user
-        description = metadata.get("description", "")[:500]
+        # RESCUE LOGIC: If no MP3 and we're on a platform with guarded audio, check for high-quality show notes
+        description = metadata.get("description", "")
         status = "pending_whisper"
         strategy = "audio_fallback"
         
-        if "spotify.com" in url and not mp3_url:
-            description = metadata.get("description", "")
-            if len(description) < 50:
-                 description = "[Transcript Unavailable] Could not resolve a public RSS feed for this Spotify episode."
-                 status = "unavailable"
-                 strategy = "unavailable"
-            else:
-                 # RESCUE: We have show notes, use them as the "Transcript"
+        # INCREASE THRESHOLD: We only rescue to article text if the description is significant (>300 chars)
+        if not mp3_url and ("spotify.com" in url or "apple.com" in url):
+            if len(description) > 300: 
+                 print(f"[PodcastAdapter] MP3 not resolved but high-quality description found ({len(description)} chars). Implementing METADATA RESCUE.")
                  status = "rescued_text"
                  strategy = "normalized_text"
-            
+            else:
+                 print(f"[PodcastAdapter] WARNING: No MP3 and poor description. This source may fail to transcribe unless iTunes rescue succeeds.")
+        
         return NormalizedSource(
             source_id=source_id,
             source_type=platform_type,
             title=metadata.get("title") or target_title or (source_id.replace("spotify_", "") if source_id else "Podcast Episode"),
-            creator=metadata.get("author", "Unknown Host"),
+            creator=metadata.get("author") or content_show or "Unknown Host",
             url=final_extract_url,
             published_at=metadata.get("published_at"),
             duration_seconds=metadata.get("duration_seconds", 0),
-            description=description[:1000], 
+            description=description, 
             transcript_status=status,
             transcript_strategy=strategy,
             transcript_source="audio_whisper" if mp3_url else ("rss_description" if status == "rescued_text" else "unknown"),
@@ -142,6 +140,7 @@ class PodcastAdapter(BaseAdapter):
             source_confidence=0.85,
             raw_metadata={
                 **metadata,
+                "show_name": content_show,
                 "rescued_article_text": description if status == "rescued_text" else None
             },
         )
@@ -224,47 +223,55 @@ class PodcastAdapter(BaseAdapter):
                             page_html = resp.read().decode("utf-8", errors="ignore")
                     except Exception: pass
                 
-                og_title = re.search(r'property="og:title" content="(.*?)"', page_html)
-                if not og_title or "Spotify \u2013 Web Player" in og_title.group(1):
-                    # Try Twitter/Meta title
-                    og_title = re.search(r'name="(?:twitter|title)" content="(.*?)"', page_html)
-                    if not og_title:
-                        og_title = re.search(r'<title>(.*?)</title>', page_html, re.DOTALL | re.IGNORECASE)
+                # 3. JSON-LD EXTRACTION (Ultra-Robust)
+                episode_name = ""
+                content_show = None
+                try:
+                    import json
+                    ld_json_matches = re.findall(r'<script type="application/ld\+json">(.*?)</script>', page_html, re.DOTALL)
+                    for ld_match in ld_json_matches:
+                        try:
+                            ld_data = json.loads(ld_match.strip())
+                            # Handle different LD-JSON structures
+                            if isinstance(ld_data, dict):
+                                # Episode Title
+                                if ld_data.get("name") and not episode_name:
+                                    episode_name = html.unescape(ld_data["name"])
+                                
+                                # Show Name (partOfSeries)
+                                if ld_data.get("partOfSeries", {}).get("name"):
+                                    content_show = html.unescape(ld_data["partOfSeries"]["name"])
+                                
+                                # Description
+                                if ld_data.get("description") and not metadata.get("description"):
+                                    metadata["description"] = html.unescape(ld_data["description"])
+                        except: continue
+                except: pass
 
-                if og_title:
-                    episode_name = ""
-                    try:
+                # Fallback to Title Regex if LD-JSON failed
+                if not episode_name or not content_show:
+                    og_title = re.search(r'property="og:title" content="(.*?)"', page_html)
+                    if og_title:
                         raw_title = html.unescape(og_title.group(1)).strip()
-                    except Exception:
-                        raw_title = og_title.group(1).strip()
-                    
-                    # If we got the generic Spotify title, ignore it and keep searching
-                    if "Spotify – Web Player" in raw_title or "Spotify - Web Player" in raw_title:
-                        raw_title = None
-                    
-                    if raw_title:
-                        # IMPROVED: Handle common Spotify title patterns more cleanly
-                        # Usually "Episode Title | Show Name" or "Episode Title · Show Name"
                         clean_target = raw_title.replace(" | Spotify", "").replace(" - Spotify", "").strip()
-                        
-                        # Use first half before separator if the title seems merged
-                        parts = re.split(r" [|\xb7\u2022\xb7\-] ", clean_target)
-                        episode_name = parts[0].strip() if len(parts) > 1 else clean_target
-                        show_name_guess = parts[-1].strip() if len(parts) > 1 else None
-                    
-                    # Strip "Season X Episode Y" or "Episode 123" prefixes from episode name
+                        parts = re.split(r"\s*[|\-\xb7\u2022·\u2013]\s*", clean_target)
+                        if not episode_name: episode_name = parts[0].strip()
+                        if not content_show and len(parts) > 1:
+                            content_show = parts[1].replace("Podcast on Spotify", "").replace("Spotify", "").strip()
+
+                    # Final cleaning for episode name
                     episode_name_clean = re.sub(r"^(?:Season|Episode|Ep|S|E)?\s*\d+[:\s-]*(?:Episode|Ep|E)?\s*\d*[:\s-]*", "", episode_name, flags=re.IGNORECASE).strip()
                     target_title = episode_name_clean
                     
-                    # Clean the episode name specifically for better searching
-                    clean_episode = re.sub(r"Season\s*\d+", "", episode_name, flags=re.IGNORECASE).strip()
-
-                    # Also try to find the creator/show name directly in meta
-                    # Spotify descriptions often start with "Show Name · Episode"
-                    show_m = re.search(r'property="og:description" content="(.*?)(?: \xb7| \u2022| ·)', page_html)
-                    content_show = None
-                    if show_m:
-                        content_show = html.unescape(show_m.group(1).strip())
+                    if not content_show:
+                        creator_m = re.search(r'property="music:creator" content="(.*?)"', page_html)
+                        if creator_m: content_show = html.unescape(creator_m.group(1).strip())
+                        footer_m = re.search(r'Listen to (.*?) on Spotify', page_html)
+                        if footer_m:
+                            content_show = html.unescape(footer_m.group(1).strip())
+                        footer_m = re.search(r'Listen to (.*?) on Spotify', page_html)
+                        if footer_m:
+                            content_show = html.unescape(footer_m.group(1).strip())
                     
                     # Build prioritized search queries
                     queries = []

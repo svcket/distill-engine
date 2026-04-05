@@ -183,6 +183,12 @@ export async function POST(request: Request) {
                                     }
                                 })
                             })
+
+                            // Final success signal for frontend state synchronization
+                            controller.enqueue(new TextEncoder().encode(JSON.stringify({ type: 'success', status: 'success', result: { content: draftContent } }) + '\n'))
+                        } else {
+                            const errMsg = `Draft generation failed with exit code ${code}. Please check backend logs.`;
+                            controller.enqueue(new TextEncoder().encode(JSON.stringify({ type: 'error', message: errMsg }) + '\n'));
                         }
                         controller.close()
                     })
@@ -267,7 +273,7 @@ export async function POST(request: Request) {
         prisma.source.update({
             where: { id: sourceId, userId: userId },
             data: {
-                completedStages: {
+                 completedStages: {
                     push: 'draft'
                 }
             }

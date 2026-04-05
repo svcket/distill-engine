@@ -12,6 +12,8 @@ import sys
 import glob
 import subprocess
 import datetime
+import requests
+import html
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 # Ensure execution dir is in path for relative imports if run as script
@@ -500,6 +502,10 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
     import glob
     from openai import OpenAI
     
+    # Proactive environment check to prevent silent hangs
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise Exception("OPENAI_API_KEY is missing. Pipeline stopped to prevent indefinite hang during transcription.")
+
     # 1. Download audio via yt-dlp
     ffmpeg_exe = None
     try:
@@ -617,7 +623,10 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
             print(f"[{source_id}] SPOTIFY: Detecting likely DRM. Attempting search rescue...")
             metadata = load_source_metadata(source_id)
             title = metadata.get("title")
-            show_name = metadata.get("channel")
+            
+            # Use show_name from raw_metadata if available (saved by PodcastAdapter)
+            raw_meta = metadata.get("raw_metadata", {})
+            show_name = metadata.get("channel") or raw_meta.get("show_name")
             
             if not title:
                 # Direct page extraction if metadata file is stale/empty
@@ -753,7 +762,28 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
                 print(f"[{source_id}] Direct download FAILED: {de}")
 
     if not audio_file_path:
-        raise Exception(f"Failed to locate or download audio for {source_id}")
+        # PIVOT TO UNIVERSAL RESCUE: If audio is inaccessible, use description/metadata to proceed
+        print(f"[{source_id}] Audio inaccessible. Checking for metadata rescue (show notes)...")
+        metadata = load_source_metadata(source_id)
+        description = metadata.get("description")
+        
+        if not description or len(description) < 100:
+             # Try one last scraper push if the description is shell
+             rescued_text = scrape_url_as_last_resort(source_url, source_id)
+             if rescued_text:
+                 description = rescued_text
+        
+        if description and len(description) >= 100:
+            print(f"[{source_id}] SUCCESS: Implementing Metadata Rescue using Show Notes ({len(description)} chars).")
+            # Create a single "segment" containing the description
+            rescued_segments = [{
+                "text": f"[Transcript Unavailable - Processing Show Notes/Metadata]\n\n{description}", 
+                "start": 0.0, 
+                "duration": 0.0
+            }]
+            return finish_transcript(source_id, rescued_segments, output_dir, status="rescued_text")
+            
+        raise Exception(f"Failed to locate download audio OR find descriptive metadata for {source_id}. Pipeline halted.")
 
     # Check filesize limit (OpenAI Whisper max 25MB)
     # Ensure pydub uses our local ffmpeg
@@ -1015,6 +1045,59 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
     except Exception as e:
         raise Exception(f"Failed to fetch RSS text: {str(e)}")
 
+def scrape_url_as_last_resort(url: str, source_id: str) -> Optional[str]:
+    """Universal scraper fallback to extract text from ANY URL if audio fails."""
+    print(f"[{source_id}] UNIVERSAL RESCUE: Attempting web scrape for {url}...")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        content = resp.text
+        
+        # Strip scripts, styles
+        clean_html = re.sub(r'<(script|style|nav|footer|header).*?>.*?</\1>', '', content, flags=re.DOTALL | re.IGNORECASE)
+        # Extract text from p tags
+        p_tags = re.findall(r'<p[^>]*>(.*?)</p>', clean_html, re.DOTALL | re.IGNORECASE)
+        body_text = "\n\n".join(html.unescape(re.sub(r'<[^>]+>', '', pt).strip()) for pt in p_tags if len(pt.strip()) > 20)
+        
+        # Meta tags check (PRIORITY for Spotify/Apple)
+        meta_descr = re.search(r'property="og:description" content="(.*?)"', content, re.DOTALL) or \
+                     re.search(r'name="description" content="(.*?)"', content, re.DOTALL)
+        
+        # JSON-LD Check (Ultra-High Fidelity)
+        ld_text = ""
+        try:
+            import json
+            ld_matches = re.findall(r'<script type="application/ld\+json">(.*?)</script>', content, re.DOTALL)
+            for ld_match in ld_matches:
+                try:
+                    ld_data = json.loads(ld_match.strip())
+                    if isinstance(ld_data, dict) and ld_data.get("description"):
+                         ld_text = html.unescape(ld_data["description"])
+                         break
+                except: continue
+        except: pass
+
+        final_text = ""
+        # 1. Use JSON-LD description if available (most complete)
+        if ld_text: final_text = ld_text
+        # 2. Fallback to Meta description
+        elif meta_descr: final_text = html.unescape(meta_descr.group(1))
+        
+        # 3. Append body text if it adds significantly more content
+        if len(body_text) > len(final_text) + 200:
+            final_text += "\n\n" + body_text
+        
+        if len(final_text.strip()) > 50:
+            print(f"[{source_id}] UNIVERSAL RESCUE SUCCESS: Extracted {len(final_text)} chars.")
+            return final_text.strip()
+    except Exception as e:
+        print(f"[{source_id}] UNIVERSAL RESCUE FAILED: {e}")
+    return None
+
 
 def finish_transcript(source_id: str, transcript_list: list, output_dir: str) -> dict:
     """Helper to save transcript files and return success status."""
@@ -1104,22 +1187,30 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump([metadata], f, indent=2)
 
-    if strategy == "unavailable":
-        # Final Rescue: check if metadata already has the full text (from RssAdapter or Podcast description rescue)
-        rescued = metadata.get("raw_metadata", {}).get("extracted_text_preview") or \
-                  metadata.get("raw_metadata", {}).get("rescued_article_text") or \
-                  (metadata.get("description") if len(metadata.get("description", "")) > 300 else None)
-        
-        # Spotify Specific Rescue
-        if not rescued and "spotify.com" in source_url:
-             print(f"[{source_id}] SPOTIFY: Audio fails frequently. Attempting description rescue...")
-             # yt-dlp might have gotten the description even if audio failed
-             rescued = metadata.get("description")
+    if strategy == "normalized_text" or metadata.get("transcript_status") == "rescued_text":
+         rescued = metadata.get("raw_metadata", {}).get("rescued_article_text") or metadata.get("description")
+         if rescued:
+             print(f"[{source_id}] RESCUED TEXT FOUND. Bypassing audio processing.")
+             json_path = os.path.join(output_dir, f"{source_id}_raw.json")
+             txt_path = os.path.join(output_dir, f"{source_id}_raw.txt")
+             with open(json_path, "w") as f:
+                 json.dump([{"text": rescued, "start": 0, "duration": 0}], f)
+             with open(txt_path, "w") as f:
+                 f.write(rescued)
+             print(json.dumps({
+                 "source_id": source_id, "status": "rescued_text",
+                 "json_path": json_path, "text_path": txt_path,
+                 "segment_count": 1, "title": metadata.get("title")
+             }))
+             return
 
+    if strategy == "unavailable":
+        # UNIVERSAL RESCUE ATTEMPT
+        rescued = scrape_url_as_last_resort(source_url, source_id)
         if rescued:
-            print(f"[{source_id}] RESCUE: Using metadata text as transcript fallback.")
-            output_dir = os.path.join(base, ".tmp", "transcripts", source_id)
-            os.makedirs(output_dir, exist_ok=True)
+             print(f"[{source_id}] RESCUE: Scraped web content since audio was unavailable.")
+             return finish_transcript(source_id, [{"text": rescued, "start": 0, "duration": 0}], output_dir)
+             
         raise Exception(f"Transcript unavailable for this source. Route: {method}")
 
     output_dir = os.path.join(base, ".tmp", "transcripts", source_id)
@@ -1202,18 +1293,15 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
                     raise e
 
         elif source_type in ("rss", "twitter", "document"):
-            rescued = metadata.get("raw_metadata", {}).get("extracted_text_preview") or \
-                      metadata.get("raw_metadata", {}).get("rescued_article_text") or \
-                      metadata.get("description")
+            rescued = metadata.get("raw_metadata", {}).get("rescued_article_text") or \
+                      metadata.get("description") or \
+                      scrape_url_as_last_resort(source_url, source_id)
             
-            if rescued and len(rescued) > 50:
+            if rescued:
                 result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)
                 result["status"] = "rescued_text"
             else:
-                if source_type == "rss":
-                    result = fetch_rss_text_transcript(source_id, source_url, output_dir)
-                if not result:
-                    raise Exception(f"{source_type.title()} content contains no usable transcript.")
+                raise Exception(f"{source_type.title()} content contains no usable text.")
 
         else:
             raise Exception(f"Unsupported source type: {source_type}")
@@ -1234,6 +1322,18 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
                 update_source_metadata(source_id, updates)
 
     except Exception as e:
+        # FINAL GLOBAL RESCUE - Never HALT
+        target_url = source_url or (metadata.get("url") if metadata else None)
+        if target_url:
+            rescued = scrape_url_as_last_resort(target_url, source_id)
+            if rescued:
+                 print(f"[{source_id}] GLOBAL RESCUE SUCCESS.", file=sys.stderr)
+                 result = finish_transcript(source_id, [{"text": rescued, "start": 0, "duration": 0}], output_dir)
+                 result["status"] = "rescued_text"
+                 print(json.dumps(result))
+                 update_source_metadata(source_id, {"is_shell": False})
+                 return
+
         error_str = str(e)
         print(json.dumps({
             "source_id": source_id, 

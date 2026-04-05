@@ -32,7 +32,8 @@ def upload_artifact(category: str, source_id: str, local_path: str, filename: Op
     
     try:
         with open(local_path, 'rb') as f:
-            print(f"[Supabase] Uploading {category}: {remote_path}...", file=sys.stderr)
+            # Silence the upload log for a cleaner user-facing Processing Log
+            # print(f"[Supabase] Uploading {category}: {remote_path}...", file=sys.stderr)
             client.storage.from_(category).upload(
                 path=remote_path,
                 file=f,

@@ -185,6 +185,8 @@ Generate a strict structural plan based on this reasoning. Ensure subheadings ar
                 "data": {"title": title, "content": full_content, "word_count": word_count}
             }
             _save_draft(source_id, bundle)
+            # Final success signal for frontend state synchronization
+            print(json.dumps({"type": "success", "status": "success", "result": bundle["data"]}), flush=True)
             print(json.dumps({"type": "stream_end", "source_id": source_id, "word_count": word_count}), flush=True)
             return
 

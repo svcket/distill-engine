@@ -151,7 +151,8 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
             } else {
                 // Continuation of current turn
                 if (currentTurn) {
-                    currentTurn.text += (currentTurn.text ? "\n\n" : "") + trimmedPart;
+                    // Join segments with a space instead of double newlines to avoid massive gaps
+                    currentTurn.text += (currentTurn.text ? " " : "") + trimmedPart;
                 } else {
                     // Fallback for first segment without marker
                     currentTurn = {

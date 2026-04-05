@@ -14,6 +14,7 @@ import { useParams, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
 import { motion, AnimatePresence } from "framer-motion"
+import { supabase } from "@/lib/supabase"
 
 type StageId = "judge" | "transcript" | "refine" | "cluster" | "summary" | "packet" | "insights" | "angle" | "draft" | "qa" | "socialise" | "export"
 type StageStatus = "completed" | "active" | "locked"
@@ -249,6 +250,62 @@ export default function SourceMissionControl() {
             console.error(`Failed to persist completion for ${stageId}:`, e)
         }
     }, [id]);
+
+    // ════ REAL-TIME SYNC ════
+    useEffect(() => {
+        if (!id) return;
+
+        const channel = supabase
+            .channel(`source_changes_${id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'Source',
+                    filter: `id=eq.${id}`,
+                },
+                (payload) => {
+                    const updatedSource = payload.new as SourceCandidate;
+                    
+                    // Sync Metadata
+                    setSource(prev => ({
+                        ...prev,
+                        ...updatedSource,
+                        completedStages: Array.isArray(updatedSource.completedStages) 
+                            ? updatedSource.completedStages 
+                            : prev.completedStages
+                    }));
+
+                    // Sync Completed Stages & Clearing Execution State
+                    if (updatedSource.completedStages && Array.isArray(updatedSource.completedStages)) {
+                        const newCompleted = new Set(updatedSource.completedStages as StageId[]);
+                        setCompletedStages(newCompleted);
+                        
+                        // Clear the active spinner if this stage just finished remotely
+                        if (executingStage && newCompleted.has(executingStage)) {
+                             setExecutingStage(null);
+                        }
+                    }
+
+                    // Handle Finish Signal
+                    if (updatedSource.status === 'done') {
+                        setIsRunningAll(false);
+                        setExecutingStage(null);
+                        setLogs(prev => {
+                            if (prev.some(l => l.event === "SUCCESS: Pipeline completed in background")) return prev;
+                            return [{ event: "SUCCESS: Pipeline completed in background", time: "Just now", status: "success" }, ...prev];
+                        });
+                        setShowCelebration(true);
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [id, executingStage]);
 
     // ════ DATA FETCHING ════
 
@@ -540,9 +597,11 @@ export default function SourceMissionControl() {
                                         return updated;
                                     });
                                 } else if (parsed.type === "error") {
-                                    return; 
-                                } else if (parsed.status === "success" || (parsed as StagePayload).data || parsed.result) {
+                                    throw new Error(parsed.message || "Streaming execution failed");
+                                } else if (parsed.type === "success" || parsed.status === "success" || (parsed as StagePayload).data || parsed.result) {
                                     data = parsed as StagePayload;
+                                    // If we got a final success result in the stream, we can stop reading
+                                    if (data.result || data.data) break;
                                 }
                             } catch (e) {
                                 console.error("Error parsing stream chunk:", e, line);
@@ -550,7 +609,15 @@ export default function SourceMissionControl() {
                         }
                     }
                     if (!data && fullContent) {
-                        data = { status: "success", result: { content: fullContent } };
+                        data = { status: "success", result: { content: fullContent } } as StagePayload;
+                    }
+                    
+                    // Force state update for finished streaming draft to ensure "View" button appears
+                    if (stage.id === "draft" && fullContent) {
+                        const finalResult = { result: { content: fullContent, word_count: fullContent.trim().split(/\s+/).filter(Boolean).length } };
+                        setStageResults(prev => ({ ...prev, draft: finalResult }));
+                        currentResults["draft"] = finalResult; // Sync local object for next loop iteration
+                        currentCompleted.add("draft");
                     }
                 } else {
                     data = await res.json()
@@ -580,12 +647,24 @@ export default function SourceMissionControl() {
                     if (stage.id === "transcript") {
                         const tsData = (resValue as TranscriptResult);
                         const segments = tsData?.segments || (resValue as { result?: { segments?: unknown[] } })?.result?.segments;
-                        if (!segments || segments.length === 0) {
+                        const status = (resValue as any)?.status || (resValue as any)?.result?.status;
+                        
+                        // Allow 0 segments ONLY if status is 'rescued_text'
+                        if ((!segments || segments.length === 0) && status !== 'rescued_text') {
                             const errorMsg = "Transcription failed: No text segments were extracted. Pipeline halted.";
                             setError({ message: errorMsg, type: "error" });
                             setLogs(prev => [{ event: errorMsg, time: "Just now", status: "error" }, ...prev]);
                             setIsRunningAll(false);
                             break;
+                        }
+                        
+                        // Show info banner if rescued
+                        if (status === 'rescued_text') {
+                            setLogs(prev => [{ 
+                                event: "Audio unavailable; proceeding with rescued metadata from show notes.", 
+                                time: "Just now", 
+                                status: "info" 
+                            }, ...prev]);
                         }
                     }
 
@@ -598,7 +677,8 @@ export default function SourceMissionControl() {
                 }
 
                 setCompletedStages(prev => {
-                    const next = new Set([...prev, stage.id])
+                    const next = new Set(prev)
+                    next.add(stage.id as StageId)
                     if (stage.id === "cluster") {
                         next.add("refine")
                         next.add("summary")
@@ -607,12 +687,18 @@ export default function SourceMissionControl() {
                     }
                     return next
                 })
+
                 currentCompleted.add(stage.id)
                 if (stage.id === "cluster") {
                     currentCompleted.add("refine")
                     currentCompleted.add("summary")
                     currentCompleted.add("packet")
                     currentCompleted.add("insights")
+                }
+
+                // Truth sync: ensure Draft is marked as a completed result for gating
+                if (stage.id === "draft" && data) {
+                    currentResults["draft"] = (data.result || data) as StageResultData;
                 }
 
                 if (stage.id === "qa" && data && typeof data === 'object') {

@@ -101,7 +101,6 @@ export async function POST(request: Request) {
             }
         }
 
-
         // Reset usage count logic (Stage 6 prep)
         await withRetry(() => prisma.usage.upsert({
             where: { userId: userId },
@@ -109,13 +108,65 @@ export async function POST(request: Request) {
             create: { userId: userId, sourcesProcessed: 1 }
         }))
 
-        // AUTOMATION: Pipeline now strictly user-triggered to avoid unintended consumption
-        // Previously triggered /api/transcripts/fetch here
+        // AUTOMATION: Pipeline now parallelized for speed
+        const _proto = process.env.NODE_ENV === 'development' ? 'http' : 'https'
+        const _host = request.headers.get('host') ?? 'localhost:3000'
+        const baseUrl = `${_proto}://${_host}`
+
+        // Trigger the pipeline without waiting for full completion in this request
+        // (Ensures the user gets a response immediately while backend works)
+        const triggerPipeline = async () => {
+            try {
+                console.log(`[Pipeline] Triggering fetch for ${result.source_id} at ${baseUrl}`)
+                
+                // Step 1: Transcription (Sequential Dependency)
+                const fetchRes = await globalThis.fetch(`${baseUrl}/api/transcripts/fetch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Cookie': request.headers.get('cookie') || '' },
+                    body: JSON.stringify({ 
+                        sourceId: result.source_id, 
+                        url: result.url || url, 
+                        sourceType: result.source_type 
+                    })
+                })
+                
+                if (fetchRes.ok) {
+                    console.log(`[Pipeline] Fetch successful for ${result.source_id}. Starting sequential summary and insights...`)
+                    // Step 2 & 3: Summary and Insights (Sequential to prevent CPU saturation)
+                    // We process these in sequence rather than parallel in dev mode to avoid system saturation
+                    const summaryRes = await globalThis.fetch(`${baseUrl}/api/transcripts/summary`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Cookie': request.headers.get('cookie') || '' },
+                        body: JSON.stringify({ transcriptId: result.source_id })
+                    })
+                    if (summaryRes.ok) {
+                        console.log(`[Pipeline] Summary completed for ${result.source_id}`)
+                        await globalThis.fetch(`${baseUrl}/api/insights/extract`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Cookie': request.headers.get('cookie') || '' },
+                            body: JSON.stringify({ transcriptId: result.source_id })
+                        })
+                        console.log(`[Pipeline] Insights extraction completed for ${result.source_id}`)
+                    } else {
+                        console.error(`[Pipeline] Summary failed for ${result.source_id}`)
+                    }
+                    console.log(`[Pipeline] Background chain finished for ${result.source_id}`)
+                } else {
+                    console.error(`[Pipeline] Fetch failed for ${result.source_id} with status ${fetchRes.status}`)
+                }
+            } catch (pipelineErr) {
+                console.error("[Pipeline Background Error]:", pipelineErr)
+            }
+        }
+        
+        // Execute trigger in background
+        triggerPipeline();
 
         return NextResponse.json({ result: source })
 
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Unknown error'
+        console.error("[Ingest API Error]:", err)
         return NextResponse.json({ error: msg }, { status: 500 })
     }
 }

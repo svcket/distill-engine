@@ -34,6 +34,20 @@ class DQMMetrics(BaseModel):
     suggestions: List[str] = Field(description="Actionable improvements.")
     rationale: str = Field(description="A concise summary explaining the scores and the overall publishability decision.")
 
+def calculate_deterministic_metrics(content: str) -> Dict:
+    """Basic linguistic metrics without LLM."""
+    words = content.split()
+    sentences = re.split(r'[.!?]+', content)
+    cliches = ["In today's", "In conclusion", "It is important", "Moreover", "Furthermore"]
+    cliche_count = sum(1 for c in cliches if c.lower() in content.lower())
+    
+    return {
+        "word_count": len(words),
+        "heading_count": len(re.findall(r'^#+ ', content, re.MULTILINE)),
+        "cliche_count": cliche_count,
+        "sentence_variation": len(set(len(s.split()) for s in sentences if s.strip()))
+    }
+
 def _persist_evaluation(source_id: str, result: Dict, base_dir: str):
     """
     Shared helper to save evaluation result to disk and upload to cloud storage.

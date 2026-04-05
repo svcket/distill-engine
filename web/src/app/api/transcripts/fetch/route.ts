@@ -4,6 +4,16 @@ import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import fs from 'fs'
 
+interface StagePayload {
+    status?: string;
+    segments?: any[];
+    json_path?: string;
+    text_path?: string;
+    duration?: number;
+    title?: string;
+    transcript_status?: string;
+    error_detail?: string;
+}
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -40,7 +50,7 @@ export async function POST(request: Request) {
         if (activeTitle) args.push('--title', activeTitle)
 
         // Synchronously run for direct pipeline stability
-        const { success, data, error: scriptError } = await runPythonScript<any>('transcript_harvester.py', [
+        const { success, data, error: scriptError } = await runPythonScript<StagePayload>('transcript_harvester.py', [
             ...args,
             '--max-segments', '60'
         ], {
@@ -49,7 +59,7 @@ export async function POST(request: Request) {
         
         if (success && data) {
             // Update the source record to indicate transcription is ready
-            const result = data as any
+            const result = data as StagePayload
             const finalStatus = result.status === 'rescued_text' ? 'rescued_text' : 'transcribed'
             
             // Read content from the textPath if available
@@ -63,11 +73,14 @@ export async function POST(request: Request) {
             if (!result.segments && result.json_path && fs.existsSync(result.json_path)) {
                 try {
                     const rawJson = fs.readFileSync(result.json_path, 'utf-8')
-                    result.segments = JSON.parse(rawJson) // Return all segments, the UI handles scaling
-                } catch (e) {
-                    console.error("Failed to read segments from json_path", e)
+                    result.segments = JSON.parse(rawJson)
+                } catch {
+                    console.error("Failed to read segments from json_path")
                 }
             }
+
+            // LOG: Successful resolution
+            console.log(`[Transcript API] Source ${sourceId} resolved as ${finalStatus}. Segments: ${result.segments?.length || 0}`)
 
             // Format duration as M:SS string if present
             let durationString = undefined
@@ -106,7 +119,7 @@ export async function POST(request: Request) {
                     isGracefulUnavailable = true
                     errorDetail = parsedError.error_detail || "Audio transcription unavailable"
                 }
-            } catch (e) { /* fallback to hard failure if not parseable JSON */ }
+            } catch { /* fallback to hard failure if not parseable JSON */ }
 
             if (isGracefulUnavailable) {
                 // Rescue: Allow pipeline to proceed with metadata instead of hard failure
@@ -126,8 +139,8 @@ export async function POST(request: Request) {
             }
 
             // Hard failure for actual script crashes or network issues
-            await (prisma.source.update as any)({
-                where: { id: sourceId, userId: (session.user as any).id },
+            await prisma.source.update({
+                where: { id: sourceId, userId: session.user.id },
                 data: { 
                     status: 'failed',
                     transcriptStatus: 'failed'

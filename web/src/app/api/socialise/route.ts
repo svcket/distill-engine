@@ -108,7 +108,7 @@ export async function POST(request: Request) {
         await withRetry(() => prisma.source.update({
             where: { id: sourceId, userId: session.user?.id },
             data: { 
-                status: 'completed',
+                status: 'done',
                 completedStages: {
                     push: 'socialise'
                 }
