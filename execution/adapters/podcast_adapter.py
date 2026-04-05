@@ -51,15 +51,19 @@ class PodcastAdapter(BaseAdapter):
              show_match = re.search(r"spotify\.com/show/([a-zA-Z0-9]+)", url_clean)
              source_id = f"spotify_show_{show_match.group(1)}"
         
-        # 2. Apple ID extraction
-        elif "podcasts.apple.com" in url_clean:
-            apple_match = re.search(r"id(\d+)(?:\?|/|$)", url_clean)
-            if apple_match:
-                # If there's an episode ID (?i=), use that
-                i_match = re.search(r"[?&]i=(\d+)", url_clean)
-                source_id = f"apple_{i_match.group(1)}" if i_match else f"apple_{apple_match.group(1)}"
+        # 2. Apple ID extraction — check FULL url for episode ID (?i=) before fallback to channel ID
+        elif "podcasts.apple.com" in url.lower():
+            # If there's an episode ID in the query, use that as the primary identifier
+            i_match = re.search(r"[?&]i=(\d+)", url)
+            if i_match:
+                source_id = f"apple_{i_match.group(1)}"
             else:
-                 source_id = "podcast_" + hashlib.md5(url_clean.encode()).hexdigest()[:12]
+                # Fallback to the channel/show ID from the path
+                apple_match = re.search(r"id(\d+)(?:\?|/|$)", url_clean)
+                if apple_match:
+                    source_id = f"apple_{apple_match.group(1)}"
+                else:
+                    source_id = "podcast_" + hashlib.md5(url_clean.encode()).hexdigest()[:12]
         
         # 3. Fallback to hash
         else:
