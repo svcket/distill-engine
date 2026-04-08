@@ -28,7 +28,7 @@ class VisualManifest(BaseModel):
     suggestions: list[VisualSuggestion]
 
 
-def plan_visuals(source_id: str, draft_path: str = None, execute: bool = False):
+def plan_visuals(source_id: str, draft_path: str = None, execute: bool = False, lang: str = "en"):
     base = os.path.dirname(__file__)
 
     # Load draft if available
@@ -51,7 +51,11 @@ def plan_visuals(source_id: str, draft_path: str = None, execute: bool = False):
     if os.environ.get("OPENAI_API_KEY"):
         try:
             client = OpenAI()
-            system_prompt = """You are a Visual Director for Distill, a premium editorial engine.
+            safe_lang = (lang or "en").strip()
+            if len(safe_lang) > 10 or not all(c.isalnum() or c in '-' for c in safe_lang):
+                safe_lang = "en"
+
+            system_prompt = f"""You are a Visual Director for Distill, a premium editorial engine.
 Your goal is to identify high-impact visual hooks in a text draft.
 
 ASSIGNMENT RULES:
@@ -67,7 +71,8 @@ ASSIGNMENT RULES:
 The 'description' field MUST explicitly inform the user that these are suggested prompts for image generation.
 The 'prompt' field should be a highly detailed, self-contained description suitable for direct input into DALL-E 3 or Nano Banana.
 
-Output strictly in the required JSON format."""
+Output strictly in the required JSON format.
+CRITICAL: You MUST write your response entirely in the '{safe_lang}' language."""
 
             user_prompt = f"DRAFT TITLE: {title}\n\nDRAFT CONTENT:\n{content}"
 
@@ -188,5 +193,6 @@ if __name__ == "__main__":
     parser.add_argument("--source-id", required=True)
     parser.add_argument("--draft-path", default=None)
     parser.add_argument("--execute", action="store_true", help="Actually generate images via API.")
+    parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
-    plan_visuals(args.source_id, args.draft_path, args.execute)
+    plan_visuals(args.source_id, args.draft_path, args.execute, args.lang)

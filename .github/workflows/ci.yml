@@ -67,7 +67,6 @@ jobs:
       - name: Lint
         run: npm run lint
         working-directory: web
-        continue-on-error: true  # Warnings don't block merge
 
   # ─── Playwright API Regression Tests ───────────────────────────────────────
   e2e-tests:

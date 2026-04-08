@@ -7,7 +7,7 @@ import glob
 from typing import List, Dict, Any
 from supabase_utils import upload_artifact
 
-def refine_source_transcript(source_id: str) -> Dict[str, Any]:
+def refine_source_transcript(source_id: str, lang: str = "en") -> Dict[str, Any]:
     """
     Reads the harvested transcript and cleans it.
     Uses case-insensitive glob to find the directory, as Spotify IDs 
@@ -30,7 +30,7 @@ def refine_source_transcript(source_id: str) -> Dict[str, Any]:
         
     input_path = os.path.join(target_dir, f"{source_id}_raw.json")
     output_path = os.path.join(os.path.dirname(__file__), ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
-    return refine_transcript(input_path, output_path)
+    return refine_transcript(input_path, output_path, lang)
 
 ENTITY_NORMALIZATION = {
     r"\bmold ga\b": "Mo Gawdat",
@@ -58,7 +58,7 @@ def clean_text(text: str) -> str:
     text = re.sub(r'\s{2,}', ' ', text)
     return text.strip()
 
-def refine_transcript(transcript_path: str, output_path: str) -> Dict[str, Any]:
+def refine_transcript(transcript_path: str, output_path: str, lang: str = "en") -> Dict[str, Any]:
     if not os.path.exists(transcript_path):
         raise FileNotFoundError(f"Input path not found: {transcript_path}")
         
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
     try:
-        res = refine_transcript(args.input, args.output)
+        res = refine_transcript(args.input, args.output, args.lang)
         print(json.dumps(res))
     except Exception as e:
         print(json.dumps({"status": "error", "error_detail": str(e)}), file=sys.stderr)

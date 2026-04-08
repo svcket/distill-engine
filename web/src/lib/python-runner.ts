@@ -147,8 +147,13 @@ export async function runPythonScript<T = unknown>(
             const data = JSON.parse(output) as T
             return { success: true, data, rawOutput: output }
 
-        } catch {
-            return { success: true, data: undefined, rawOutput: output }
+        } catch (err) {
+            console.error(`[Python Runner] Failed to parse JSON from ${scriptName}:`, err)
+            return { 
+                success: false, 
+                error: `Pipeline Stage Failed: Malformed output from script.`,
+                rawOutput: output 
+            }
         }
 
     } catch (error: unknown) {

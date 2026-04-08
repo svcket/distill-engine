@@ -23,13 +23,14 @@ def generate_content_brief(content_type: str, audience: str, tone: str, lang: st
     """
     Generates a structured Content Brief based on user intent parameters.
     """
-    system_prompt = """You are a master Editorial Content Strategist.
+    safe_lang = (lang or "en").strip()
+    system_prompt = f"""You are a master Editorial Content Strategist.
 Your job is to take raw intent parameters (Content Type, Audience, Tone) and output a highly specific, actionable Content Brief for a writer.
 This brief will dictate the structure, depth, and style of the final drafted piece.
 
 Your goal is to ensure the resulting writing feels intentional, human-authored, and perfectly tailored to its target audience.
 You must absolutely forbid generic AI writing markers (e.g., "In today's digital landscape", "In conclusion", "Furthermore", "pivotal transformation", "testament").
-CRITICAL: You MUST write your response entirely in the '{lang}' language.
+CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.
 """
 
     user_prompt = f"""Generate a comprehensive Content Brief for the following parameters:

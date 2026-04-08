@@ -1037,6 +1037,12 @@ export default function SourceMissionControl() {
             const bodyPayload = (stage.id === "draft" || stage.id === "angle")
                 ? stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone })
                 : stage.apiBody(id)
+            
+            // Critical fix: Ensure language is propagated for all single-stage executions
+            // as recommended by CodeRabbit audit.
+            if (bodyPayload && !bodyPayload.language) {
+                bodyPayload.language = lang;
+            }
 
             // ═══ LOCAL MOCK BYPASS ═══
             // If the source is a local import, don't hit the real API
@@ -1091,10 +1097,11 @@ export default function SourceMissionControl() {
                 const decoder = new TextDecoder();
                 let fullContent = "";
                 let buffer = "";
+                let shouldAbort = false;
 
                 while (true) {
                     const { done, value } = await reader.read();
-                    if (done) break;
+                    if (done || shouldAbort) break;
 
                     buffer += decoder.decode(value, { stream: true });
                     const lines = buffer.split("\n");
@@ -1121,10 +1128,11 @@ export default function SourceMissionControl() {
                                 }));
                             } else if (parsed.type === "error") {
                                 // CRITICAL: Stop the stream and report backend error
-                                setError({ message: parsed.message, type: "error" });
-                                setLogs(prev => [{ event: `${stage.label} failed: ${parsed.message}`, time: "Just now", status: "error" }, ...prev]);
+                                setError({ message: parsed.message || parsed.error || "A streaming error occurred", type: "error" });
+                                setLogs(prev => [{ event: `${stage.label} failed: ${parsed.message || parsed.error}`, time: "Just now", status: "error" }, ...prev]);
+                                shouldAbort = true;
                                 setExecutingStage(null);
-                                return; // Stop execution
+                                break;
                             } else if (parsed.status === "success" || (parsed as StagePayload).data) {
                                 // Capture final payload from insights or other status:success scripts
                                 data = parsed as StagePayload;
@@ -1134,6 +1142,9 @@ export default function SourceMissionControl() {
                         }
                     }
                 }
+                
+                if (shouldAbort) return;
+
                 if (!data && fullContent) {
                     data = { status: "success", result: { content: fullContent } };
                 }

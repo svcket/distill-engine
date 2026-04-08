@@ -10,10 +10,12 @@ async def repair_titles():
     await db.connect()
     
     # 1. Find all sources with generic titles
+    GENERIC_TITLES_DENYLIST = ["Podcast Episode", "episode", "unknown", "untitled", "Episode"]
+    
     sources = await db.source.find_many(
         where={
             "title": {
-                "in": ["Podcast Episode", "episode", "unknown", "untitled"]
+                "in": GENERIC_TITLES_DENYLIST
             }
         }
     )

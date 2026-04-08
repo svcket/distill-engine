@@ -151,6 +151,11 @@ def evaluate_dqm(source_id: str, lang: str = "en"):
 
     client = OpenAI()
     
+    # Sanitize language
+    safe_lang = (lang or "en").strip()
+    if len(safe_lang) > 10 or not all(c.isalnum() or c in '-' for c in safe_lang):
+        safe_lang = "en"
+
     system_prompt = f"""You are the Distill Quality Matrix (DQM) Analyst.
 Evaluate the provided draft strictly and accurately across 7 dimensions (0-100).
 
@@ -168,7 +173,7 @@ Below 50: Weak, failed logic or excessive AI artifacts.
 
 COMPOSITE WEIGHTS:
 20% Grounding, 15% Insight, 15% Humanness, 10% Clarity, 10% Structure, 15% SEO, 15% AEO.
-CRITICAL: You MUST write your response entirely in the '{lang}' language.
+CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.
 """
 
     user_prompt = f"""DRAFT CONTENT:

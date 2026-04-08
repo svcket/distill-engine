@@ -119,14 +119,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           }
 
           // Safeguard: Check if model exists on prisma object
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const betaWhitelist = (prisma as any).betaWhitelist;
+          const betaWhitelist = prisma.betaWhitelist
           if (!betaWhitelist) {
             console.error("Critical: 'betaWhitelist' model not found on Prisma client.")
-            return true // Allow in dev if the table is missing
+            return process.env.NODE_ENV === "development"
           }
 
-          const whitelisted = await withRetry(() => betaWhitelist.findUnique({
+          const whitelisted = await withRetry(() => prisma.betaWhitelist.findUnique({
             where: { email: user.email! }
           }))
           

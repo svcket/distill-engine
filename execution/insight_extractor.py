@@ -92,7 +92,8 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
 
     print(json.dumps({"type": "status", "text": "Analyzing transcript context and speaker signals..."}), flush=True)
     
-    system_prompt = """
+    safe_lang = (lang or "en").strip()
+    system_prompt = f"""
     You are the Insight Extractor—a research analyst for a premium editorial publication.
     Your task is to extract dense, structured, and interpretive knowledge from this raw transcript.
     
@@ -104,7 +105,7 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
     5. Do NOT invent information. If the transcript is shallow, output empty arrays for missing concepts.
     6. Extract verbatim memorable quotes.
     7. Capture the speaker identity and the broader context of the source material.
-    CRITICAL: You MUST write your response entirely in the '{lang}' language.
+    CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.
     """
     
     try:

@@ -53,11 +53,17 @@ Source URL (for CTA): {source_url or "None"}
 Transform the above into a high-performance X thread following our directives. 
 Return ONLY the JSON structure."""
 
+        # Sanitize language
+        safe_lang = (lang or "en").strip()
+        if len(safe_lang) > 10 or not all(c.isalnum() or c in '-' for c in safe_lang):
+            safe_lang = "en"
+
         try:
+            system_msg = self.system_prompt + f"\nCRITICAL: You MUST write your response entirely in the '{safe_lang}' language."
             response = self.client.beta.chat.completions.parse(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": self.system_prompt + f"\nCRITICAL: You MUST write your response entirely in the '{lang}' language."},
+                    {"role": "system", "content": system_msg},
                     {"role": "user", "content": user_prompt}
                 ],
                 response_format=XThread

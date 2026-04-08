@@ -142,6 +142,9 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         print(f"Cluster failure: {error_str}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         
+        # Sanitize error output for the UI
+        clean_error = re.sub(r'https?://\S+', '[URL]', error_str)
+        
         # ABSOLUTE FINAL RESCUE: If analysis fails, return a stub success
         # to prevent the UI from halting on a completed transcription.
         final_payload = {
@@ -150,12 +153,12 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             "duration": time.time() - start_time,
             "results": {
                 "refine":   {"status": "success", "chunk_count": 0},
-                "summary":  {"status": "success", "summary": f"[Analysis Rescue Active]\n\nThe engine was unable to generate a high-fidelity summary for this source ({error_str}), but the following rescued metadata was preserved:\n\nLink: {source_id}"},
+                "summary":  {"status": "success", "summary": f"[Analysis Rescue Active]\n\nThe engine was unable to generate a high-fidelity summary for this source ({clean_error}), but the following rescued metadata was preserved:\n\nLink: {source_id}"},
                 "packet":   {"status": "success"},
                 "insights": {"status": "success", "insights": ["Metadata rescue initiated."]}
             },
             "is_rescue": True,
-            "error_detail": error_str
+            "error_detail": clean_error
         }
         print(json.dumps(final_payload))
         sys.exit(0)  # Exit cleanly to allow UI to proceed

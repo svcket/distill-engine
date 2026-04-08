@@ -3,7 +3,7 @@ import argparse
 import json
 import os
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 from openai import OpenAI
 
 class AngleStrategy(BaseModel):
@@ -19,10 +19,11 @@ def load_json(filepath: str):
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except: return None
+        except Exception: 
+            return None
     return None
 
-def extract_angle(insights_path: str, target_type: str = None, target_audience: str = None, target_tone: str = None, lang: str = "en"):
+def extract_angle(insights_path: str, target_type: Optional[str] = None, target_audience: Optional[str] = None, target_tone: Optional[str] = None, lang: str = "en"):
     if not os.path.exists(insights_path):
         print(json.dumps({"status": "failed", "error": f"Insights not found: {insights_path}"}), file=sys.stderr)
         sys.exit(1)

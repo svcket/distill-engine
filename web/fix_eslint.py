@@ -1,10 +1,10 @@
-import re, json, subprocess
+import json, subprocess
 
 def get_eslint_errors():
     res = subprocess.run(["npx", "eslint", "src/", "--format", "json"], capture_output=True, text=True)
     try:
         return json.loads(res.stdout)
-    except:
+    except Exception:
         return []
 
 for file_err in get_eslint_errors():
@@ -20,34 +20,21 @@ for file_err in get_eslint_errors():
         if msg['ruleId'] == '@typescript-eslint/no-explicit-any':
             line_idx = msg['line'] - 1
             old_line = lines[line_idx]
-            # Print to see it
-            print(f"{filepath}:{msg['line']} {old_line.strip()}")
             
-            # Simple replacements
-            if 'catch (err: any)' in old_line:
-                lines[line_idx] = old_line.replace('catch (err: any)', 'catch (err: unknown)')
+            new_line = old_line.replace('catch (err: any)', 'catch (err: unknown)')
+            new_line = new_line.replace('catch (error: any)', 'catch (error: unknown)')
+            new_line = new_line.replace(': any,', ': unknown,')
+            new_line = new_line.replace(': any)', ': unknown)')
+            new_line = new_line.replace(': any ', ': unknown ')
+            new_line = new_line.replace('<any>', '<unknown>')
+            new_line = new_line.replace('as any', 'as unknown')
+            new_line = new_line.replace(': any=', ': unknown=')
+            new_line = new_line.replace(': any =', ': unknown =')
+            
+            if new_line != old_line:
+                lines[line_idx] = new_line
                 changed = True
-            elif 'catch (error: any)' in old_line:
-                lines[line_idx] = old_line.replace('catch (error: any)', 'catch (error: unknown)')
-                changed = True
-            elif ': any,' in old_line:
-                lines[line_idx] = old_line.replace(': any,', ': unknown,')
-                changed = True
-            elif ': any)' in old_line:
-                lines[line_idx] = old_line.replace(': any)', ': unknown)')
-                changed = True
-            elif ': any ' in old_line:
-                lines[line_idx] = old_line.replace(': any ', ': unknown ')
-                changed = True
-            elif '<any>' in old_line:
-                lines[line_idx] = old_line.replace('<any>', '<unknown>')
-                changed = True
-            elif 'as any' in old_line:
-                lines[line_idx] = old_line.replace('as any', 'as unknown')
-                changed = True
-            elif ': any=' in old_line or ': any =' in old_line:
-                lines[line_idx] = old_line.replace(': any', ': unknown')
-                changed = True
+                print(f"Fixed 'any' in {filepath}:{msg['line']}")
 
     if changed:
         with open(filepath, 'w') as f:

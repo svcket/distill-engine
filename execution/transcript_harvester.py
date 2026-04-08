@@ -1475,7 +1475,7 @@ def search_youtube_for_mirror(title: str, podcast_name: str = None, creator_name
         
     return None
 
-def fetch_transcript(source_id: str, source_url: str = None, source_type: str = None, max_segments: int = 2000, passed_title: str = None):
+def fetch_transcript(source_id: str, source_url: str = None, source_type: str = None, max_segments: int = 2000, passed_title: str = None, lang: str = "en"):
     """Main entrypoint — dispatch to correct fetcher based on source type."""
     base = os.path.dirname(__file__)
 
@@ -1802,7 +1802,8 @@ if __name__ == "__main__":
             source_url=args.url, 
             source_type=args.source_type, 
             max_segments=args.max_segments,
-            passed_title=args.title
+            passed_title=args.title,
+            lang=args.lang
         )
     except Exception as e:
         # ABSOLUTE FINAL RESCUE - Failure to the UI is incompetence
