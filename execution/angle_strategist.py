@@ -14,7 +14,15 @@ class AngleStrategy(BaseModel):
     working_titles: List[str] = Field(description="3-5 punchy title ideas.")
     rationale: str = Field(description="Why this angle?")
 
-def extract_angle(insights_path: str, target_type: str = None, target_audience: str = None, target_tone: str = None):
+def load_json(filepath: str):
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except: return None
+    return None
+
+def extract_angle(insights_path: str, target_type: str = None, target_audience: str = None, target_tone: str = None, lang: str = "en"):
     if not os.path.exists(insights_path):
         print(json.dumps({"status": "failed", "error": f"Insights not found: {insights_path}"}), file=sys.stderr)
         sys.exit(1)
@@ -24,6 +32,18 @@ def extract_angle(insights_path: str, target_type: str = None, target_audience: 
         
     source_id = insights_bundle.get("source_id") or insights_bundle.get("video_id")
     insights_data = insights_bundle.get("data", {})
+    
+    # FALLBACK: If insights are empty, try to load the summary as content source
+    input_text = json.dumps(insights_data)
+    if not insights_data or not any(insights_data.values()):
+        print(f"[{source_id}] Angle Strategist: Insights empty. Falling back to summary context.", file=sys.stderr)
+        summary_path = os.path.join(os.path.dirname(__file__), ".tmp", "summaries", f"{source_id}_summary.json")
+        summary_bundle = load_json(summary_path)
+        if summary_bundle and summary_bundle.get("summary"):
+            input_text = f"SOURCE SUMMARY (Fallback):\n{summary_bundle['summary']}"
+        else:
+            # Last resort: use the title
+            input_text = f"SOURCE TITLE (Minimal context):\n{insights_bundle.get('title', 'Unknown Source')}"
     
     if "OPENAI_API_KEY" not in os.environ or not os.environ["OPENAI_API_KEY"]:
         mock_result = {
@@ -69,6 +89,7 @@ def extract_angle(insights_path: str, target_type: str = None, target_audience: 
     IMPORTANT: If USER INTENT SETTINGS provide a specific 'Format/Type', you MUST output that exactly as the 'recommended_format'. Do NOT use 'Long-form Essay' if the user requested 'blog_article' or 'technical_explainer'.
     
     Target the audience specified, or default to technical builders, engineers, and designers.
+    CRITICAL: You MUST write your response entirely in the '{lang}' language.
     """
     
     try:
@@ -76,7 +97,7 @@ def extract_angle(insights_path: str, target_type: str = None, target_audience: 
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Strategize an angle for these insights:\n\n{json.dumps(insights_data)}"}
+                {"role": "user", "content": f"Strategize an angle for these insights:\n\n{input_text}"}
             ],
             response_format=AngleStrategy,
         )
@@ -109,5 +130,6 @@ if __name__ == "__main__":
     parser.add_argument("--audience", help="Target audience.")
     parser.add_argument("--tone", help="Target tone.")
     
+    parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
-    extract_angle(args.input, args.type, args.audience, args.tone)
+    extract_angle(args.input, args.type, args.audience, args.tone, args.lang)

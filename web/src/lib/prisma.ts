@@ -17,13 +17,14 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma
 export async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 500): Promise<T> {
   try {
     return await fn()
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const error = err as Error & { code?: string };
     const isConnError = 
-      err.message?.includes("connection") || 
-      err.message?.includes("closed") ||
-      err.code === 'P1001' || // Can't reach database server
-      err.code === 'P1002' || // Database server timeout
-      err.code === 'P2024';   // Connection pool timeout
+      error.message?.includes("connection") || 
+      error.message?.includes("closed") ||
+      error.code === 'P1001' || // Can't reach database server
+      error.code === 'P1002' || // Database server timeout
+      error.code === 'P2024';   // Connection pool timeout
       
     if (retries > 0 && isConnError) {
       console.warn(`Prisma connection issue, retrying in ${delay}ms... (${retries} left)`);

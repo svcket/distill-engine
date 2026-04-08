@@ -19,7 +19,7 @@ class ContentBrief(BaseModel):
     must_include: list[str]
     avoid_patterns: list[str]
 
-def generate_content_brief(content_type: str, audience: str, tone: str) -> dict:
+def generate_content_brief(content_type: str, audience: str, tone: str, lang: str = "en") -> dict:
     """
     Generates a structured Content Brief based on user intent parameters.
     """
@@ -29,6 +29,7 @@ This brief will dictate the structure, depth, and style of the final drafted pie
 
 Your goal is to ensure the resulting writing feels intentional, human-authored, and perfectly tailored to its target audience.
 You must absolutely forbid generic AI writing markers (e.g., "In today's digital landscape", "In conclusion", "Furthermore", "pivotal transformation", "testament").
+CRITICAL: You MUST write your response entirely in the '{lang}' language.
 """
 
     user_prompt = f"""Generate a comprehensive Content Brief for the following parameters:
@@ -84,7 +85,7 @@ if __name__ == "__main__":
     parser.add_argument("--type", default="blog_article", help="Target content type")
     parser.add_argument("--audience", default="general_reader", help="Target audience")
     parser.add_argument("--tone", default="conversational", help="Desired tone")
-    
+    parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
     
     # Generate the brief
@@ -92,7 +93,8 @@ if __name__ == "__main__":
     brief = generate_content_brief(
         content_type=args.type, 
         audience=args.audience, 
-        tone=args.tone
+        tone=args.tone,
+        lang=args.lang
     )
     
     # Save to .tmp/briefs/

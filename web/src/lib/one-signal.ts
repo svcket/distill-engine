@@ -13,13 +13,13 @@ export async function sendPushNotification(userId: string, title: string, messag
       include: { preferences: true }
     });
 
-    if (!user || !((user as any).oneSignalUserId) || !user.preferences?.notifyPush) {
+    if (!user || !('oneSignalUserId' in user && user.oneSignalUserId) || !user.preferences?.notifyPush) {
       console.log(`Push skipped for user ${userId}: Disabled or no ID.`);
       return;
     }
 
     // 2. Dynamically load OneSignal (Server-side only)
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const OneSignal = require('onesignal-node');
     const client = new OneSignal.Client(
       process.env.ONESIGNAL_APP_ID || '',

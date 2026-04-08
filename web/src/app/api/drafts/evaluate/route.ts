@@ -29,16 +29,17 @@ export async function POST(request: Request) {
     }
 
     try {
-        const { sourceId } = await request.json()
+        const { sourceId, language } = await request.json()
         
         if (!sourceId) {
             return NextResponse.json({ error: "Missing sourceId" }, { status: 400 })
         }
 
+        const args = ['--source-id', sourceId]
+        if (language) args.push('--lang', language)
+
         // Run the evaluate_dqm.py script with typed response
-        const { success, data, error: scriptError } = await runPythonScript<DQMEvaluationResponse>('evaluate_dqm.py', [
-            '--source-id', sourceId
-        ])
+        const { success, data, error: scriptError } = await runPythonScript<DQMEvaluationResponse>('evaluate_dqm.py', args)
         
         if (success && data) {
             // Standardize: Python returns { "status": "success", "result": { "total_score": X, ... } }

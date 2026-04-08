@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const userId = session.user.id
 
     try {
-        const { transcriptId } = await request.json()
+        const { transcriptId, language } = await request.json()
 
         if (!transcriptId) {
             return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
@@ -36,7 +36,10 @@ export async function POST(request: Request) {
         
         const stream = new ReadableStream({
             start(controller) {
-                const pyProcess = spawn('python3', [scriptPath, '--input', packetPath], {
+                const args = [scriptPath, '--input', packetPath]
+                if (language) args.push('--lang', language)
+                
+                const pyProcess = spawn('python3', args, {
                     cwd: executionDir,
                     env: { ...process.env, PYTHONPATH: executionDir }
                 })

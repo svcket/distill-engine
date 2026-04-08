@@ -1,6 +1,6 @@
 "use client"
-import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react"
-import { Search, Loader2, X, Paperclip, Mic, Play, Pause, Square } from "lucide-react"
+import { useState, useRef, useCallback, useImperativeHandle, forwardRef } from "react"
+import { Search, Loader2, X, Play, Pause, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/Button"
 import { useLanguage } from "@/context/LanguageContext"
@@ -262,14 +262,15 @@ export const UnifiedSourceInput = forwardRef<UnifiedSourceInputHandle, UnifiedSo
                     onKeyDown={(e) => { if (e.key === 'Enter') handleSend() }}
                     disabled={isIngesting || isDragging}
                 />
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
                     <Button 
                         size="sm" 
                         className={cn(
                             "h-7 lg:h-8 px-2.5 lg:px-4 text-[10px] lg:text-xs font-serif font-medium transition-all duration-300 border relative overflow-hidden",
                             value.trim() 
                                 ? "bg-black text-white dark:bg-white dark:text-black hover:shadow-soft" 
-                                : "bg-muted text-muted-foreground opacity-40 grayscale pointer-events-none"
+                                : "bg-muted text-muted-foreground opacity-40 grayscale pointer-events-none",
+                            isIngesting && "opacity-60 shadow-none"
                         )}
                         onClick={handleSend}
                         disabled={isIngesting || !value.trim()}

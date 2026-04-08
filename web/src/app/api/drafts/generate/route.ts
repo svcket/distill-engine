@@ -16,7 +16,7 @@ export async function POST(request: Request) {
 
     const userId = session.user.id
 
-    const { transcriptId, draftId, stream = true, type, audience, tone } = await request.json()
+    const { transcriptId, draftId, stream = true, type, audience, tone, language } = await request.json()
 
     if (!transcriptId) {
         return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
@@ -73,32 +73,39 @@ export async function POST(request: Request) {
                     if (type) briefArgs.push('--type', type)
                     if (audience) briefArgs.push('--audience', audience)
                     if (tone) briefArgs.push('--tone', tone)
+                    if (language) briefArgs.push('--lang', language)
 
                     sendStatus("Building content brief...")
                     const briefResult = await runBatch('content_brief_builder.py', briefArgs)
                     if (!briefResult.success) throw new Error('Brief building failed')
 
                     // Step 1: Generate outline
-                    sendStatus("Architecting article structure...")
-                    const architectResult = await runBatch('article_architect.py', [
+                    const architectArgs = [
                         '--angle_input', anglePath,
                         '--insights_input', insightsPath,
-                    ])
+                    ]
+                    if (language) architectArgs.push('--lang', language)
+
+                    sendStatus("Architecting article structure...")
+                    const architectResult = await runBatch('article_architect.py', architectArgs)
                     if (!architectResult.success) {
                         console.error('Article architecture failed:', architectResult.error)
                         throw new Error(`Article architecture failed: ${architectResult.error}`)
                     }
 
                     // Step 2: Generate draft
-                    sendStatus("Connecting to editorial swarm...")
-                    const proc = spawn(PYTHON, [
+                    const writerArgs = [
                         path.join(EXECUTION_DIR, 'writer.py'),
                         '--outline_input', outlinePath,
                         '--insights_input', insightsPath,
                         '--packet_input', packetPath,
                         '--brief_input', briefPath,
                         '--stream'
-                    ], {
+                    ]
+                    if (language) writerArgs.push('--lang', language)
+
+                    sendStatus("Connecting to editorial swarm...")
+                    const proc = spawn(PYTHON, writerArgs, {
                         cwd: EXECUTION_DIR,
                         env: { ...process.env },
                     })
@@ -216,6 +223,7 @@ export async function POST(request: Request) {
     if (type) briefArgs.push('--type', type)
     if (audience) briefArgs.push('--audience', audience)
     if (tone) briefArgs.push('--tone', tone)
+    if (language) briefArgs.push('--lang', language)
 
     const briefResult = await runBatch('content_brief_builder.py', briefArgs, {
         expectedArtifact: `.tmp/briefs/${sourceId}_brief.json`
@@ -224,11 +232,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Failed to generate Content Brief', details: briefResult.error }, { status: 500 })
     }
 
-    // Step 1: Generate outline
-    const architectResult = await runBatch('article_architect.py', [
+    const batchArchitectArgs = [
         '--angle_input', anglePath,
         '--insights_input', insightsPath,
-    ], {
+    ]
+    if (language) batchArchitectArgs.push('--lang', language)
+
+    // Step 1: Generate outline
+    const architectResult = await runBatch('article_architect.py', batchArchitectArgs, {
         expectedArtifact: `.tmp/outlines/${sourceId}_outline.json`
     })
 
@@ -236,12 +247,15 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Failed to generate outline', details: architectResult.error }, { status: 500 })
     }
 
-    const { success, error, rawOutput } = await runBatch('writer.py', [
+    const batchWriterArgs = [
         '--outline_input', outlinePath,
         '--insights_input', insightsPath,
         '--packet_input', packetPath,
         '--brief_input', briefPath,
-    ], {
+    ]
+    if (language) batchWriterArgs.push('--lang', language)
+
+    const { success, error, rawOutput } = await runBatch('writer.py', batchWriterArgs, {
         expectedArtifact: `.tmp/drafts/${sourceId}_draft.json`
     })
 

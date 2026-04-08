@@ -6,6 +6,19 @@ import fs from 'fs'
 const execFileAsync = promisify(execFile)
 
 /**
+ * Redacts sensitive info (API keys, large content, URLs) from logs.
+ */
+function redactSensitiveData(text: string): string {
+    if (!text) return text
+    return text
+        .replace(/https?:\/\/[^\s]+/g, '[REDACTED_URL]')
+        .replace(/"content":\s*".*?"/g, '"content": "[REDACTED_CONTENT]"')
+        .replace(/"text":\s*".*?"/g, '"text": "[REDACTED_TEXT]"')
+        // Cap large blocks to prevent log bloat
+        .substring(0, 10000)
+}
+
+/**
  * Manually parse .env.local to ensure sub-processes get the keys 
  * even if Next.js hasn't fully populated process.env in some contexts.
  */
@@ -36,7 +49,7 @@ function loadEnvLocal(): Record<string, string> {
 export async function runPythonScript<T = unknown>(
     scriptName: string,
     args: string[] = [],
-    options: { expectedArtifact?: string } = {}
+    options: { expectedArtifact?: string; env?: Record<string, string> } = {}
 ): Promise<{ success: boolean; data?: T; error?: string; rawOutput?: string }> {
     try {
         const executionDir = path.resolve(process.cwd(), '../execution')
@@ -56,6 +69,7 @@ export async function runPythonScript<T = unknown>(
         const childEnv: Record<string, string | undefined> = { 
             ...process.env, 
             ...localEnv,
+            ...options.env,
             PYTHONPATH: executionDir 
         }
 
@@ -68,17 +82,21 @@ export async function runPythonScript<T = unknown>(
         const { stdout, stderr } = await execFileAsync('python3', [scriptPath, ...args], {
             cwd: executionDir,
             timeout: 600000, // 600 second timeout
-            env: childEnv as any, 
+            env: childEnv as NodeJS.ProcessEnv, 
         })
 
         // Persistent Logging: Write output to .tmp/logs for observability
         try {
-            const logDir = path.join(executionDir, '.tmp', 'logs')
-            if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true })
-            const logFile = path.join(logDir, `${scriptName.replace(/\.py$/, '')}.log`)
-            const timestamp = new Date().toISOString()
-            const logContent = `\n--- ${timestamp} ---\nCOMMAND: python3 ${scriptName} ${args.join(' ')}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}\n`
-            fs.appendFileSync(logFile, logContent)
+            if (process.env.DEBUG_LOGS === 'true') {
+                const logDir = path.join(executionDir, '.tmp', 'logs')
+                if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true })
+                const logFile = path.join(logDir, `${scriptName.replace(/\.py$/, '')}.log`)
+                const timestamp = new Date().toISOString()
+                const sanitizedStdout = redactSensitiveData(stdout)
+                const sanitizedStderr = redactSensitiveData(stderr)
+                const logContent = `\n--- ${timestamp} ---\nCOMMAND: python3 ${scriptName} ${args.join(' ')}\nSTDOUT:\n${sanitizedStdout}\nSTDERR:\n${sanitizedStderr}\n`
+                fs.appendFileSync(logFile, logContent)
+            }
         } catch (logErr) {
             console.error('[Python Runner] Failed to write to log file:', logErr)
         }
@@ -139,13 +157,18 @@ export async function runPythonScript<T = unknown>(
         
         // Ensure failed attempts are also logged
         try {
-            const executionDir = path.resolve(process.cwd(), '../execution')
-            const logDir = path.join(executionDir, '.tmp', 'logs')
-            if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true })
-            const logFile = path.join(logDir, `${scriptName.replace(/\.py$/, '')}.log`)
-            const timestamp = new Date().toISOString()
-            const logContent = `\n--- ${timestamp} ---\nERROR: ${err.message}\nSTDOUT:\n${err.stdout}\nSTDERR:\n${err.stderr}\n`
-            fs.appendFileSync(logFile, logContent)
+            if (process.env.DEBUG_LOGS === 'true') {
+                const executionDir = path.resolve(process.cwd(), '../execution')
+                const logDir = path.join(executionDir, '.tmp', 'logs')
+                if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true })
+                const logFile = path.join(logDir, `${scriptName.replace(/\.py$/, '')}.log`)
+                const timestamp = new Date().toISOString()
+                const sanitizedMsg = redactSensitiveData(err.message || '')
+                const sanitizedStdout = redactSensitiveData(err.stdout || '')
+                const sanitizedStderr = redactSensitiveData(err.stderr || '')
+                const logContent = `\n--- ${timestamp} ---\nERROR: ${sanitizedMsg}\nSTDOUT:\n${sanitizedStdout}\nSTDERR:\n${sanitizedStderr}\n`
+                fs.appendFileSync(logFile, logContent)
+            }
         } catch {}
 
         return {

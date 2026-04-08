@@ -31,8 +31,8 @@ export default function TranscriptPage() {
             if (!res.ok) throw new Error(data.error)
 
             setSuccessMessage("Transcript refined into logical chunks. Ready to build Insight Packet.")
-        } catch (err: any) {
-            setError(err.message)
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : String(err))
         } finally {
             setIsRefining(false)
         }
@@ -53,8 +53,8 @@ export default function TranscriptPage() {
             // Proceed to Insights Extraction View
             router.push(`/insights/${id}`)
 
-        } catch (err: any) {
-            setError(err.message)
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : String(err))
         } finally {
             setIsBuildingPacket(false)
         }

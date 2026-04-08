@@ -6,7 +6,7 @@ from openai import OpenAI
 from typing import Dict, Any
 from supabase_utils import upload_artifact
 
-def summarize_transcript(source_id: str) -> Dict[str, Any]:
+def summarize_transcript(source_id: str, lang: str = "en") -> Dict[str, Any]:
     """Convenience wrapper for the Unified Analysis Cluster."""
     base = os.path.dirname(__file__)
     transcript_path = os.path.join(base, ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
@@ -16,9 +16,9 @@ def summarize_transcript(source_id: str) -> Dict[str, Any]:
         transcript_path = os.path.join(base, ".tmp", "transcripts", source_id, f"{source_id}_raw.json")
     
     output_path = os.path.join(base, ".tmp", "summaries", f"{source_id}_summary.md")
-    return generate_summary(transcript_path, output_path)
+    return generate_summary(transcript_path, output_path, lang)
 
-def generate_summary(transcript_path: str, output_path: str) -> Dict[str, Any]:
+def generate_summary(transcript_path: str, output_path: str, lang: str = "en") -> Dict[str, Any]:
     if not os.path.exists(transcript_path):
         raise FileNotFoundError(f"Input path not found: {transcript_path}")
         
@@ -54,7 +54,7 @@ def generate_summary(transcript_path: str, output_path: str) -> Dict[str, Any]:
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a professional editorial assistant at Distill. Your goal is to provide a concise, readable, and faithful summary of a transcript. Focus on high-level themes, major arguments, and structural overview. Use Markdown formatting with clear sections."},
+                {"role": "system", "content": f"You are a professional editorial assistant at Distill. Your goal is to provide a concise, readable, and faithful summary of a transcript. Focus on high-level themes, major arguments, and structural overview. Use Markdown formatting with clear sections.\nCRITICAL: You MUST write your response entirely in the '{lang}' language."},
                 {"role": "user", "content": f"Please summarize the following transcript:\n\n{capped_text}"}
             ],
             temperature=0.3
@@ -95,9 +95,10 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, help="Path to save summary markdown.")
     
     
+    parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
     try:
-        res = generate_summary(args.input, args.output)
+        res = generate_summary(args.input, args.output, lang=args.lang)
         print(json.dumps(res))
     except Exception as e:
         print(json.dumps({"status": "error", "error_detail": str(e)}), file=sys.stderr)

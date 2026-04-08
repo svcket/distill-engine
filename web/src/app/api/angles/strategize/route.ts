@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     }
 
     try {
-        const { transcriptId, type, audience, tone } = await request.json()
+        const { transcriptId, type, audience, tone, language } = await request.json()
 
         if (!transcriptId) {
             return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
@@ -53,6 +53,7 @@ export async function POST(request: Request) {
         if (type) args.push("--type", type)
         if (audience) args.push("--audience", audience)
         if (tone) args.push("--tone", tone)
+        if (language) args.push("--lang", language)
 
         const { success, error, rawOutput } = await runPythonScript("angle_strategist.py", args, {
             expectedArtifact: `.tmp/angles/${transcriptId}_angle.json`

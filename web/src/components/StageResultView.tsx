@@ -110,99 +110,61 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
         )
     }
 
-    // --- High-Fidelity Speaker Turn Grouping ---
-    // Extract speaker turns by identifying >> markers and joining related segments
-    interface SpeakerTurn {
-        speaker: string;
-        text: string;
-        timestamp: number;
-    }
-
-    const turns: SpeakerTurn[] = [];
-    let currentTurn: SpeakerTurn | null = null;
-
-    segments.forEach((seg) => {
-        const s = seg as Record<string, unknown>;
-        const rawText = normalizeText(getStr(s, "text").trim());
-        const start = getNum(s, "start");
-
-        // Split text by speaker marker in case multiple speakers are in one segment
-        const parts = rawText.split(/(?=(?:>>))/g);
-
-        parts.forEach((part) => {
-            const trimmedPart = part.trim();
-            if (!trimmedPart) return;
-
-            if (trimmedPart.startsWith(">>")) {
-                // New speaker turn
-                const speakerMatch = trimmedPart.match(/^>>\s*([^:]+):?/);
-                const speakerName = speakerMatch ? speakerMatch[1] : "Speaker";
-                const text = trimmedPart.replace(/^>>\s*([^:]+:?)?\s*/, "");
-
-                if (currentTurn) {
-                    turns.push(currentTurn);
-                }
-
-                currentTurn = {
-                    speaker: speakerName,
-                    text: text,
-                    timestamp: start
-                };
-            } else {
-                // Continuation of current turn
-                if (currentTurn) {
-                    // Join segments with a space instead of double newlines to avoid massive gaps
-                    currentTurn.text += (currentTurn.text ? " " : "") + trimmedPart;
-                } else {
-                    // Fallback for first segment without marker
-                    currentTurn = {
-                        speaker: "Speaker",
-                        text: trimmedPart,
-                        timestamp: start
-                    };
-                }
-            }
-        });
-    });
-
-    if (currentTurn) {
-        turns.push(currentTurn);
+    // Format seconds → M:SS
+    function fmtTime(secs: number): string {
+        const m = Math.floor(secs / 60)
+        const s = Math.floor(secs % 60)
+        return `${m}:${String(s).padStart(2, "0")}`
     }
 
     return (
-        <div className="space-y-8 max-w-3xl mx-auto">
-            <div className="flex items-center gap-2 flex-wrap border-b border-border/40 pb-4">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/40 border border-border/60">
-                    <div className="w-2 h-2 rounded-full bg-brand animate-pulse" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-foreground">
+        <div className="space-y-4">
+            {/* Header bar */}
+            <div className="flex items-center gap-2 flex-wrap border-b border-border/30 pb-3">
+                <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-muted/40 border border-border/50">
+                    <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-foreground/70">
                         {segmentCount} {isRescued ? "blocks" : "segments"}
                     </span>
                 </div>
                 {isRescued && (
-                    <Badge variant="success" className="bg-brand/10 text-brand border-brand/20 h-7">
+                    <Badge variant="success" className="bg-brand/10 text-brand border-brand/20 h-6 text-[10px]">
                         Rescued Metadata
                     </Badge>
                 )}
             </div>
-            
+
             {isRescued && (
-                <div className="p-4 rounded-xl bg-brand/5 border border-brand/10 text-xs text-muted-foreground/80 leading-relaxed italic">
-                    Note: Audio transcription was unavailable. Distill rescued this content from source metadata and show notes to maintain pipeline continuity.
+                <div className="p-3 rounded-lg bg-brand/5 border border-brand/10 text-xs text-muted-foreground/70 leading-relaxed italic">
+                    Audio transcription was unavailable. Content rescued from source metadata.
                 </div>
             )}
 
-            <div className="space-y-6">
-                {turns.map((turn, i) => (
-                    <div key={i} className="group flex gap-4 items-start border-l-2 border-transparent hover:border-brand/20 pl-3 transition-colors">
-                        <div className="flex-1 min-w-0 space-y-5">
-                            {turn.text.split("\n\n").map((para, j) => (
-                                <p key={j} className="text-[16px] text-foreground/90 leading-[1.7] font-normal antialiased break-words font-sans selection:bg-brand/30 selection:text-white">
-                                    {para.trim()}
-                                </p>
-                            ))}
+            {/* Transcript body — each segment is its own row */}
+            <div className="space-y-0">
+                {segments.map((seg, i) => {
+                    const s = seg as Record<string, unknown>
+                    const rawText = normalizeText(getStr(s, "text").trim())
+                    const start = getNum(s, "start")
+
+                    if (!rawText) return null
+
+                    return (
+                        <div
+                            key={i}
+                            className="group flex gap-3 items-baseline py-[3px] px-2 rounded-md hover:bg-muted/30 transition-colors"
+                        >
+                            {/* Timestamp gutter */}
+                            <span className="shrink-0 text-[10px] font-mono text-muted-foreground/40 group-hover:text-brand/60 transition-colors w-9 text-right tabular-nums leading-[1.6]">
+                                {fmtTime(start)}
+                            </span>
+                            {/* Text */}
+                            <p className="text-[13.5px] text-foreground/85 leading-[1.65] font-normal break-words flex-1 selection:bg-brand/30">
+                                {rawText}
+                            </p>
                         </div>
-                    </div>
-                ))}
+                    )
+                })}
             </div>
         </div>
     )
@@ -846,8 +808,8 @@ function SocialiseResult({ data, sourceId }: { data: Record<string, unknown>; so
 }
 
 function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
-    const dqmData = ((data.result || data.payload || data.data || data) as unknown) as (DQMData & { total_score?: number })
-    const pubScore = dqmData?.scores?.publishability ?? dqmData?.scores?.total_score ?? dqmData?.total_score ?? 0
+    const dqmData = ((data.result || data.payload || data.data || data) as unknown) as (DQMData & { total_score?: number; score?: number; dqmScore?: number; publishability?: number })
+    const pubScore = dqmData?.scores?.publishability ?? dqmData?.scores?.total_score ?? dqmData?.total_score ?? dqmData?.publishability ?? dqmData?.score ?? dqmData?.dqmScore ?? 0
     const normalizedScore = pubScore > 10 ? pubScore : pubScore * 10
     
     if (compact) {
@@ -855,8 +817,8 @@ function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: 
             <div className="space-y-2">
                 <div className="flex items-center gap-3">
                     <span className="text-xl font-bold font-serif">{pubScore}{pubScore > 10 ? "/100" : "/10"}</span>
-                <Badge variant={normalizedScore >= 80 ? "success" : "secondary"}>
-                    {pubScore > 0 ? (normalizedScore >= 80 ? "Excellent" : normalizedScore >= 60 ? "Passable" : "Rejected") : "Pending"}
+                <Badge variant={normalizedScore >= 80 ? "success" : normalizedScore >= 60 ? "warning" : "destructive"}>
+                     {pubScore > 0 ? (normalizedScore >= 80 ? "Exceptional" : normalizedScore >= 60 ? "Solid" : "Low score") : "Pending"}
                 </Badge>
 
                 </div>

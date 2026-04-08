@@ -145,6 +145,7 @@ if __name__ == "__main__":
     parser.add_argument("--input", required=True, help="Path to raw transcript file.")
     parser.add_argument("--output", required=True, help="Path to save refined transcript chunks.")
     
+    parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
     try:
         res = refine_transcript(args.input, args.output)

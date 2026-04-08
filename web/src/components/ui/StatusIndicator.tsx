@@ -31,7 +31,7 @@ export function StatusIndicator({ status, className }: { status: Status; classNa
             color: "text-orange-600",
             bg: "bg-orange-50",
             border: "border-orange-200",
-            label: "Rejected"
+            label: "Low score"
         },
         idle: {
             icon: Clock,

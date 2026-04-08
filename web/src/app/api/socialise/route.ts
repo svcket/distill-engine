@@ -14,7 +14,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { transcriptId } = await request.json()
+    const { transcriptId, language } = await request.json()
     const sourceId = transcriptId
 
     if (!sourceId) {
@@ -88,16 +88,19 @@ export async function POST(request: Request) {
     }
 
     try {
-        const { success, error, data } = await runPythonScript<{
-            hook: string;
-            thread: string[];
-            cta: string;
-        }>('thread_architect.py', [
+        const args = [
             '--draft', draftPath,
             '--transcript', summaryPath,
             '--url', source.url || "",
             '--output', outputPath
-        ], {
+        ]
+        if (language) args.push('--lang', language)
+
+        const { success, error, data } = await runPythonScript<{
+            hook: string;
+            thread: string[];
+            cta: string;
+        }>('thread_architect.py', args, {
             expectedArtifact: `.tmp/socialise/${sourceId}_thread.json`
         })
 

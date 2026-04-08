@@ -41,6 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     // Mounted tracking to prevent hydration flashes
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMounted(true)
     }, [])
 

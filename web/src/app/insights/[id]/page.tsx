@@ -12,6 +12,7 @@ export default function InsightsPage() {
     const params = useParams()
     const id = params?.id as string
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [insights, setInsights] = useState<any>(null)
     const [isExtracting, setIsExtracting] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -40,8 +41,8 @@ export default function InsightsPage() {
                 throw new Error("Adapter did not return insight payload.")
             }
 
-        } catch (err: any) {
-            setError(err.message)
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Unknown error")
         } finally {
             setIsExtracting(false)
         }
@@ -126,6 +127,7 @@ export default function InsightsPage() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-6">
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         {insights.frameworks?.map((fw: any, i: number) => (
                             <div key={i} className="space-y-1">
                                 <h4 className="font-medium">{fw.title}</h4>
@@ -187,6 +189,7 @@ export default function InsightsPage() {
     )
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CheckSquare(props: any) {
     return (
         <svg

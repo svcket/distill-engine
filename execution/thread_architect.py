@@ -39,7 +39,7 @@ class ThreadArchitect:
             logger.warning("Directive file x_thread_architect.md not found. Using default internal prompt.")
             self.system_prompt = "You are a world-class social strategist. Generate a high-performance X thread from the provided content. Return ONLY JSON."
 
-    def generate_thread(self, draft_content: str, transcript_summary: str, source_url: Optional[str] = None) -> Dict[str, Any]:
+    def generate_thread(self, draft_content: str, transcript_summary: str, source_url: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
         logger.info("Generating X Thread from draft and transcript context...")
         
         user_prompt = f"""Draft Content:
@@ -57,7 +57,7 @@ Return ONLY the JSON structure."""
             response = self.client.beta.chat.completions.parse(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": self.system_prompt},
+                    {"role": "system", "content": self.system_prompt + f"\nCRITICAL: You MUST write your response entirely in the '{lang}' language."},
                     {"role": "user", "content": user_prompt}
                 ],
                 response_format=XThread
@@ -82,8 +82,8 @@ def main():
     parser.add_argument("--url", help="Original source URL")
     parser.add_argument("--output", help="Output JSON file path")
     
+    parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
-    
     # Load content
     if os.path.exists(args.draft):
         with open(args.draft, "r") as f:
@@ -98,7 +98,7 @@ def main():
         transcript_content = args.transcript
         
     architect = ThreadArchitect()
-    thread_data = architect.generate_thread(draft_content, transcript_content, args.url)
+    thread_data = architect.generate_thread(draft_content, transcript_content, args.url, args.lang)
     
     if args.output:
         with open(args.output, "w") as f:

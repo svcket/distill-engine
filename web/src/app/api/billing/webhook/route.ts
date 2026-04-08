@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ received: true })
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function handleSubscriptionChange(data: any, plan: "free" | "pro") {
   const email = data.customer.email
   

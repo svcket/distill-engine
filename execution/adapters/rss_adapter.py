@@ -15,10 +15,6 @@ class RssAdapter(BaseAdapter):
 
     # Very naive regex for detection. In production, we'd detect via content-type or specific feed parsing.
     PATTERNS = [
-        r"(?:https?://)?(?:www\.)?.*\.rss(?:\?|$)",
-        r"(?:https?://)?(?:www\.)?.*\.xml(?:\?|$)",
-        r"(?:https?://)?(?:www\.)?.*/feed(?:s)?/?(?:\?|$)",
-        r"(?:https?://)?(?:www\.)?.*/rss/?(?:\?|$)",
         r"(?:https?://)?medium\.com/",
         r"(?:https?://)?substack\.com/",
         r"(?:https?://)?ghost\.org/",

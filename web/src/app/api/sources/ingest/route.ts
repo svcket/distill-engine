@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     }
 
     try {
-        const { url, source_type } = await request.json()
+        const { url, source_type, language } = await request.json()
 
         if (!url) {
             return NextResponse.json({ error: "Missing 'url' parameter." }, { status: 400 })
@@ -21,6 +21,7 @@ export async function POST(request: Request) {
         const executionDir = path.resolve(process.cwd(), '../execution')
         const args = ['--url', url, '--base-dir', executionDir, '--shell']
         if (source_type) args.push('--source-type', source_type)
+        if (language) args.push('--lang', language)
 
         const { success, error, rawOutput } = await runPythonScript('adapters/adapter_router.py', args)
 
@@ -108,10 +109,9 @@ export async function POST(request: Request) {
             create: { userId: userId, sourcesProcessed: 1 }
         }))
 
-        // AUTOMATION: Pipeline now parallelized for speed
-        const _proto = process.env.NODE_ENV === 'development' ? 'http' : 'https'
-        const _host = request.headers.get('host') ?? 'localhost:3000'
-        const baseUrl = `${_proto}://${_host}`
+        // AUTOMATION: Pipeline now parallelized for speed. 
+        // TRUTH PROTOCOL: Prioritize explicit environment variable, fallback to dynamic request origin.
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin
 
         // Trigger the pipeline without waiting for full completion in this request
         // (Ensures the user gets a response immediately while backend works)
@@ -131,31 +131,37 @@ export async function POST(request: Request) {
                 })
                 
                 if (fetchRes.ok) {
-                    console.log(`[Pipeline] Fetch successful for ${result.source_id}. Starting sequential summary and insights...`)
-                    // Step 2 & 3: Summary and Insights (Sequential to prevent CPU saturation)
-                    // We process these in sequence rather than parallel in dev mode to avoid system saturation
-                    const summaryRes = await globalThis.fetch(`${baseUrl}/api/transcripts/summary`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Cookie': request.headers.get('cookie') || '' },
-                        body: JSON.stringify({ transcriptId: result.source_id })
-                    })
-                    if (summaryRes.ok) {
-                        console.log(`[Pipeline] Summary completed for ${result.source_id}`)
-                        await globalThis.fetch(`${baseUrl}/api/insights/extract`, {
+                    const transcriptionResult = await fetchRes.json();
+                    
+                    // STATUS CHECK: Ensure transcription actually succeeded before clearing subsequent stages
+                    if (transcriptionResult.status === 'success' || transcriptionResult.result?.status === 'success') {
+                        console.log(`[Pipeline] Fetch successful for ${result.source_id}. Starting sequential summary and insights...`)
+                        // Step 2 & 3: Summary and Insights (Sequential to prevent CPU saturation)
+                        const summaryRes = await globalThis.fetch(`${baseUrl}/api/transcripts/summary`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Cookie': request.headers.get('cookie') || '' },
                             body: JSON.stringify({ transcriptId: result.source_id })
                         })
-                        console.log(`[Pipeline] Insights extraction completed for ${result.source_id}`)
+                        if (summaryRes.ok) {
+                            console.log(`[Pipeline] Summary completed for ${result.source_id}`)
+                            await globalThis.fetch(`${baseUrl}/api/insights/extract`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Cookie': request.headers.get('cookie') || '' },
+                                body: JSON.stringify({ transcriptId: result.source_id })
+                            })
+                            console.log(`[Pipeline] Insights extraction completed for ${result.source_id}`)
+                        } else {
+                            console.error(`[Pipeline] Summary failed for ${result.source_id}`)
+                        }
                     } else {
-                        console.error(`[Pipeline] Summary failed for ${result.source_id}`)
+                        console.error(`[Pipeline] Fetch transcription failed (result: ${transcriptionResult.status}) for ${result.source_id}. Pipeline halted.`);
                     }
-                    console.log(`[Pipeline] Background chain finished for ${result.source_id}`)
                 } else {
-                    console.error(`[Pipeline] Fetch failed for ${result.source_id} with status ${fetchRes.status}`)
+                    console.error(`[Pipeline] Fetch HTTP error ${fetchRes.status} for ${result.source_id}. Pipeline halted.`);
                 }
+                console.log(`[Pipeline] Background chain lifecycle ended for ${result.source_id}`)
             } catch (pipelineErr) {
-                console.error("[Pipeline Background Error]:", pipelineErr)
+                console.error(`[Pipeline Background ERROR] Trigger failed at ${baseUrl}. Ensure NEXT_PUBLIC_APP_URL is correct. Detail:`, pipelineErr)
             }
         }
         

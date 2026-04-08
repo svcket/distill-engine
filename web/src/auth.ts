@@ -119,6 +119,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           }
 
           // Safeguard: Check if model exists on prisma object
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const betaWhitelist = (prisma as any).betaWhitelist;
           if (!betaWhitelist) {
             console.error("Critical: 'betaWhitelist' model not found on Prisma client.")

@@ -1,12 +1,12 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Badge } from "@/components/ui/Badge"
 import { Button } from "@/components/ui/Button"
 import { StageResultPanel } from "@/components/StageResultView"
 import { SourceCandidate } from "@/lib/mockData"
 import { 
-    ArrowLeft, Loader2, FileText, Bot, Sparkles, Target, Edit3, 
+    ArrowLeft, FileText, Bot, Sparkles, Target, Edit3, 
     ShieldCheck, Check, ChevronDown, RefreshCw, Play, Share2, 
     ExternalLink, MoreHorizontal, Trash2, X, Calendar, Clock, BarChart3
 } from "lucide-react"
@@ -60,7 +60,7 @@ interface WorkflowStage {
     hidden?: boolean // UX optimization: run in background but don't show to user
 }
 
-interface JudgeResult { score: number; status: string; rationale?: string; title?: string; channel?: string; url?: string; }
+interface JudgeResult { score: number; status: string; rationale?: string; title?: string; channel?: string; url?: string; detected_language?: string; language_warning?: string | null; }
 interface TranscriptResult { segments: { start: number; text: string; duration?: number }[]; segment_count: number; status: string; duration?: number; }
 interface RefineResult { segments: { text: string }[]; segment_count: number; status: string; }
 interface SummaryResult { summary: string; status: string; }
@@ -129,7 +129,7 @@ const validateStageGating = (stageId: StageId, results: Record<string, unknown>)
 };
 
 export default function SourceMissionControl() {
-    const { t } = useLanguage()
+    const { t, lang } = useLanguage()
     const params = useParams()
     const router = useRouter()
     const id = params?.id as string
@@ -158,7 +158,7 @@ export default function SourceMissionControl() {
             const qa = stageResults.qa as Record<string, unknown>
             const dqmPayload = (qa.payload || qa.data || qa.result || qa) as Record<string, unknown>;
             const scores = (dqmPayload?.scores || dqmPayload) as Record<string, number | undefined>;
-            const score = scores?.publishability || scores?.total_score || scores?.score;
+            const score = scores?.publishability || scores?.total_score || scores?.score || scores?.dqmScore;
             if (score !== undefined && score !== source.score) {
                 setSource(s => ({ ...s, score: Number(score) }));
             }
@@ -169,9 +169,11 @@ export default function SourceMissionControl() {
             const ts = stageResults.transcript as TranscriptResult
             const tsRaw = ts as unknown as Record<string, Record<string, unknown>>;
             const rawDuration = ts.duration || tsRaw?.result?.duration || tsRaw?.metadata?.duration;
-            const duration = typeof rawDuration === 'number' ? `${Math.floor(rawDuration / 60)}:${String(rawDuration % 60).padStart(2, '0')}` : undefined;
-            if (duration && duration !== source.duration) {
-                setSource(s => ({ ...s, duration }));
+            if (typeof rawDuration === 'number') {
+                const formatted = formatDuration(rawDuration);
+                if (formatted !== source.duration) {
+                    setSource(s => ({ ...s, duration: formatted }));
+                }
             }
         }
     }, [stageResults.qa, stageResults.transcript, source.score, source.duration])
@@ -204,6 +206,8 @@ export default function SourceMissionControl() {
 
     // Currently executing stage
     const [executingStage, setExecutingStage] = useState<StageId | null>(null)
+    const executingStageRef = useRef<StageId | null>(null)
+    useEffect(() => { executingStageRef.current = executingStage }, [executingStage])
     const [isRunningAll, setIsRunningAll] = useState(false)
     const [showCelebration, setShowCelebration] = useState(false)
     const [error, setError] = useState<{ message: string; type: "error" | "info" } | null>(null)
@@ -225,6 +229,20 @@ export default function SourceMissionControl() {
     const [logs, setLogs] = useState<{ event: string; time: string; status: "success" | "info" | "error" }[]>([])
 
     // ════ HELPER FUNCTIONS ════
+    const formatDuration = (seconds: number | string | null | undefined): string => {
+        if (!seconds || seconds === "—") return "—";
+        const totalSeconds = typeof seconds === 'string' ? parseInt(seconds) : seconds;
+        if (isNaN(totalSeconds)) return String(seconds);
+        
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        const s = totalSeconds % 60;
+        
+        if (h > 0) {
+            return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+        return `${m}:${String(s).padStart(2, '0')}`;
+    };
 
     // Determine the absolute next stage for the pipeline loop (including hidden)
     const getFirstIncompleteIndex = useCallback((): number => {
@@ -269,13 +287,14 @@ export default function SourceMissionControl() {
                     const updatedSource = payload.new as SourceCandidate;
                     
                     // Sync Metadata
-                    setSource(prev => ({
-                        ...prev,
-                        ...updatedSource,
-                        completedStages: Array.isArray(updatedSource.completedStages) 
-                            ? updatedSource.completedStages 
-                            : prev.completedStages
-                    }));
+                    setSource(prev => {
+                        const next = { ...prev, ...updatedSource };
+                        // Ensure numeric duration is formatted
+                        if (typeof updatedSource.duration === 'number') {
+                            next.duration = formatDuration(updatedSource.duration);
+                        }
+                        return next;
+                    });
 
                     // Sync Completed Stages & Clearing Execution State
                     if (updatedSource.completedStages && Array.isArray(updatedSource.completedStages)) {
@@ -283,7 +302,7 @@ export default function SourceMissionControl() {
                         setCompletedStages(newCompleted);
                         
                         // Clear the active spinner if this stage just finished remotely
-                        if (executingStage && newCompleted.has(executingStage)) {
+                        if (executingStageRef.current && newCompleted.has(executingStageRef.current)) {
                              setExecutingStage(null);
                         }
                     }
@@ -305,7 +324,7 @@ export default function SourceMissionControl() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [id, executingStage]);
+    }, [id]);
 
     // ════ DATA FETCHING ════
 
@@ -333,10 +352,19 @@ export default function SourceMissionControl() {
                     const clusterRes = await fetch("/api/pipeline/cluster", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ sourceId: id })
+                        body: JSON.stringify({ sourceId: id, language: lang })
                     });
                     
-                    if (!clusterRes.ok) throw new Error("Analysis Cluster failed");
+                    if (!clusterRes.ok) {
+                        let errorMsg = "Analysis Cluster execution failed";
+                        try {
+                            const clusterDataErr = await clusterRes.json();
+                            if (clusterDataErr.error) {
+                                errorMsg = clusterDataErr.error;
+                            }
+                        } catch { }
+                        throw new Error(errorMsg);
+                    }
                     const clusterData = await clusterRes.json();
                     const results = clusterData.result; 
                     
@@ -390,14 +418,14 @@ export default function SourceMissionControl() {
                     const qaPromise = fetch(qaStage.apiEndpoint!, { 
                         method: "POST", 
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(qaStage.apiBody!(id))
+                        body: JSON.stringify({ ...qaStage.apiBody!(id), language: lang })
                     });
 
                     const socialPromise = new Promise(r => setTimeout(r, 250)).then(() => 
                         fetch(socialiseStage.apiEndpoint!, { 
                             method: "POST", 
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(socialiseStage.apiBody!(id))
+                            body: JSON.stringify({ ...socialiseStage.apiBody!(id), language: lang })
                         })
                     );
                     
@@ -524,6 +552,9 @@ export default function SourceMissionControl() {
                 continue
             }
 
+            // Clear previous info/error state before starting a new stage
+            setError(null)
+
             if (i !== startIndex) {
                 await new Promise(resolve => setTimeout(resolve, 100))
             }
@@ -539,13 +570,15 @@ export default function SourceMissionControl() {
             setExecutingStage(stage.id)
 
             try {
-                const bodyPayload = (stage.id === "draft" || stage.id === "angle")
+                const basePayload = (stage.id === "draft" || stage.id === "angle")
                     ? { 
                         ...stage.apiBody(id, { type: intentType, audience: intentAudience, tone: intentTone }), 
                         transcriptId: id,
                         stream: stage.id === "draft",
                       }
                     : stage.apiBody(id)
+                
+                const bodyPayload = { ...basePayload, language: lang }
 
                 const res = await fetch(stage.apiEndpoint, {
                     method: "POST",
@@ -597,7 +630,11 @@ export default function SourceMissionControl() {
                                         return updated;
                                     });
                                 } else if (parsed.type === "error") {
-                                    throw new Error(parsed.message || "Streaming execution failed");
+                                    // CRITICAL: Stop the stream on explicit error payload
+                                    console.error("Streaming error chunk received:", parsed.message);
+                                    setLogs(prev => [{ event: `ERROR: ${parsed.message}`, time: "Just now", status: "error" }, ...prev]);
+                                    data = { status: "error", error: parsed.message } as unknown as StagePayload;
+                                    break; 
                                 } else if (parsed.type === "success" || parsed.status === "success" || (parsed as StagePayload).data || parsed.result) {
                                     data = parsed as StagePayload;
                                     // If we got a final success result in the stream, we can stop reading
@@ -647,15 +684,12 @@ export default function SourceMissionControl() {
                     if (stage.id === "transcript") {
                         const tsData = (resValue as TranscriptResult);
                         const segments = tsData?.segments || (resValue as { result?: { segments?: unknown[] } })?.result?.segments;
-                        const status = (resValue as any)?.status || (resValue as any)?.result?.status;
+                        const status = (resValue as {status?: string}).status || (resValue as {result?: {status?: string}}).result?.status;
                         
-                        // Allow 0 segments ONLY if status is 'rescued_text'
-                        if ((!segments || segments.length === 0) && status !== 'rescued_text') {
-                            const errorMsg = "Transcription failed: No text segments were extracted. Pipeline halted.";
-                            setError({ message: errorMsg, type: "error" });
-                            setLogs(prev => [{ event: errorMsg, time: "Just now", status: "error" }, ...prev]);
-                            setIsRunningAll(false);
-                            break;
+                        // Relaxed Gating: If no segments, warn but DO NOT halt
+                        if ((!segments || segments.length === 0) && status !== 'rescued_text' && status !== 'unavailable') {
+                            const errorMsg = "Note: Full audio transcript unavailable. Proceeding with show notes/metadata.";
+                            setLogs(prev => [{ event: errorMsg, time: "Just now", status: "info" }, ...prev]);
                         }
                         
                         // Show info banner if rescued
@@ -665,6 +699,10 @@ export default function SourceMissionControl() {
                                 time: "Just now", 
                                 status: "info" 
                             }, ...prev]);
+                            setError({ 
+                                message: "Transcription unavailable for this source. Proceeding with rescued metadata (show notes).", 
+                                type: "info" 
+                            });
                         }
                     }
 
@@ -728,6 +766,11 @@ export default function SourceMissionControl() {
                             ...s,
                             ...updatedSource
                         }))
+                        // Surface language warning as a persistent amber banner
+                        if (judgeData.language_warning) {
+                            setError({ message: judgeData.language_warning, type: "info" })
+                            setLogs(prev => [{ event: `⚠️ Language detected: ${judgeData.detected_language?.toUpperCase()} — ${judgeData.language_warning}`, time: "Just now", status: "info" }, ...prev])
+                        }
                         try {
                             await fetch("/api/store", {
                                 method: "POST",
@@ -743,7 +786,7 @@ export default function SourceMissionControl() {
                         const d = data as StagePayload;
                         const duration = d.duration || (d.result as TranscriptResult)?.duration;
                         if (duration) {
-                            setSource(s => ({ ...s!, duration: typeof duration === 'number' ? `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')}` : duration }));
+                            setSource(s => ({ ...s!, duration: formatDuration(duration) }));
                         }
                     }
                 }
@@ -796,7 +839,7 @@ export default function SourceMissionControl() {
         } catch (e) {
             console.error("Failed final metadata refresh:", e)
         }
-    }, [completedStages, getFirstIncompleteIndex, id, intentAudience, intentTone, intentType, panelContent, source.channel, source.title, source.url, stageResults, persistStageCompletion]);
+    }, [completedStages, getFirstIncompleteIndex, id, intentAudience, intentTone, intentType, panelContent, source.channel, source.title, source.url, stageResults, persistStageCompletion, lang]);
 
     // Load persisted state on mount
     useEffect(() => {
@@ -871,14 +914,20 @@ export default function SourceMissionControl() {
                         
                         criticalArtifactStages.forEach(sid => {
                             if (data.results[sid]) {
-                                validated.add(sid) // Add if artifact exists even if DB missed it
+                                // Force topological validation to prevent ghost completions from stale disk artifacts
+                                const gate = validateStageGating(sid, data.results);
+                                if (gate.valid) {
+                                    validated.add(sid) // Add if artifact exists and dependencies are met
+                                } else {
+                                    validated.delete(sid) // Drop if upstream dependency is missing
+                                }
                             } else if (prev.has(sid)) {
                                 validated.delete(sid) // Remove if artifact missing but DB had it
                             }
                         })
                         
                         // If socialise is done, ensure the whole pipeline is effectively closed
-                        if (data.results.socialise) {
+                        if (validated.has("socialise")) {
                             ["refine", "cluster", "packet"].forEach(sid => validated.add(sid as StageId));
                         }
                         
@@ -925,7 +974,11 @@ export default function SourceMissionControl() {
         const stage = STAGES[index]
         const tStatus = source.transcriptStatus
         
-        if (completedStages.has(stage.id)) return "completed"
+        if (completedStages.has(stage.id)) {
+            // Visual Gate: Only show completed if dependencies are met
+            const gate = validateStageGating(stage.id, stageResults);
+            if (gate.valid) return "completed";
+        }
         
         // Ensure transcript stage shows as completed if status is retrieved
         if (stage.id === "transcript" && (tStatus === "transcribed" || tStatus === "rescued_text" || tStatus === "unavailable")) return "completed"
@@ -1124,7 +1177,7 @@ export default function SourceMissionControl() {
                 if (stage.id === "transcript") {
                     const tsData = ((data as StagePayload).result || data) as Record<string, unknown>;
                     if (tsData && tsData.duration) {
-                        setSource(s => ({ ...s, duration: String(tsData.duration) }));
+                        setSource(s => ({ ...s, duration: formatDuration(tsData.duration as number | string) }));
                     }
                 }
 
@@ -1357,6 +1410,11 @@ export default function SourceMissionControl() {
                                         Completed
                                     </Badge>
                                 )}
+                                {(stageResults.transcript as {result?: {used_url?: string}})?.result?.used_url?.includes('ytsearch') && (
+                                    <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20 uppercase tracking-widest text-[10px] h-5 px-2 font-bold animate-pulse">
+                                        Sourced via YouTube Search
+                                    </Badge>
+                                )}
                             </div>
                             <h1 className="text-4xl font-bold tracking-tight text-foreground font-serif leading-tight max-w-4xl">
                                 {source.title}
@@ -1391,8 +1449,8 @@ export default function SourceMissionControl() {
                                             {source.score > 0 ? (source.score > 10 ? `${source.score}/100` : `${source.score}/10`) : (stageResults.qa ? <span className="text-muted-foreground opacity-50">Calculating...</span> : <span className="opacity-70 font-normal italic">{t("pending")}...</span>)}
                                         </span>
                                         {source.score > 0 && (
-                                            <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", normalizedScore >= 60 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600")}>
-                                                {normalizedScore >= 80 ? "Excellent" : normalizedScore >= 60 ? "Passable" : "Rejected"}
+                                            <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", normalizedScore >= 80 ? "bg-emerald-50 text-emerald-700" : normalizedScore >= 60 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-600")}>
+                                                {normalizedScore >= 80 ? "Exceptional" : normalizedScore >= 60 ? "Solid" : "Low score"}
                                             </span>
                                         )}
                                     </>
@@ -1415,12 +1473,15 @@ export default function SourceMissionControl() {
                                                 <Button
                                                     variant="default"
                                                     size="sm"
-                                                    className="gap-1.5 h-8 text-[12px] rounded-lg font-bold bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/10 transition-all duration-200 border-none"
+                                                    className={cn(
+                                                        "gap-1.5 h-8 text-[12px] rounded-lg font-bold transition-all duration-300 border-none",
+                                                        isRunningAll ? "bg-emerald-500/90 text-white animate-pulse-vibrant opacity-60" : "bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/10"
+                                                    )}
                                                     onClick={() => runFullPipeline()}
                                                     disabled={isRunningAll || !!executingStage}
                                                 >
                                                     {isRunningAll ? (
-                                                        <><RefreshCw className="w-5 h-5 text-blue-400 animate-spin-slow" /> {t("processing")}...</>
+                                                        <><RefreshCw className="w-5 h-5 text-white animate-spin-slow" /> <span className="dots-animate">{t("processing")}</span></>
                                                     ) : activeIndex > 0 ? (
                                                         <>{t("continuePipeline")}</>
                                                     ) : (
@@ -1574,12 +1635,20 @@ export default function SourceMissionControl() {
                                                                 </p>
                                                                 <Button 
                                                                     size="sm" 
-                                                                    className="h-8 px-5 rounded-full font-semibold bg-white text-zinc-900 shadow-sm hover:bg-zinc-100 transition-all flex items-center gap-1.5 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                                                                    className={cn(
+                                                                        "h-8 px-5 rounded-full font-semibold transition-all flex items-center gap-1.5",
+                                                                        (isRunningAll || executingStage === "angle") 
+                                                                            ? "bg-emerald-500 text-white animate-pulse-vibrant opacity-60" 
+                                                                            : "bg-white text-zinc-900 shadow-sm hover:bg-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                                                                    )}
                                                                      onClick={(e) => { e.stopPropagation(); runFullPipeline(true); }}
                                                                      disabled={isRunningAll || !!executingStage}
                                                                  >
-                                                                     {isRunningAll || executingStage === "angle" ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Play className="w-3.5 h-3.5 fill-current"/>}
-                                                                     Continue Pipeline
+                                                                     {isRunningAll || executingStage === "angle" ? (
+                                                                         <><RefreshCw className="w-3.5 h-3.5 text-white animate-spin-slow"/> <span className="dots-animate">Processing</span></>
+                                                                     ) : (
+                                                                         <><Play className="w-3.5 h-3.5 fill-current"/> Continue Pipeline</>
+                                                                     )}
                                                                 </Button>
                                                             </div>
                                                         </div>

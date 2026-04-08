@@ -17,7 +17,8 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ status: "done", message: `Exported draft: ${draftId}` })
 
-    } catch (err: any) {
-        return NextResponse.json({ error: err.message }, { status: 500 })
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        return NextResponse.json({ error: msg }, { status: 500 })
     }
 }

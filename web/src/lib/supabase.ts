@@ -15,7 +15,7 @@ export const supabaseAdmin = (typeof window === 'undefined' && supabaseServiceKe
         persistSession: false
       }
     })
-  : null as unknown as ReturnType<typeof createClient>
+  : null
 
 // Standard client for client-side operations (uses public anon key)
 export const supabase = createClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '')

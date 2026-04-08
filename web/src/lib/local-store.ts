@@ -64,6 +64,7 @@ export function upsertSource(source: Partial<StoredSource> & { id: string }): St
                 if (key === 'channel' && existing.channel && existing.channel !== 'YouTube Channel' && existing.channel !== 'Unknown' && (val === 'YouTube Channel' || val === 'Unknown')) {
                     return;
                 }
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (updates as any)[key] = val;
             }
         });

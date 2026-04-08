@@ -55,7 +55,7 @@ const DQMCard = ({
                     <div className="flex items-center justify-between mb-4 relative z-10">
                         <div className="flex flex-col">
                             <div className="flex items-center gap-1.5">
-                                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Distill Quality Matrix</h3>
+                                <h3 className="text-[12px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Distill Quality Matrix</h3>
                                 <Tooltip>
                                     <TooltipTrigger asChild>
                                         <button 
@@ -66,7 +66,7 @@ const DQMCard = ({
                                             <HelpCircle className="w-3 h-3" />
                                         </button>
                                     </TooltipTrigger>
-                                    <TooltipContent side="top" className="max-w-[200px] text-[11px]">
+                                    <TooltipContent side="top" className="max-w-[200px] text-[13px]">
                                         The Distill Quality Matrix (DQM) measures the editorial readiness and strategic performance of your content.
                                     </TooltipContent>
                                 </Tooltip>
@@ -92,7 +92,7 @@ const DQMCard = ({
                                         className={cn(
                                             "h-full rounded-full transition-all duration-1000 ease-out",
                                             ((dqm && dqm.scores) 
-                                                ? ((dqm.scores.total_score ?? dqm.scores.publishability ?? 0) >= 90 ? "bg-emerald-500" : (dqm.scores.total_score ?? dqm.scores.publishability ?? 0) >= 75 ? "bg-brand" : "bg-amber-500")
+                                                ? ((dqm.scores.total_score ?? dqm.scores.publishability ?? 0) >= 80 ? "bg-emerald-500" : (dqm.scores.total_score ?? dqm.scores.publishability ?? 0) >= 60 ? "bg-amber-500" : "bg-orange-500")
                                                 : "bg-muted")
                                         )} 
                                         style={{ width: `${(dqm && dqm.scores) ? (dqm.scores.total_score ?? dqm.scores.publishability ?? 0) : 0}%` } as React.CSSProperties} 
@@ -105,7 +105,7 @@ const DQMCard = ({
                                 <div className="h-[1px] w-full bg-border/60 mb-3" />
                                 <div className="flex items-center gap-2 px-1">
                                     <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse shrink-0" />
-                                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                                    <p className="text-[13px] font-bold text-muted-foreground uppercase tracking-wider">
                                         {isQAing ? "Analyzing matrix..." : "Pending analysis"}
                                     </p>
                                 </div>
@@ -117,7 +117,7 @@ const DQMCard = ({
                             <div className="bg-muted/30 p-3 rounded-xl border border-border/50 group/metric transition-colors hover:border-purple-500/30">
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1">
-                                        <p className="text-[11px] text-purple-600/80 dark:text-purple-400/80 uppercase tracking-widest font-bold">SEO</p>
+                                        <p className="text-[13px] text-purple-600/80 dark:text-purple-400/80 uppercase tracking-widest font-bold">SEO</p>
                                         <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <button 
@@ -128,7 +128,7 @@ const DQMCard = ({
                                                     <HelpCircle className="w-2.5 h-2.5" />
                                                 </button>
                                             </TooltipTrigger>
-                                            <TooltipContent side="top" className="text-[10px]">
+                                            <TooltipContent side="top" className="text-[12px]">
                                                 Search Engine Optimization score.
                                             </TooltipContent>
                                         </Tooltip>
@@ -146,7 +146,7 @@ const DQMCard = ({
                             <div className="bg-muted/30 p-3 rounded-xl border border-border/50 transition-colors hover:border-cyan-500/30">
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1">
-                                        <p className="text-[11px] text-cyan-600/80 dark:text-cyan-400/80 uppercase tracking-widest font-bold">AEO</p>
+                                        <p className="text-[13px] text-cyan-600/80 dark:text-cyan-400/80 uppercase tracking-widest font-bold">AEO</p>
                                         <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <button 
@@ -157,7 +157,7 @@ const DQMCard = ({
                                                     <HelpCircle className="w-2.5 h-2.5" />
                                                 </button>
                                             </TooltipTrigger>
-                                            <TooltipContent side="top" className="text-[10px]">
+                                            <TooltipContent side="top" className="text-[12px]">
                                                 Answer Engine Optimization score.
                                             </TooltipContent>
                                         </Tooltip>
@@ -179,7 +179,7 @@ const DQMCard = ({
                         <div className="mt-4 pt-4 border-t border-border/40 relative z-10 flex justify-center">
                             <button 
                                 onClick={(e) => { e.stopPropagation(); onExpand?.() }}
-                                className="text-[11px] font-bold text-brand uppercase tracking-widest hover:underline transition-all"
+                                className="text-[13px] font-bold text-brand uppercase tracking-widest hover:underline transition-all"
                             >
                                 View Full Matrix →
                             </button>
@@ -191,7 +191,7 @@ const DQMCard = ({
                 {!isCollapsed && dqm && dqm.scores ? (
                     <div className="space-y-8 animate-in slide-in-from-bottom-2 duration-500 pb-10">
                         <div>
-                            <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+                            <h3 className="text-[13px] font-bold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
                                 <BarChart3 className="w-3.5 h-3.5" /> Matrix Dimensions
                             </h3>
                             <div className="bg-background border border-border/40 rounded-2xl overflow-hidden divide-y divide-border/20 shadow-micro">
@@ -208,7 +208,7 @@ const DQMCard = ({
                                                 <m.icon className="w-3 h-3 text-muted-foreground" />
                                             </div>
                                             <div className="flex items-center gap-1.5">
-                                                <span className="text-xs font-medium text-foreground/80">{m.label}</span>
+                                                <span className="text-sm font-medium text-foreground/80">{m.label}</span>
                                                 <Tooltip>
                                                     <TooltipTrigger asChild>
                                                         <button 
@@ -219,15 +219,15 @@ const DQMCard = ({
                                                             <HelpCircle className="w-2.5 h-2.5" />
                                                         </button>
                                                     </TooltipTrigger>
-                                                    <TooltipContent side="right" className="text-[10px]">
+                                                    <TooltipContent side="right" className="text-[12px]">
                                                         {m.tooltip}
                                                     </TooltipContent>
                                                 </Tooltip>
                                             </div>
                                         </div>
                                         <span className={cn(
-                                            "text-xs font-bold",
-                                            m.score >= 80 ? "text-emerald-600" : m.score >= 60 ? "text-brand" : "text-amber-600"
+                                            "text-sm font-bold",
+                                            m.score >= 80 ? "text-emerald-600" : m.score >= 60 ? "text-amber-600" : "text-orange-500"
                                         )}>{m.score}</span>
                                     </div>
                                 ))}
@@ -237,12 +237,12 @@ const DQMCard = ({
                         {/* Strengths */}
                         {dqm?.strengths && dqm.strengths.length > 0 && (
                             <div>
-                                <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Strengths</h3>
+                                <h3 className="text-[13px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Strengths</h3>
                                 <div className="space-y-2">
                                     {dqm.strengths.map((s, i) => (
                                         <div key={i} className="flex gap-2 p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
                                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mt-0.5 shrink-0" />
-                                            <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 leading-tight">{s}</p>
+                                            <p className="text-[13px] font-medium text-emerald-600 dark:text-emerald-400 leading-tight">{s}</p>
                                         </div>
                                     ))}
                                 </div>
@@ -252,12 +252,12 @@ const DQMCard = ({
                         {/* Risks */}
                          {dqm?.risks && dqm.risks.length > 0 && (
                             <div>
-                                <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Risks</h3>
+                                <h3 className="text-[13px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Risks</h3>
                                 <div className="space-y-2">
                                     {dqm.risks.map((r, i) => (
                                         <div key={i} className="flex gap-2 p-3 bg-amber-500/5 border border-amber-500/10 rounded-xl">
                                             <AlertCircle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
-                                            <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400 leading-tight">{r}</p>
+                                            <p className="text-[13px] font-medium text-amber-600 dark:text-amber-400 leading-tight">{r}</p>
                                         </div>
                                     ))}
                                 </div>
@@ -267,12 +267,12 @@ const DQMCard = ({
                         {/* Suggestions */}
                         {dqm?.suggestions && dqm.suggestions.length > 0 && (
                             <div>
-                                <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4 text-brand">Suggestions</h3>
+                                <h3 className="text-[13px] font-bold text-muted-foreground uppercase tracking-widest mb-4 text-brand">Suggestions</h3>
                                 <div className="bg-brand/5 border border-brand/10 p-4 rounded-xl space-y-2">
                                     {dqm.suggestions.map((s, i) => (
                                         <div key={i} className="flex gap-2">
                                             <Zap className="w-3 h-3 text-brand mt-0.5 shrink-0 fill-brand" />
-                                            <p className="text-[11px] text-brand font-medium leading-relaxed">{s}</p>
+                                            <p className="text-[13px] text-brand font-medium leading-relaxed">{s}</p>
                                         </div>
                                     ))}
                                 </div>
@@ -282,10 +282,10 @@ const DQMCard = ({
                         {/* Decision Rationale */}
                         {showRationale && dqm?.rationale && (
                             <div className="animate-in fade-in duration-700">
-                                <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Decision Rationale</h3>
+                                <h3 className="text-[13px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Decision Rationale</h3>
                                 <div className="bg-brand/[0.03] dark:bg-brand/[0.05] border border-brand/10 p-4 rounded-xl relative">
                                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand/20 rounded-l-xl" />
-                                    <p className="text-[11px] text-muted-foreground leading-relaxed font-serif italic text-pretty">
+                                    <p className="text-[13px] text-muted-foreground leading-relaxed font-serif italic text-pretty">
                                         &ldquo;{dqm.rationale}&rdquo;
                                     </p>
                                 </div>

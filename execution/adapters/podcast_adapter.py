@@ -10,8 +10,62 @@ import hashlib
 import urllib.request
 import urllib.parse
 import html
+import json
+import os
 from typing import Optional
 from .base_adapter import BaseAdapter, NormalizedSource
+
+
+def is_generic_title(title: str) -> bool:
+    """Check if the provided title is a generic platform placeholder."""
+    if not title: return True
+    generic_terms = [
+        "podcast episode", "episode", "podcast", "full episode", 
+        "spotify - web player", "spotify \u2013 web player", "page not found",
+        "unknown", "untitled", "direct audio source", "spotify",
+        "listen to episodes", "play on spotify", "404", "error", "forbidden", "access denied"
+    ]
+    t_lower = title.lower().strip()
+    # Check for exact matches in generic terms
+    if any(term == t_lower for term in generic_terms): return True
+    
+    # Check for specific suspicious substrings
+    suspicious_substrings = ["web player", "webplayer", "page not found", "404", "access denied"]
+    if any(sub in t_lower for sub in suspicious_substrings): return True
+    
+    # Check for very short or purely numeric titles
+    return len(t_lower) < 3 or t_lower.isdigit()
+
+
+
+# ─── Metadata Recovery Helpers ──────────────────────────────────────────────
+def recover_title_from_text(text: str, current_title: str) -> tuple[Optional[str], Optional[str]]:
+    """Use GPT-4o-mini to extract a real title/show from a messy text snippet."""
+    if not text or len(text) < 50: return None, None
+    try:
+        from openai import OpenAI
+        import json
+        client = OpenAI()
+        prefix = text[:3000]
+        prompt = f"""
+        Identify the podcast episode title and show name from the following text (which could be show notes or a partial transcript).
+        
+        Current (possibly generic) title: {current_title}
+        Text:
+        {prefix}
+        
+        Return ONLY a JSON object with 'title' and 'show_name'. If unsure, return null for those fields.
+        """
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        res = json.loads(response.choices[0].message.content)
+        return res.get("title"), res.get("show_name")
+    except Exception as e:
+        print(f"[MetadataRescue] AI recovery failed: {e}")
+        return None, None
 
 
 class PodcastAdapter(BaseAdapter):
@@ -32,6 +86,10 @@ class PodcastAdapter(BaseAdapter):
         r"rss\.com/podcasts/",
         r"simplecast\.com/episodes/",
         r"share\.transistor\.fm/s/",
+        r"\.rss(?:\?|$)",
+        r"\.xml(?:\?|$)",
+        r"/feed(?:s)?/?(?:\?|$)",
+        r"/rss/?(?:\?|$)",
     ]
 
     def detect(self, url: str) -> bool:
@@ -48,8 +106,8 @@ class PodcastAdapter(BaseAdapter):
         
         # Also handle show-level URLs if they slip through
         elif "spotify.com/show/" in url_clean:
-             show_match = re.search(r"spotify\.com/show/([a-zA-Z0-9]+)", url_clean)
-             source_id = f"spotify_show_{show_match.group(1)}"
+            show_match = re.search(r"spotify\.com/show/([a-zA-Z0-9]+)", url_clean)
+            source_id = f"spotify_show_{show_match.group(1)}"
         
         # 2. Apple ID extraction — check FULL url for episode ID (?i=) before fallback to channel ID
         elif "podcasts.apple.com" in url.lower():
@@ -106,58 +164,89 @@ class PodcastAdapter(BaseAdapter):
             metadata = {"title": "Direct Audio Source", "description": url}
         else:
             # 2. Resolve to an RSS feed URL and try to get a target title/guid
-            feed_url, target_title, target_guid = self._resolve_to_rss_feed_and_title(url)
+            feed_url, target_title, target_guid, content_show, ld_description, resolved_duration, resolved_preview_url = self._resolve_to_rss_feed_and_title(url)
             
             # 3. Extract metadata and direct MP3 url from the feed
             metadata, mp3_url = self._fetch_rss_metadata(feed_url, target_title, target_guid)
+            
+            # Use resolved preview URL if RSS failed to find an enclosure
+            if not mp3_url and resolved_preview_url:
+                mp3_url = resolved_preview_url
 
         # If we successfully found an MP3, we override the URL so yt-dlp downloads the raw audio natively
         final_extract_url = mp3_url if mp3_url else url
 
         # RESCUE LOGIC: If no MP3 and we're on a platform with guarded audio, check for high-quality show notes
-        description = metadata.get("description", "")
+        # content_show and ld_description come from the resolved page (Spotify/Apple)
+        description = metadata.get("description", "") or ld_description or ""
         status = "pending_whisper"
         strategy = "audio_fallback"
         
-        # INCREASE THRESHOLD: We only rescue to article text if the description is significant (>300 chars)
-        if not mp3_url and ("spotify.com" in url or "apple.com" in url):
-            if len(description) > 300: 
-                 print(f"[PodcastAdapter] MP3 not resolved but high-quality description found ({len(description)} chars). Implementing METADATA RESCUE.")
+        # GUARD: Reject generic titles for audio rescue
+        current_title = metadata.get("title") or target_title or ""
+        is_generic = is_generic_title(current_title)
+
+        if is_generic:
+             # Attempt AI recovery if description is available
+             ai_title, ai_show = recover_title_from_text(description, current_title)
+             if ai_title:
+                 print(f"[PodcastAdapter] AI Recovery Success: '{current_title}' -> '{ai_title}'")
+                 current_title = ai_title
+                 is_generic = False
+             else:
+                 print(f"[PodcastAdapter] REJECTED: Title '{current_title}' is generic. Aborting mission to prevent ghost leaks.")
+                 status = "failed_rescue"
+                 strategy = "unavailable"
+        
+        # INCREASE THRESHOLD: We only rescue to article text if the description is significant (>500 chars)
+        elif not mp3_url and ("spotify.com" in url or "apple.com" in url):
+            if len(description) > 500: 
+                 print(f"[PodcastAdapter] MP3 not resolved but high-quality description found ({len(description)} chars). Implementing METADATA RESCUE fallback.")
                  status = "rescued_text"
                  strategy = "normalized_text"
             else:
-                 print(f"[PodcastAdapter] WARNING: No MP3 and poor description. This source may fail to transcribe unless iTunes rescue succeeds.")
+                 print(f"[PodcastAdapter] WARNING: No MP3 and poor description ({len(description)} chars). Fetch likely to fail.")
+                 status = "failed_rescue"
+                 strategy = "unavailable"
         
         return NormalizedSource(
             source_id=source_id,
             source_type=platform_type,
-            title=metadata.get("title") or target_title or (source_id.replace("spotify_", "") if source_id else "Podcast Episode"),
+            title=current_title if not is_generic else "Podcast Episode",
             creator=metadata.get("author") or content_show or "Unknown Host",
             url=final_extract_url,
             published_at=metadata.get("published_at"),
-            duration_seconds=metadata.get("duration_seconds", 0),
+            duration_seconds=metadata.get("duration_seconds") or resolved_duration or 0,
             description=description, 
             transcript_status=status,
             transcript_strategy=strategy,
-            transcript_source="audio_whisper" if mp3_url else ("rss_description" if status == "rescued_text" else "unknown"),
+            transcript_source="audio_whisper" if final_extract_url.endswith(".mp3") or ".mp3?" in final_extract_url.lower() else ("rss_description" if status == "rescued_text" else "unknown"),
             language="en",
-            source_confidence=0.85,
+            source_confidence=0.85 if not is_generic else 0.4,
             raw_metadata={
                 **metadata,
                 "show_name": content_show,
-                "rescued_article_text": description if status == "rescued_text" else None
+                "resolved_preview_url": resolved_preview_url,
+                "preserved_description": ld_description,
+                "rescued_article_text": description if status == "rescued_text" else None,
+                "is_generic_title": is_generic
             },
         )
 
 
-    def _resolve_to_rss_feed_and_title(self, url: str, is_shell: bool = False) -> tuple[str, Optional[str], Optional[str]]:
+
+    def _resolve_to_rss_feed_and_title(self, url: str, is_shell: bool = False) -> tuple[str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[int], Optional[str]]:
         """
-        Resolve Spotify or Apple Podcast URLs into (feed_url, target_title, target_guid).
+        Resolve Spotify or Apple Podcast URLs into (feed_url, target_title, target_guid, content_show, description, duration_seconds, preview_url).
         """
         import json
         
         target_title = None
         target_guid = None
+        content_show = None
+        episode_description = None
+        duration_seconds = None
+        preview_url = None
 
         # Handle Apple Podcasts (Show ID + Episode ID)
         apple_match = re.search(r"id(\d+)", url)
@@ -187,11 +276,35 @@ class PodcastAdapter(BaseAdapter):
                 id_match = re.search(r"id(\d+)(?:\?|$|/)", url)
                 if id_match:
                     lookup_id = id_match.group(1)
-                    req = urllib.request.Request(f"https://itunes.apple.com/lookup?id={lookup_id}")
+                    # Try lookup by track ID first if it looks like an episode result was intended
+                    lookup_url = f"https://itunes.apple.com/lookup?id={lookup_id}&entity=podcastEpisode"
+                    req = urllib.request.Request(lookup_url)
                     with urllib.request.urlopen(req, timeout=5) as resp:
                         data = json.loads(resp.read().decode())
+                        if not data.get("results"):
+                             # Fallback to general lookup
+                             req = urllib.request.Request(f"https://itunes.apple.com/lookup?id={lookup_id}")
+                             with urllib.request.urlopen(req, timeout=5) as resp:
+                                 data = json.loads(resp.read().decode())
+                        
                         if data.get("results"):
-                            return data["results"][0].get("feedUrl", url), target_title, target_guid
+                            res = data["results"][0]
+                            # Use trackName or collectionName for title if scraping failed
+                            if not target_title or is_generic_title(target_title):
+                                target_title = res.get("trackName") or res.get("collectionName")
+                            
+                            # Extract duration and preview from lookup results
+                            duration_seconds = int(res.get("trackTimeMillis", 0) / 1000) if res.get("trackTimeMillis") else None
+                            preview_url = res.get("previewUrl")
+                            
+                            # REJECT PREVIEWS: If this is a short clip (< 20m) and we expect a full episode, ignore it.
+                            if preview_url and duration_seconds and duration_seconds < 1200:
+                                # Standard previews are 30-180 seconds.
+                                # If the expected duration is 10+ mins, the preview is useless.
+                                print(f"[PodcastAdapter] Apple Preview/Short clip detected ({duration_seconds}s). Skiping to force full mirror rescue.")
+                                preview_url = None
+
+                            return res.get("feedUrl", url), target_title, target_guid, content_show, episode_description, duration_seconds, preview_url
             except Exception:
                 pass
 
@@ -219,109 +332,195 @@ class PodcastAdapter(BaseAdapter):
                     except Exception: continue
                 
                 # 2. Try Embed URL if main URL failed to yield metadata
-                if "og:title" not in page_html or "Spotify \u2013 Web Player" in page_html:
+                if "og:title" not in page_html or "Spotify \u2013 Web Player" in page_html or "Page not found" in page_html:
                     try:
-                        embed_url = url.replace("open.spotify.com/episode/", "open.spotify.com/embed/episode/").split("?")[0]
+                        # Improved: handle episode, track, show, album, playlist
+                        embed_url = re.sub(r"open\.spotify\.com/(track|episode|show|album|playlist)/", r"open.spotify.com/embed/\1/", url).split("?")[0]
                         req = urllib.request.Request(embed_url, headers={"User-Agent": user_agents[1]})
                         with urllib.request.urlopen(req, timeout=5) as resp:
                             page_html = resp.read().decode("utf-8", errors="ignore")
                     except Exception: pass
                 
-                # 3. JSON-LD EXTRACTION (Ultra-Robust)
+                # 3. ROBUST EXTRACTION (JSON-LD + __NEXT_DATA__)
                 episode_name = ""
                 content_show = None
+                
+                # Priority A: __NEXT_DATA__
                 try:
-                    import json
+                    next_data_m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', page_html)
+                    if next_data_m:
+                        data = json.loads(next_data_m.group(1))
+                        page_props = data.get("props", {}).get("pageProps", {})
+                        entity = page_props.get("episode") or page_props.get("track") or page_props.get("show")
+                        if entity:
+                            if entity.get("name"): episode_name = html.unescape(entity["name"])
+                            if entity.get("description"): episode_description = html.unescape(entity["description"])
+                            show_data = entity.get("show") or page_props.get("show")
+                            if show_data and show_data.get("name"):
+                                content_show = html.unescape(show_data["name"])
+                except Exception: pass
+
+                # Priority B: JSON-LD
+                try:
                     ld_json_matches = re.findall(r'<script type="application/ld\+json">(.*?)</script>', page_html, re.DOTALL)
                     for ld_match in ld_json_matches:
                         try:
                             ld_data = json.loads(ld_match.strip())
-                            # Handle different LD-JSON structures
                             if isinstance(ld_data, dict):
-                                # Episode Title
                                 if ld_data.get("name") and not episode_name:
                                     episode_name = html.unescape(ld_data["name"])
-                                
-                                # Show Name (partOfSeries)
-                                if ld_data.get("partOfSeries", {}).get("name"):
+                                if ld_data.get("partOfSeries", {}).get("name") and not content_show:
                                     content_show = html.unescape(ld_data["partOfSeries"]["name"])
-                                
-                                # Description
-                                if ld_data.get("description") and not metadata.get("description"):
-                                    metadata["description"] = html.unescape(ld_data["description"])
-                        except: continue
-                except: pass
+                                if ld_data.get("description") and not episode_description:
+                                    episode_description = html.unescape(ld_data["description"])
+                        except Exception: continue
+                except Exception: pass
 
-                # Fallback to Title Regex if LD-JSON failed
+                # Fallback to Title Regex if both failed
+                clean_target = ""
                 if not episode_name or not content_show:
-                    og_title = re.search(r'property="og:title" content="(.*?)"', page_html)
+                    og_title = re.search(r'property="og:title" content="(.*?)"', page_html) or \
+                               re.search(r'<title>(.*?)</title>', page_html)
                     if og_title:
                         raw_title = html.unescape(og_title.group(1)).strip()
-                        clean_target = raw_title.replace(" | Spotify", "").replace(" - Spotify", "").strip()
+                        # Reject generic Spotify titles
+                        if "Web Player" in raw_title or "Page not found" in raw_title:
+                            raw_title = ""
+                        
+                        if raw_title:
+                            clean_target = raw_title.replace(" | Spotify", "").replace(" - Spotify", "").strip()
                         parts = re.split(r"\s*[|\-\xb7\u2022·\u2013]\s*", clean_target)
                         if not episode_name: episode_name = parts[0].strip()
                         if not content_show and len(parts) > 1:
                             content_show = parts[1].replace("Podcast on Spotify", "").replace("Spotify", "").strip()
 
-                    # Final cleaning for episode name
-                    episode_name_clean = re.sub(r"^(?:Season|Episode|Ep|S|E)?\s*\d+[:\s-]*(?:Episode|Ep|E)?\s*\d*[:\s-]*", "", episode_name, flags=re.IGNORECASE).strip()
-                    target_title = episode_name_clean
-                    
                     if not content_show:
                         creator_m = re.search(r'property="music:creator" content="(.*?)"', page_html)
                         if creator_m: content_show = html.unescape(creator_m.group(1).strip())
                         footer_m = re.search(r'Listen to (.*?) on Spotify', page_html)
                         if footer_m:
                             content_show = html.unescape(footer_m.group(1).strip())
-                        footer_m = re.search(r'Listen to (.*?) on Spotify', page_html)
-                        if footer_m:
-                            content_show = html.unescape(footer_m.group(1).strip())
-                    
-                    # Build prioritized search queries
-                    queries = []
-                    
-                    # IF IN SHELL MODE: We skip the expensive iTunes search to provide immediate UI feedback.
-                    # We just return the target_title scraped from the page.
-                    if is_shell:
-                        return url, target_title, None
 
-                    best_show = show_name_guess or content_show
-                    if episode_name_clean and best_show:
-                        queries.append({"q": f"{episode_name_clean} {best_show}", "ent": "podcastEpisode"})
-                    if len(episode_name_clean) > 8:
-                        queries.append({"q": episode_name_clean, "ent": "podcastEpisode"})
-                    if best_show:
-                        # NEW: Try to find the show first, then we can find its feed
-                        queries.append({"q": best_show, "ent": "podcast"})
+                # Final cleaning for episode name (RUNS ALWAYS)
+                # Strip Season/Episode prefixes and common garbage
+                episode_name_clean = re.sub(r"^(?:Season|Episode|Ep|S|E)?\s*\d+[:\s-]*(?:Episode|Ep|E)?\s*\d*[:\s-]*", "", episode_name, flags=re.IGNORECASE).strip()
+                episode_name_clean = re.sub(r"^Podcast Episode\s*\d*[:\s-]*", "", episode_name_clean, flags=re.IGNORECASE).strip()
+                target_title = episode_name_clean
+                
+                # Build prioritized search queries (RUNS ALWAYS)
+                queries = []
+                
+                # IF IN SHELL MODE: We skip the expensive iTunes search to provide immediate UI feedback.
+                # We just return the target_title scraped from the page.
+                if is_shell:
+                    return url, target_title, None, content_show, episode_description, duration_seconds, preview_url
+
+                best_show = content_show
+                if episode_name_clean and best_show:
+                    queries.append({"q": f"{episode_name_clean} {best_show}", "ent": "podcastEpisode"})
+                if episode_name_clean and len(episode_name_clean) > 8:
+                    queries.append({"q": episode_name_clean, "ent": "podcastEpisode"})
+                if best_show:
+                    # Try to find the show first, then we can find its feed
+                    queries.append({"q": best_show, "ent": "podcast"})
+                if clean_target:
                     queries.append({"q": clean_target, "ent": "podcastEpisode"})
+                
+                for sq in queries:
+                    search_url = f"https://itunes.apple.com/search?term={urllib.parse.quote(sq['q'])}&entity={sq['ent']}&limit=10"
+                    req2 = urllib.request.Request(search_url, headers={"User-Agent": user_agents[1]})
+                    try:
+                        with urllib.request.urlopen(req2, timeout=5) as resp2:
+                            data = json.loads(resp2.read().decode())
+                            if data.get("results"):
+                                # Filter results for best title match
+                                for res in data["results"]:
+                                    res_title = res.get("trackName", "").lower()
+                                    if episode_name_clean.lower() in res_title or res_title in episode_name_clean.lower():
+                                        duration_seconds = int(res.get("trackTimeMillis", 0) / 1000) if res.get("trackTimeMillis") else None
+                                        preview_url = res.get("previewUrl")
+                                        
+                                        # Use iTunes title ONLY if it's better (not generic)
+                                        found_title = res.get("trackName")
+                                        resolved_title = target_title
+                                        if found_title and not is_generic_title(found_title):
+                                            resolved_title = found_title
+                                            
+                                        return res.get("feedUrl", url), resolved_title, target_guid, content_show, episode_description, duration_seconds, preview_url
+                                # If no strong match in loop, return first result
+                                res = data["results"][0]
+                                duration_seconds = int(res.get("trackTimeMillis", 0) / 1000) if res.get("trackTimeMillis") else None
+                                preview_url = res.get("previewUrl")
+                                
+                                # REJECT PREVIEWS: If this is a short clip (< 20m) and we expect a full episode, ignore it.
+                                if preview_url and duration_seconds and duration_seconds < 1200:
+                                    print(f"[PodcastAdapter] Spotify Preview/Short clip detected ({duration_seconds}s). Skipping to force full mirror rescue.")
+                                    preview_url = None
+
+                                found_title = res.get("trackName")
+                                resolved_title = target_title
+                                if found_title and not is_generic_title(found_title):
+                                    resolved_title = found_title
+                                    
+                                return res.get("feedUrl", url), resolved_title, target_guid, content_show, episode_description, duration_seconds, preview_url
+                    except Exception: continue
+                # 4. MIRROR SEARCH (Podtail/ListenNotes)
+                # If iTunes failed, we search DuckDuckGo for the episode ID on mirror sites.
+                if not preview_url and "spotify.com" in url:
+                    try:
+                        print(f"[PodcastAdapter] iTunes discovery failed. Attempting Mirror Discovery (Podtail)...")
+                        spotify_id = re.search(r"episode/([a-zA-Z0-9]+)", url).group(1)
+                        mirror_url = f"https://podtail.com/podcast/episode/{spotify_id}/"
+                        req_m = urllib.request.Request(mirror_url, headers={"User-Agent": user_agents[1]})
+                        with urllib.request.urlopen(req_m, timeout=5) as resp_m:
+                            mirror_html = resp_m.read().decode("utf-8", errors="ignore")
+                            m_title = re.search(r"<title>(.*?)</title>", mirror_html)
+                            if m_title:
+                                target_title = html.unescape(m_title.group(1).split(" | ")[0].strip())
+                                print(f"[PodcastAdapter] Mirror Recovery Success: {target_title}")
+                                return mirror_url, target_title, None, content_show, episode_description, duration_seconds, None
+                    except Exception: pass
+
+                # 5. YOTUBE AUDIO FALLBACK (High-Fidelity Rescue)
+                # If iTunes failed, we search YouTube for the episode title.
+                # yt-dlp handles 'ytsearch1:...' queries natively to find the best matching audio.
+                if not preview_url and not target_guid and episode_name_clean:
+                    is_generic = False
+                    for generic_term in ["podcast episode", "episode", "podcast", "full episode"]:
+                        if episode_name_clean.lower().strip() == generic_term:
+                            is_generic = True
+                            break
+                            
+                    if is_generic or len(episode_name_clean.strip()) < 4:
+                        print(f"[PodcastAdapter] Title '{episode_name_clean}' is too generic. Aborting YouTube rescue.", flush=True)
+                        return url, target_title, target_guid, content_show, episode_description, duration_seconds, preview_url
                     
-                    for sq in queries:
-                        search_url = f"https://itunes.apple.com/search?term={urllib.parse.quote(sq['q'])}&entity={sq['ent']}&limit=10"
-                        req2 = urllib.request.Request(search_url, headers={"User-Agent": user_agents[1]})
-                        try:
-                            with urllib.request.urlopen(req2, timeout=5) as resp2:
-                                data = json.loads(resp2.read().decode())
-                                if data.get("results"):
-                                    # Filter results for best title match
-                                    for res in data["results"]:
-                                        res_title = res.get("trackName", "").lower()
-                                        if episode_name_clean.lower() in res_title or res_title in episode_name_clean.lower():
-                                            return res.get("feedUrl", url), target_title, target_guid
-                                    # If no strong match in loop, return first result
-                                    return data["results"][0].get("feedUrl", url), target_title, target_guid
-                        except Exception: continue
-            except Exception:
+                    yt_query = f"{episode_name_clean} {content_show or ''} podcast"
+                    print(f"[PodcastAdapter] iTunes resolution failed. Promoting to YouTube Search Rescue: {yt_query}")
+                    return f"ytsearch1:{yt_query.strip()}", target_title, None, content_show, episode_description, duration_seconds, None
+
+            except Exception as e:
+                print(f"[PodcastAdapter] Spotify resolution error: {e}")
                 pass
 
         # Handle RSS.com and Simplecast as before
         if "rss.com/podcasts/" in url:
             match = re.search(r"rss\.com/podcasts/([^/]+)", url)
-            if match: return f"https://media.rss.com/{match.group(1)}/feed.xml", None, None
+            if match: return f"https://media.rss.com/{match.group(1)}/feed.xml", None, None, None, None, None, None
 
         if "simplecast.com/episodes/" in url:
             match = re.search(r"([^.]+)\.simplecast\.com/episodes/", url)
-            if match: return f"https://feeds.simplecast.com/{match.group(1)}", None, None
+            if match: return f"https://feeds.simplecast.com/{match.group(1)}", None, None, None, None, None, None
                 
+        # Mirror patterns for common podcast hosts (direct audio discovery)
+        HOST_MIRRORS = [
+            r"megaphone\.fm/",
+            r"omny\.fm/",
+            r"art19\.com/",
+            r"simplecast\.com/",
+            r"transistor\.fm/"
+        ]
+
         # Generic Fallback: If we couldn't resolve via iTunes, try to find an RSS link in the page HTML
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -333,11 +532,11 @@ class PodcastAdapter(BaseAdapter):
                     rss_m = re.search(r'href=["\'](https?://[^"\']+)["\'].*?type="application/rss\+xml"', resp_html, re.IGNORECASE)
                 
                 if rss_m:
-                    return rss_m.group(1), target_title, target_guid
+                    return rss_m.group(1), target_title, target_guid, content_show, episode_description, duration_seconds, preview_url
         except Exception:
             pass
 
-        return url, target_title, target_guid
+        return url, target_title, target_guid, content_show, episode_description, duration_seconds, preview_url
 
     def _fetch_rss_metadata(self, url: str, target_title: Optional[str] = None, target_guid: Optional[str] = None) -> tuple[dict, Optional[str]]:
         """

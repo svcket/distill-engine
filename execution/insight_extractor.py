@@ -6,11 +6,11 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 from openai import OpenAI
 
-def generate_insights_orchestrator(source_id: str) -> Dict[str, Any]:
+def generate_insights_orchestrator(source_id: str, lang: str = "en") -> Dict[str, Any]:
     """Convenience wrapper for the Unified Analysis Cluster."""
     base = os.path.dirname(__file__)
     packet_path = os.path.join(base, ".tmp", "insight_packets", f"{source_id}_packet.json")
-    return extract_insights(packet_path)
+    return extract_insights(packet_path, lang)
 
 class Framework(BaseModel):
     title: str = Field(description="Name of the framework or model.")
@@ -36,7 +36,7 @@ def load_json(filepath: str):
         except: return None
     return None
 
-def extract_insights(packet_path: str) -> Dict[str, Any]:
+def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
     if not os.path.exists(packet_path):
         raise FileNotFoundError(f"Packet not found: {packet_path}")
         
@@ -76,9 +76,19 @@ def extract_insights(packet_path: str) -> Dict[str, Any]:
     client = OpenAI()
     
     # We pass the refined transcript chunks to the context window
-    transcript_text = "\n\n".join(
-        [f"[{c.get('start', 0)}s]: {c.get('text', '')}" for c in packet.get("transcript_segments", [])]
-    )
+    segments = packet.get("transcript_segments", [])
+    if not segments:
+        # FALLBACK: If no segments, try to use the description or rescued text from metadata
+        description = packet.get("metadata", {}).get("description") or \
+                     packet.get("metadata", {}).get("raw_metadata", {}).get("description")
+        if description:
+            transcript_text = f"[Source Description/Metadata]: {description}"
+        else:
+            transcript_text = "[No transcript or detailed description available]"
+    else:
+        transcript_text = "\n\n".join(
+            [f"[{c.get('start', 0)}s]: {c.get('text', '')}" for c in segments]
+        )
 
     print(json.dumps({"type": "status", "text": "Analyzing transcript context and speaker signals..."}), flush=True)
     
@@ -94,6 +104,7 @@ def extract_insights(packet_path: str) -> Dict[str, Any]:
     5. Do NOT invent information. If the transcript is shallow, output empty arrays for missing concepts.
     6. Extract verbatim memorable quotes.
     7. Capture the speaker identity and the broader context of the source material.
+    CRITICAL: You MUST write your response entirely in the '{lang}' language.
     """
     
     try:
@@ -132,9 +143,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract structured knowledge from an insight packet.")
     parser.add_argument("--input", required=True, help="Path to input packet JSON.")
     
+    parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
     try:
-        res = extract_insights(args.input)
+        res = extract_insights(args.input, args.lang)
         print(json.dumps(res))
     except Exception as e:
         print(json.dumps({"status": "failed", "error": str(e)}), file=sys.stderr)

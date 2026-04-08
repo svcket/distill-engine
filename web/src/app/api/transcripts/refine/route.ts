@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     const userId = session.user.id
 
     try {
-        const { transcriptId } = await request.json()
+        const { transcriptId, language } = await request.json()
 
         if (!transcriptId) {
             return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
@@ -24,7 +24,10 @@ export async function POST(request: Request) {
         const inputPath = path.join(executionDir, '.tmp', 'transcripts', transcriptId, `${transcriptId}_raw.json`)
         const outputJson = path.join(executionDir, '.tmp', 'refined_transcripts', transcriptId, `${transcriptId}_refined.json`)
 
-        const { success, error, rawOutput } = await runPythonScript("refine_transcript.py", ["--input", inputPath, "--output", outputJson], {
+        const args = ["--input", inputPath, "--output", outputJson]
+        if (language) args.push('--lang', language)
+
+        const { success, error, rawOutput } = await runPythonScript("refine_transcript.py", args, {
             expectedArtifact: `.tmp/refined_transcripts/${transcriptId}/${transcriptId}_refined.json`
         })
 
