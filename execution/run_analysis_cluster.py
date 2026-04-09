@@ -126,11 +126,22 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         end_time = time.time()
         print(f"[{source_id}] Unified Cluster COMPLETE in {end_time - start_time:.2f}s", flush=True)
 
-        # Payload follows the standard expected by the API routes
+        # RECOVERY: Try to fetch updated metadata (title, duration) from the harvester's output
+        # to ensure the API can sync them back to the database.
+        metadata = {}
+        try:
+            meta_path = os.path.join(base, ".tmp", "transcripts", source_id, "metadata.json")
+            if os.path.exists(meta_path):
+                with open(meta_path, "r") as f:
+                    metadata = json.load(f)
+        except:
+            pass
+
         final_payload = {
             "status": "success",
             "source_id": source_id,
             "duration": end_time - start_time,
+            "metadata": metadata,
             "results": results
         }
         

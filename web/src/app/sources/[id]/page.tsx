@@ -368,6 +368,18 @@ export default function SourceMissionControl() {
                     const clusterData = await clusterRes.json();
                     const results = clusterData.result; 
                     
+                    // Sync Metadata (Title, Duration) immediately to header
+                    const meta = clusterData.metadata;
+                    if (meta) {
+                        setSource(prev => ({
+                            ...prev,
+                            title: meta.title && meta.title !== 'Podcast Episode' ? meta.title : prev.title,
+                            duration: formatDuration(meta.duration) || prev.duration,
+                            channel: meta.channel || prev.channel,
+                            transcriptStatus: "transcribed"
+                        }));
+                    }
+
                     const updateObj: Record<string, StageResultData> = { ...currentResults };
                     
                     if (results.refine) { updateObj.refine = results.refine; currentResults.refine = results.refine; currentCompleted.add("refine"); }
@@ -380,14 +392,9 @@ export default function SourceMissionControl() {
                     setStageResults(prev => ({ ...prev, ...updateObj }));
                     setCompletedStages(new Set(currentCompleted));
                     
-                    // Persist all clustered stages to DB
-                    await Promise.all([
-                        persistStageCompletion("cluster"),
-                        persistStageCompletion("refine"),
-                        persistStageCompletion("summary"),
-                        persistStageCompletion("packet"),
-                        persistStageCompletion("insights")
-                    ]);
+                    // NOTE: DB persistence for cluster stages is now handled server-side in /api/pipeline/cluster
+                    // to reduce roundtrips and prevent race conditions.
+                    await persistStageCompletion("cluster");
 
                     const angleIndex = STAGES.findIndex(s => s.id === "angle");
                     i = angleIndex - 1; 

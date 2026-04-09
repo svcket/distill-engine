@@ -45,16 +45,34 @@ export async function POST(request: Request) {
             }
 
             // The cluster returns results for multiple stages
-            const stages = ['summary', 'packet', 'insights']
+            const stages = ['summary', 'packet', 'insights', 'refine']
             
-            // Update the source record with completed stages
+            // Map recovered metadata from Python payload
+            const metadata = (result.metadata as Record<string, unknown>) || {}
+            const updates: Record<string, unknown> = {
+                completedStages: {
+                    push: stages
+                },
+                transcriptStatus: "transcribed"
+            }
+
+            // Sync better title if recovered (Identity Recovered logic)
+            if (metadata.title && metadata.title !== 'Unknown Source' && metadata.title !== 'Podcast Episode') {
+                updates.title = metadata.title as string
+            }
+            if (metadata.duration) {
+                const duration = metadata.duration as string | number
+                updates.duration = typeof duration === 'number' ? duration.toString() : duration
+            }
+            if (metadata.channel) {
+                updates.channel = metadata.channel as string
+            }
+
+            // Update the source record with completed stages and metadata
             await withRetry(() => prisma.source.update({
                 where: { id: sourceId, userId },
-                data: { 
-                    completedStages: {
-                        push: stages
-                    }
-                }
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                data: updates as any // Prisma data cast is fine for complex pushes
             }))
 
             const resultPayload = (result.results as Record<string, unknown> | undefined) ?? result
