@@ -77,36 +77,72 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
     
     # We pass the refined transcript chunks to the context window
     segments = packet.get("transcript_segments", [])
+    is_rescued = False
+    
     if not segments:
-        # FALLBACK: If no segments, try to use the description or rescued text from metadata
-        description = packet.get("metadata", {}).get("description") or \
-                     packet.get("metadata", {}).get("raw_metadata", {}).get("description")
+        # FALLBACK: If no segments, try to use the description or rescued text from metadata/judgment
+        meta = packet.get("metadata", {})
+        judg = packet.get("judgment", {})
+        
+        description = meta.get("description") or \
+                     meta.get("show_notes") or \
+                     judg.get("rationale") or \
+                     meta.get("raw_metadata", {}).get("description") or \
+                     meta.get("excerpt")
+        
+        # If the summary stage produced a rescue message, it might be in the summary file
+        # which is NOT in the packet yet. But we have results in the cluster if called via orchestrator.
+        # Check for shell/rescued messages
+        if description and "Analysis Rescue Active" in description:
+            # Try to find something better than just the rescue message
+            description = meta.get("title") or description
+
         if description:
-            transcript_text = f"[Source Description/Metadata]: {description}"
+            transcript_text = f"[Source Description/Context]: {description}"
+            is_rescued = True
         else:
             transcript_text = "[No transcript or detailed description available]"
     else:
+        # If segments exist but are very short, we might still want to mark as rescued or thin
         transcript_text = "\n\n".join(
             [f"[{c.get('start', 0)}s]: {c.get('text', '')}" for c in segments]
         )
+        if len(transcript_text.split()) < 30:
+            is_rescued = True # Treat very thin transcripts as rescued context
 
-    print(json.dumps({"type": "status", "text": "Analyzing transcript context and speaker signals..."}), flush=True)
+    print(json.dumps({"type": "status", "text": "Analyzing context and speaker signals..."}), flush=True)
     
     safe_lang = (lang or "en").strip()
-    system_prompt = f"""
-    You are the Insight Extractor—a research analyst for a premium editorial publication.
-    Your task is to extract dense, structured, and interpretive knowledge from this raw transcript.
     
-    CRITICAL RULES:
-    1. Extract exactly one strong core argument (the thesis).
-    2. Extract the key claims that serve as the pillars of that argument.
-    3. Ground the extraction in SPECIFICITY. Identify concrete examples and data.
-    4. Interpret the text: pull out controversies, contradictions, and broader implications.
-    5. Do NOT invent information. If the transcript is shallow, output empty arrays for missing concepts.
-    6. Extract verbatim memorable quotes.
-    7. Capture the speaker identity and the broader context of the source material.
-    CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.
-    """
+    if is_rescued:
+        system_prompt = f"""
+        You are the Strategic Analyst. This source has LIMITED context (no transcript, only description/metadata).
+        Your task is to EXTRAPOLATE the singular core argument and potential key claims based on the title and provided description.
+        
+        CRITICAL RULES:
+        1. Base your extrapolation on professional, logical inference from the title and context.
+        2. If the speaker identity is present, use their known domain expertise to inform the extraction.
+        3. Identify the most likely 'Thesis' of this encounter.
+        4. Capture controversies or tensions inherent in the topic if not explicitly stated.
+        5. Mark your extracted implications as 'Potential' or 'Likely' where appropriate.
+        6. If no quotes are present in the text, leave the quotes array empty.
+        CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.
+        """
+    else:
+        system_prompt = f"""
+        You are the Insight Extractor—a research analyst for a premium editorial publication.
+        Your task is to extract dense, structured, and interpretive knowledge from this raw transcript.
+        
+        CRITICAL RULES:
+        1. Extract exactly one strong core argument (the thesis).
+        2. Extract the key claims that serve as the pillars of that argument.
+        3. Ground the extraction in SPECIFICITY. Identify concrete examples and data.
+        4. Interpret the text: pull out controversies, contradictions, and broader implications.
+        5. Do NOT invent information. If the transcript is shallow, output empty arrays for missing concepts.
+        6. Extract verbatim memorable quotes.
+        7. Capture the speaker identity and the broader context of the source material.
+        CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.
+        """
     
     try:
         print(json.dumps({"type": "status", "text": "Extracting core arguments and frameworks..."}), flush=True)
@@ -122,13 +158,14 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
         print(json.dumps({"type": "status", "text": "Finalizing synthesis and mapping implications..."}), flush=True)
         extracted_data = completion.choices[0].message.parsed
         
-        out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "insights")
+        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".tmp", "insights")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{source_id}_insights.json")
         
         bundle = {
             "status": "success",
             "source_id": source_id,
+            "is_rescued": is_rescued,
             "data": json.loads(extracted_data.model_dump_json())
         }
         
@@ -138,7 +175,39 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
         return bundle
         
     except Exception as e:
-        raise e
+        # HARDENING: If extraction fails, we MUST still write a stub insights file 
+        # so downstream stages don't fail with "File not found" errors.
+        error_msg = str(e)
+        print(f"[{source_id}] Insight extraction failed: {error_msg}", file=sys.stderr)
+        
+        fail_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".tmp", "insights")
+        os.makedirs(fail_dir, exist_ok=True)
+        fail_path = os.path.join(fail_dir, f"{source_id}_insights.json")
+        
+        mock_data = {
+            "core_argument": f"Analysis Paused: {error_msg}",
+            "key_claims": ["Content quality too low or LLM timeout."],
+            "supporting_examples": [],
+            "frameworks": [],
+            "controversies": [],
+            "contradictions": [],
+            "implications": [],
+            "memorable_quotes": [],
+            "speaker_identity": "Unknown",
+            "source_context": "Failed analysis"
+        }
+        
+        fail_bundle = {
+            "status": "failed",
+            "source_id": source_id,
+            "error": error_msg,
+            "data": mock_data
+        }
+        
+        with open(fail_path, 'w', encoding='utf-8') as f:
+            json.dump(fail_bundle, f, indent=2)
+            
+        return fail_bundle
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract structured knowledge from an insight packet.")

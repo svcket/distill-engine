@@ -110,7 +110,11 @@ def build_packet(source_id: str) -> Dict[str, Any]:
     refined_path = os.path.join(base, ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
     raw_path = os.path.join(base, ".tmp", "transcripts", source_id, f"{source_id}_raw.json")
 
-    transcript = load_json(refined_path) or load_json(raw_path) or []
+    t_data = load_json(refined_path) or load_json(raw_path) or []
+    if isinstance(t_data, dict):
+        transcript = t_data.get("segments", [])
+    else:
+        transcript = t_data
 
     # Select top segments — max 7 to control LLM token usage
     selected_segments = rank_segments(transcript, max_segments=7)

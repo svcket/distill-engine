@@ -62,7 +62,12 @@ export async function POST(request: Request) {
         })
 
         if (!success) {
-            return NextResponse.json({ error: "Failed to generate angles with LLM", details: error }, { status: 500 })
+            console.error(`[Angle API] Failed to generate angles for ${transcriptId}:`, error)
+            return NextResponse.json({ 
+                error: "Editorial Strategy Generation Failed", 
+                details: error || "The strategist script exited without outputting the expected resulting angle artifact.",
+                status: "failed"
+            }, { status: 500 })
         }
 
         // We can reuse the JSON parsing structure from adaptInsightResponse since it's standardized

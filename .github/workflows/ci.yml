@@ -55,10 +55,12 @@ jobs:
 
       - name: Install Web Dependencies
         working-directory: ./web
-        run: npm ci
+        run: npm install --legacy-peer-deps
 
       - name: Prisma Generate
         working-directory: ./web
+        env:
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
         run: npx prisma generate
 
       - name: Lint
@@ -96,6 +98,6 @@ jobs:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
         run: |
-          npm ci
+          npm install --legacy-peer-deps
           npx prisma generate
           npm run build

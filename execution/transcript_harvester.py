@@ -285,7 +285,7 @@ def merge_segments(segments: list, max_segments: int) -> list:
 
 def update_source_metadata(source_id: str, updates: dict):
     """Update the source metadata JSON with new fields (e.g. duration)."""
-    base = os.path.dirname(__file__)
+    base = os.path.dirname(os.path.abspath(__file__))
     meta_path = os.path.join(base, ".tmp", "sources", f"{source_id}.json")
     
     if not os.path.exists(meta_path):
@@ -1483,7 +1483,7 @@ def search_youtube_for_mirror(title: str, podcast_name: str = None, creator_name
 
 def fetch_transcript(source_id: str, source_url: str = None, source_type: str = None, max_segments: int = 2000, passed_title: str = None, lang: str = "en"):
     """Main entrypoint — dispatch to correct fetcher based on source type."""
-    base = os.path.dirname(__file__)
+    base = os.path.dirname(os.path.abspath(__file__))
 
     # Load metadata if not provided
     print(f"[{source_id}] HARVESTER START | URL: {source_url} | Type: {source_type} | Passed Title: {passed_title}")

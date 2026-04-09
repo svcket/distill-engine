@@ -243,12 +243,17 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
     const contradictions = getArr(d, "contradictions")
     const implications = getArr(d, "implications")
     const quotes = getArr(d, "memorable_quotes")
+    
+    // Check for is_rescued flag in d or data
+    const isRescued = d.is_rescued === true || data.is_rescued === true
 
     if (compact) {
         return (
             <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                    <Badge variant="success">Insights Extracted</Badge>
+                    <Badge variant={isRescued ? "secondary" : "success"}>
+                        {isRescued ? "Intelligence Extrapolated" : "Insights Extracted"}
+                    </Badge>
                 </div>
                 <p className="text-sm font-medium text-foreground leading-snug">{coreArgument}</p>
                 <p className="text-xs text-muted-foreground">{keyClaims.length} Claims • {examples.length} Examples</p>
@@ -258,6 +263,19 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
 
     return (
         <div className="space-y-8 animate-in fade-in duration-300">
+            {/* Rescue Indicator */}
+            {isRescued && (
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                    <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                        <p className="text-[11px] font-bold text-amber-500 uppercase tracking-wider">Rescued Intelligence</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                            This analysis was extrapolated from source metadata and show notes because the full transcript was unavailable.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Core Argument */}
             {coreArgument && (
                 <div className="p-4 rounded-xl bg-brand/5 border border-brand/20">
