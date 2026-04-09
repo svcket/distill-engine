@@ -922,7 +922,7 @@ export default function SourceMissionControl() {
                 const data = await res.json();
                 
                 // STABILITY: Calculate merged result set once to ensure atomic Truth Audit
-                const currentResults = await new Promise<Record<string, any>>(resolve => {
+                const currentResults = await new Promise<Record<string, unknown>>(resolve => {
                     setStageResults(prev => {
                         const merged = { ...prev, ...(data?.results || {}) };
                         resolve(merged);
@@ -1041,7 +1041,8 @@ export default function SourceMissionControl() {
         if (autoStart && activeIndex < STAGES.length && !isRunningAll && !executingStage && source.status === "idle" && isFresh) {
             const timer = setTimeout(() => {
                 if (source.status === "idle") {
-                    console.log(`[AutoStart] Triggering fresh pipeline for source: ${id}`);
+                    // Triggering fresh pipeline for source ID
+                    this.startPipeline(id);
                     runFullPipeline();
                 }
             }, 1500); 

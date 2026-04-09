@@ -91,7 +91,7 @@ export async function POST(request: Request) {
                 try {
                     const rescuedData = JSON.parse(possibleJson)
                     if (rescuedData.status === 'success' || rescuedData.is_rescue) {
-                        console.log("[Cluster API] Salvaging execution via JSON rescue in stderr/stdout.")
+                        // Salvaging execution via JSON rescue in stderr/stdout.
                         
                         const resultPayload = (rescuedData.results as Record<string, unknown> | undefined) ?? rescuedData
                         

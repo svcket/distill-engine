@@ -178,7 +178,7 @@ def load_source_metadata(source_id: str) -> dict:
                 with open(file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     return data[0] if isinstance(data, list) and data else data
-            except: pass
+            except Exception: pass
 
     return {"source_id": source_id, "source_type": "youtube"}
     
@@ -316,18 +316,15 @@ def update_source_metadata(source_id: str, updates: dict):
 
 def fetch_youtube_transcript(source_id: str, output_dir: str, max_segments: int = 2000) -> dict:
     """Fetch YouTube transcript via youtube_transcript_api with simple fallback."""
-    from youtube_transcript_api import YouTubeTranscriptApi
-    
-    api = YouTubeTranscriptApi()
     
     # fetch is an instance method in this version
     try:
-        transcript = api.fetch(source_id, languages=['en', 'en-US', 'en-GB'])
+        transcript = YouTubeTranscriptApi.fetch(source_id, languages=['en', 'en-US', 'en-GB'])
     except Exception as e:
         try:
             # Final fallback: any language
             transcript = api.fetch(source_id)
-        except:
+        except Exception:
             raise Exception(f"Failed to fetch any transcript for {source_id}: {str(e)}")
 
     transcript_list = []
@@ -366,7 +363,7 @@ def fetch_youtube_transcript(source_id: str, output_dir: str, max_segments: int 
         "chunk_count": len(transcript_list),
         "segments": transcript_list[:100]
     }
-# Note: is_generic_title is imported from adapters.podcast_adapter above.()
+# Note: is_generic_title is imported from adapters.podcast_adapter above.
 
 
 
@@ -594,7 +591,7 @@ def extract_spotify_title(url: str) -> Optional[str]:
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     html_page = resp.read().decode('utf-8', errors='ignore')
                     if "og:title" in html_page or "music:creator" in html_page: break
-            except: continue
+            except Exception: continue
             
         # Try Embed URL if main URL failed to yield metadata in header
         if is_generic_title(re.search(r'property="og:title" content="(.*?)"', html_page).group(1) if re.search(r'property="og:title" content="(.*?)"', html_page) else "unknown"):
@@ -606,7 +603,7 @@ def extract_spotify_title(url: str) -> Optional[str]:
                     embed_html = resp.read().decode("utf-8", errors="ignore")
                     if "og:title" in embed_html:
                         html_page = embed_html
-            except: pass
+            except Exception: pass
 
         # PRIORITY 1: __NEXT_DATA__
         try:
@@ -618,7 +615,7 @@ def extract_spotify_title(url: str) -> Optional[str]:
                  if entity and entity.get("name"):
                       title = entity["name"]
                       if not is_generic_title(title): return title
-        except: pass
+        except Exception: pass
 
         # PRIORITY 2: OG Tag
         og_title = re.search(r'property="og:title" content="(.*?)"', html_page)
@@ -635,18 +632,18 @@ def extract_spotify_title(url: str) -> Optional[str]:
                     if isinstance(schema_data, dict) and "name" in schema_data:
                         title = html.unescape(schema_data["name"])
                         if not is_generic_title(title): return title
-                except: pass
+                except Exception: pass
 
             og_title = re.search(r'<title>(.*?)</title>', html_page)
             
         if og_title:
-            import html
+            # html is imported at top level
             title = og_title.group(1).split("|")[0].split("\u2022")[0].strip()
             title = html.unescape(title)
             
             if is_generic_title(title): return None
             return title
-    except:
+    except Exception:
         pass
     return None
 
@@ -662,7 +659,6 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
     # 1. Download audio via yt-dlp
     ffmpeg_exe = None
     try:
-        import imageio_ffmpeg
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     except Exception:
         pass
@@ -1071,11 +1067,11 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
         # Cleanup audio - DON'T remove if it's the original local source
         if not is_local_source:
             try: os.remove(audio_file_path)
-            except: pass
+            except Exception: pass
         for ch_path, _ in chunk_paths:
             if ch_path != audio_file_path:
                 try: os.remove(ch_path)
-                except: pass
+                except Exception: pass
 
     json_path = os.path.join(output_dir, f"{source_id}_raw.json")
     txt_path = os.path.join(output_dir, f"{source_id}_raw.txt")
@@ -1145,7 +1141,7 @@ def fetch_rss_transcript_if_available(url: str) -> str:
                 return match.group(1)
                 
         return None
-    except:
+    except Exception:
         return None
 
 
@@ -1255,7 +1251,7 @@ def scrape_url_as_last_resort(url: str, source_id: str) -> Optional[str]:
                     tr_resp = requests.get(m_url, headers=headers, timeout=8)
                     if tr_resp.status_code == 200:
                         content += "\n\n" + tr_resp.text
-                except: pass
+                except Exception: pass
 
         # 3. Content Extraction
         clean_html = re.sub(r'<(script|style|nav|footer|header).*?>.*?</\1>', '', content, flags=re.DOTALL | re.IGNORECASE)
@@ -1274,8 +1270,8 @@ def scrape_url_as_last_resort(url: str, source_id: str) -> Optional[str]:
                     if isinstance(data, dict) and data.get("description"):
                         ld_text = html.unescape(data["description"])
                         break
-                except: continue
-        except: pass
+                except Exception: continue
+        except Exception: pass
 
         # 4. Synthesis
         final_text = ""
@@ -1368,7 +1364,7 @@ def extract_title_from_url_slug(url: str) -> Optional[str]:
         title = slug.replace("-", " ").replace("_", " ").title()
         if len(title) > 5 and not any(x in title.lower() for x in ["episode", "id", "track"]):
             return title
-    except: pass
+    except Exception: pass
     return None
 
 def discover_true_duration_from_page(url: str) -> Optional[int]:
@@ -1406,8 +1402,8 @@ def discover_true_duration_from_page(url: str) -> Optional[int]:
                                     (int(s.group(1)) if s else 0)
                                     
                         if total > 0: return total
-            except: continue
-    except: pass
+            except Exception: continue
+    except Exception: pass
     return None
 
 def search_youtube_for_mirror(title: str, podcast_name: str = None, creator_name: str = None) -> Optional[str]:
@@ -1583,7 +1579,7 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
                     dur_str = info_res.stdout.strip()
                     if dur_str.isdigit():
                         discovery_duration = int(dur_str)
-            except: pass
+            except Exception: pass
             
         if discovery_duration:
             print(f"[{source_id}] Truth Protocol: Verified episode length as {discovery_duration}s.")
@@ -1654,13 +1650,13 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
                              print(f"[{source_id}] PIVOT: Bounty Hunt successful. Transcribing mirror...")
                              try:
                                  return fetch_transcript(source_id, source_url=mirror_url, source_type="youtube", max_segments=max_segments, lang=lang)
-                             except: pass
+                             except Exception: pass
 
                     # 3. UNIVERSAL SCRAPE PIVOT (Podtail etc)
                     try:
                         print(f"[{source_id}] FINAL RESORT: Universal Scrape...")
                         rescued = scrape_url_as_last_resort(source_url, source_id)
-                    except: pass
+                    except Exception: pass
 
                 # Legacy rescue (Description/Show Notes)
                 if not rescued:

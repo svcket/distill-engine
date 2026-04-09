@@ -15,6 +15,11 @@ import os
 from typing import Optional
 from .base_adapter import BaseAdapter, NormalizedSource
 
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
 
 def is_generic_title(title: str) -> bool:
     """Check if the provided title is a generic platform placeholder."""
@@ -43,9 +48,8 @@ def is_generic_title(title: str) -> bool:
 def recover_title_from_text(text: str, current_title: str) -> tuple[Optional[str], Optional[str]]:
     """Use GPT-4o-mini to extract a real title/show from a messy text snippet."""
     if not text or len(text) < 50: return None, None
+    if not OpenAI: return None, None
     try:
-        from openai import OpenAI
-        import json
         client = OpenAI()
         prefix = text[:3000]
         prompt = f"""
@@ -243,7 +247,7 @@ class PodcastAdapter(BaseAdapter):
         """
         Resolve Spotify or Apple Podcast URLs into (feed_url, target_title, target_guid, content_show, description, duration_seconds, preview_url).
         """
-        import json
+        # json is imported at top level
         
         target_title = None
         target_guid = None
