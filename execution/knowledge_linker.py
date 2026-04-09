@@ -34,7 +34,7 @@ def load_json(filepath: str):
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except: pass
+        except Exception: pass
     return None
 
 def link_knowledge(insights_path: str, dag_path: str):

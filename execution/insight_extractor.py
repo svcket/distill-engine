@@ -33,7 +33,7 @@ def load_json(filepath: str):
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except: return None
+        except Exception: return None
     return None
 
 def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:

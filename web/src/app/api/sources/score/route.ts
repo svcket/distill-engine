@@ -51,7 +51,7 @@ export async function POST(request: Request) {
         if (!source) {
             const globalSource = await prisma.source.findUnique({ where: { id: sourceId } });
             if (globalSource) {
-                console.log(`[Score] Auto-claiming global source ${sourceId} for user ${userId}`);
+                // console.log(`[Score] Auto-claiming global source ${sourceId} for user ${userId}`);
                 source = await prisma.source.create({
                     data: {
                         id: sourceId,

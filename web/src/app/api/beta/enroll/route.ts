@@ -45,7 +45,7 @@ export async function POST() {
             }
         })
 
-        console.log(`Beta Enrollment Success: User ${email} (ID: ${userId}) promoted to beta_pro.`)
+        // console.log(`Beta Enrollment Success: User ${email} (ID: ${userId}) promoted to beta_pro.`)
 
         return NextResponse.json({ 
             success: true, 

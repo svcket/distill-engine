@@ -26,7 +26,7 @@ def get_itunes_title(url):
             results = data.get("results", [])
             if results:
                 return results[0].get("trackName") or results[0].get("collectionName")
-    except: pass
+    except Exception: pass
     return None
 
 def recover_title_via_llm(content):
@@ -41,7 +41,7 @@ def recover_title_via_llm(content):
         )
         res = json.loads(response.choices[0].message.content)
         return res.get("title"), res.get("show_name")
-    except: return None, None
+    except Exception: return None, None
 
 def run_repair():
     base = os.path.dirname(os.path.abspath(__file__))

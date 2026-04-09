@@ -196,7 +196,7 @@ export async function POST(request: Request) {
                 })
 
                 // 2. Cleanup file artifacts (Cascading Cleanup)
-                console.log(`[Store API] Triggering file cleanup for ${sourceId}`)
+                // console.log(`[Store API] Triggering file cleanup for ${sourceId}`)
                 deleteSourceFiles(sourceId)
             }
             

@@ -14,7 +14,7 @@ export async function sendPushNotification(userId: string, title: string, messag
     });
 
     if (!user || !('oneSignalUserId' in user && user.oneSignalUserId) || !user.preferences?.notifyPush) {
-      console.log(`Push skipped for user ${userId}: Disabled or no ID.`);
+      // console.log(`Push skipped for user ${userId}: Disabled or no ID.`);
       return;
     }
 
@@ -40,7 +40,7 @@ export async function sendPushNotification(userId: string, title: string, messag
 
     // 4. Send
     const response = await client.createNotification(notification);
-    console.log(`Push sent to user ${userId}:`, response.body);
+    // console.log(`Push sent to user ${userId}:`, response.body);
     return response;
   } catch (error) {
     console.error(`Failed to send push to user ${userId}:`, error);

@@ -106,7 +106,7 @@ def repair_via_cloud_storage(refetch_all=False):
                     h_out = json.loads(h_res.stdout)
                     if h_out.get("is_failure"):
                         print(f"  -> Harvester operational failure: {h_out.get('error_detail')}")
-                except:
+                except Exception:
                     pass
                 print(f"  -> Harvester complete.")
             except Exception as e:

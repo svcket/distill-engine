@@ -90,7 +90,7 @@ export async function POST(request: Request) {
             }
 
             // LOG: Successful resolution
-            console.log(`[Transcript API] Source ${sourceId} resolved as ${finalStatus}. Segments: ${result.segments?.length || 0}`)
+            // console.log(`[Transcript API] Source ${sourceId} resolved as ${finalStatus}. Segments: ${result.segments?.length || 0}`)
 
             // Format duration as M:SS string if present
             let durationString = undefined

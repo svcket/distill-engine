@@ -63,8 +63,8 @@ export async function runPythonScript<T = unknown>(
         // Anti-mock safety: if the key is literally "mock", treat it as missing
         if (apiKey === 'mock') apiKey = undefined
         
-        console.log(`[Python Runner] Using OPENAI_API_KEY: ${apiKey ? apiKey.substring(0, 8) + '...' : 'MISSING'}`)
-        console.log(`[Python Runner] Executing: python3 ${scriptName} ${args.join(' ')}`)
+        // console.log(`[Python Runner] Using OPENAI_API_KEY: ${apiKey ? apiKey.substring(0, 8) + '...' : 'MISSING'}`)
+        // console.log(`[Python Runner] Executing: python3 ${scriptName} ${args.join(' ')}`)
 
         const childEnv: Record<string, string | undefined> = { 
             ...process.env, 
@@ -75,7 +75,7 @@ export async function runPythonScript<T = unknown>(
 
         // Anti-mock safety: if the key is literally "mock" or "placeholder", remove it
         if (childEnv.OPENAI_API_KEY === 'mock' || childEnv.OPENAI_API_KEY === 'placeholder' || !childEnv.OPENAI_API_KEY) {
-            console.log(`[Python Runner] OPENAI_API_KEY is ${childEnv.OPENAI_API_KEY || 'missing'}. Stripping for Python child process.`);
+            // console.log(`[Python Runner] OPENAI_API_KEY is ${childEnv.OPENAI_API_KEY || 'missing'}. Stripping for Python child process.`);
             delete childEnv.OPENAI_API_KEY
         }
 

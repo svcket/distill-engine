@@ -29,7 +29,7 @@ def run_stage(script, args):
                 data = json.loads(json_str)
                 if "status" in data:
                     break
-            except: continue
+            except Exception: continue
     
     if not json_str:
         # Some scripts might not return JSON on success but we check returncode
