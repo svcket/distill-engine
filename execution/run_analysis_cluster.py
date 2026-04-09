@@ -202,9 +202,11 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         
         # --- IDENTITY RESCUE STRIKE ---
         # If title is still missing or generic, we attempt a multi-stage identity recovery.
-        title = metadata.get("title", "")
-        if not title or is_generic_title(title):
-            # STRIKE 1: Direct Embed Scraping (Optimised for Spotify)
+        current_title = metadata.get("title", "")
+        scraped_hint = None
+        
+        if not current_title or is_generic_title(current_title):
+            # STRIKE 1: Direct Embed Scraping (Capture messy hint)
             s_id = source_id.replace("spotify_", "")
             if len(s_id) > 20: 
                 try:
@@ -213,34 +215,35 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
                     if resp.status_code == 200:
                         m = re.search(r"<title>(.*?)</title>", resp.text, re.I)
                         if m:
-                            recovered = html.unescape(m.group(1))
-                            clean = re.sub(r"\s*\|.*$", "", recovered).strip()
+                            scraped_hint = html.unescape(m.group(1))
+                            # Clean it slightly for STRIKE 1 logic, but keep raw for LLM hint
+                            clean = re.sub(r"\s*\|.*$", "", scraped_hint).strip()
                             if clean and not is_generic_title(clean):
                                 metadata["title"] = clean
                                 metadata["is_shell"] = False 
                                 print(f"[{source_id}] Cluster Identity: SCRAPE RECOVERY -> {clean}")
                 except Exception: pass
 
-            # STRIKE 2: Cognitive Recovery (LLM-based naming from summary or description)
-            # Only run if Strike 1 failed.
-            current_title = metadata.get("title", "")
-            if not current_title or is_generic_title(current_title):
+            # STRIKE 2: Cognitive Recovery (LLM-based naming with alignment hint)
+            # Re-check title status after Strike 1
+            updated_title = metadata.get("title", "")
+            if not updated_title or is_generic_title(updated_title):
                 # 1. Choose the best available source text for inference
                 summary_data = results.get("summary", {})
                 summary_text = summary_data.get("summary", "") if isinstance(summary_data, dict) else ""
                 
-                # If summary is missing or is just an error message, fallback to raw description
+                # If summary is missing or rescued, fallback to raw description
                 source_text = ""
                 if summary_text and "[METADATA RESCUE]" not in summary_text and "[Analysis Rescue Active]" not in summary_text:
                     source_text = summary_text
                 else:
                     source_text = metadata.get("description", "")
                 
-                # 2. Trigger Inference if we have valid source text
+                # 2. Trigger Inference with Alignment Hint
                 if source_text and len(source_text) > 30:
-                    inferred = infer_source_name(source_text, lang)
+                    inferred = infer_source_name(source_text, hint=scraped_hint, lang=lang)
                     
-                    # 3. Final Validation: Don't allow LLM to return generic failure strings
+                    # 3. Final Validation
                     if inferred and not is_generic_title(inferred):
                         metadata["title"] = inferred
                         metadata["is_shell"] = False

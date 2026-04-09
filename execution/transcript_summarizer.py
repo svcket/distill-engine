@@ -90,9 +90,10 @@ def generate_summary(transcript_path: str, output_path: str, lang: str = "en") -
     except Exception as e:
         raise e
 
-def infer_source_name(text: str, lang: str = "en") -> str:
+def infer_source_name(text: str, hint: str = None, lang: str = "en") -> str:
     """
-    Cognitive Identity Recovery: use summary or description to infer a high-fidelity title.
+    Cognitive Identity Recovery: use summary/description (and an optional messy hint) 
+    to infer a high-fidelity original title.
     """
     if not text or len(text) < 10:
         return None
@@ -103,14 +104,17 @@ def infer_source_name(text: str, lang: str = "en") -> str:
         
     client = OpenAI(api_key=api_key)
     
+    # Construct a more context-aware prompt
+    hint_context = f"\nScraped Title Hint: '{hint}'" if hint else ""
+    
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": f"You are a professional editorial curator at Distill. Your goal is to infer an accurate, descriptive, and concise title (max 70 characters) for a podcast episode or article based on its content summary or description. Ensure the title is clear and punchy. Output ONLY the title text, no quotes or metadata. Language: {lang}"},
-                {"role": "user", "content": f"Input Content:\n\n{text[:5000]}"}
+                {"role": "system", "content": f"You are a professional editorial curator at Distill. Your goal is to infer the EXACT original title of a podcast episode or article. Use the provided content summary/description and any title hint to accurately align with the creator's original naming. Filter out generic suffixes like '| Podcast on Spotify' or 'Episode 123'. Output ONLY the clean title text (max 70 chars). Language: {lang}"},
+                {"role": "user", "content": f"Source Content:\n{text[:4000]}{hint_context}"}
             ],
-            temperature=0.5
+            temperature=0.3
         )
         
         inferred_title = response.choices[0].message.content.strip()
