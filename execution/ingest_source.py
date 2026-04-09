@@ -190,10 +190,19 @@ def ingest_source(source_id: str):
 
     out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "judgments")
     os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, f"{source_id}_judgment.json"), "w", encoding="utf-8") as f:
+    json_path = os.path.join(out_dir, f"{source_id}_judgment.json")
+    with open(json_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 
+    # Cloud Bridge
+    try:
+        from supabase_utils import upload_artifact
+        upload_artifact("judgments", source_id, json_path)
+    except Exception as e:
+        print(f"[ingest] Cloud sync skipped: {e}")
+
     print(json.dumps(result))
+
 
 
 if __name__ == "__main__":

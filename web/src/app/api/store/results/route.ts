@@ -4,6 +4,7 @@ import path from 'path'
 import fs from 'fs'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { supabaseAdmin } from '@/lib/supabase'
 
 // Load all stage results from the .tmp directory for a given source
 export async function GET(request: Request) {
@@ -39,98 +40,93 @@ export async function GET(request: Request) {
     const baseDir = path.resolve(process.cwd(), '../execution/.tmp')
     const results: Record<string, unknown> = {}
 
-    // Helper to try multiple file naming conventions to resolve sourceId misalignment
-    const resolveFilePath = (folder: string, prefix: string, suffix: string) => {
-        const primary = path.join(baseDir, folder, prefix, `${sourceId}${suffix}`);
-        if (fs.existsSync(primary)) return primary;
-
-        const withoutSpotify = sourceId.replace(/^spotify_/, '');
-        const alt1 = path.join(baseDir, folder, prefix, `${withoutSpotify}${suffix}`);
-        if (fs.existsSync(alt1)) return alt1;
-
-        const alt2 = path.join(baseDir, folder, prefix, `spotify_${withoutSpotify}${suffix}`);
-        if (fs.existsSync(alt2)) return alt2;
-
-        return primary; // fallback to primary if none exist for consistent error behavior
-    }
-
-    // Map stage IDs to their output files
-    const resolvedFiles: Record<string, string> = {
-        insights: resolveFilePath('insights', '', '_insights.json'),
-        angle: resolveFilePath('angles', '', '_angle.json'),
-        draft: resolveFilePath('drafts', '', '_draft.json'),
-        packet: resolveFilePath('insight_packets', '', '_packet.json'),
-        blueprint: resolveFilePath('outlines', '', '_outline.json'),
-        transcript: resolveFilePath('transcripts', sourceId, `${sourceId}_raw.json`),
-        refine: resolveFilePath('refined_transcripts', sourceId, `${sourceId}_refined.json`),
-        summary: resolveFilePath('summaries', sourceId, `${sourceId}_summary.json`),
-        qa: resolveFilePath('evaluations', '', '_eval.json'),
-        visual: resolveFilePath('visual_plans', '', '_visual_plan.json'),
-    }
-
-    for (const [stageId, filePath] of Object.entries(resolvedFiles)) {
-        if (fs.existsSync(filePath)) {
-            try {
-                const raw = fs.readFileSync(filePath, 'utf-8')
-                const parsed = JSON.parse(raw)
-                
-                // Consistency wrapper: Unwrap .data or .payload if they exist to simplify consumption
-                const unwrapped = parsed.data || parsed.payload || parsed.result || parsed
-                results[stageId] = unwrapped
-
-                // If it's the QA stage, try to extract a top-level publishability score for the source
-                if (stageId === 'qa') {
-                    const dqmPayload = unwrapped as Record<string, any>;
-                    const score = dqmPayload?.scores?.publishability || dqmPayload?.publishability;
-                    if (score !== undefined) {
-                        (results as Record<string, any>).publishability = score;
-                    }
-                }
-            } catch { /* skip */ }
+    // Optimized Hybrid Artifact Fetcher
+    const fetchArtifact = async (bucket: string, fileName: string) => {
+        // 1. Try local disk (Railway/Dev)
+        const localPath = path.join(baseDir, bucket, fileName);
+        if (fs.existsSync(localPath)) {
+            try { return JSON.parse(fs.readFileSync(localPath, 'utf-8')); } catch { return null; }
         }
+
+        // 2. Fallback to Supabase Storage (Vercel Prod)
+        if (supabaseAdmin) {
+            try {
+                const { data, error } = await supabaseAdmin.storage.from(bucket).download(fileName);
+                if (data && !error) {
+                    const text = await data.text();
+                    return JSON.parse(text);
+                }
+            } catch { return null; }
+        }
+        return null;
     }
 
-    // Check for score metadata
-    const scorePath = path.join(baseDir, 'sources', `${sourceId}.json`)
-    if (!fs.existsSync(scorePath)) {
-        // Fallback to legacy naming
-        const legacyPath = path.join(baseDir, 'sources', `${sourceId}_metadata.json`)
-        if (fs.existsSync(legacyPath)) {
-            try {
-                const raw = fs.readFileSync(legacyPath, 'utf-8')
-                const meta = JSON.parse(raw)
-                const items = Array.isArray(meta) ? meta : [meta]
-                const item = items[0]
-                if (item) {
-                    results.judge = { 
-                        score: item.score || 5, 
-                        title: item.title,
-                        channel: item.channel,
-                        status: "done", 
-                        rationale: item.rationale || "Source evaluated." 
-                    }
-                }
-            } catch (e) { 
-                console.error(`[Results API] Error parsing legacyPath for ${sourceId}:`, e)
+    // Stage bucket mapping
+    const bucketMap: Record<string, string> = {
+        insights: 'insights',
+        angle: 'angles',
+        draft: 'drafts',
+        packet: 'insight_packets',
+        blueprint: 'outlines',
+        transcript: 'transcripts',
+        refine: 'refined_transcripts',
+        summary: 'summaries',
+        qa: 'evaluations',
+        visual: 'visual_plans',
+    }
+
+    // Run parallel fetch for all stages
+    const stageIds = Object.keys(bucketMap);
+    await Promise.all(stageIds.map(async (stageId) => {
+        const bucket = bucketMap[stageId];
+        
+        // Prepare filename variants for resilience
+        const suffix = stageId === 'transcript' ? '_raw.json' :
+                       stageId === 'refine' ? '_refined.json' :
+                       stageId === 'summary' ? '_summary.json' :
+                       `_${stageId === 'qa' ? 'eval' : stageId === 'blueprint' ? 'outline' : stageId}.json`;
+        
+        let data = await fetchArtifact(bucket, `${sourceId}${suffix}`);
+        
+        // Resilient fallback for naming mismatches
+        if (!data) {
+            const cleanId = sourceId.replace(/^spotify_/, '');
+            data = await fetchArtifact(bucket, `${cleanId}${suffix}`);
+            if (!data && !sourceId.startsWith('spotify_')) {
+                data = await fetchArtifact(bucket, `spotify_${sourceId}${suffix}`);
             }
         }
-    } else {
-        try {
-            const raw = fs.readFileSync(scorePath, 'utf-8')
-            const meta = JSON.parse(raw)
-            const items = Array.isArray(meta) ? meta : [meta]
-            const item = items[0]
-            if (item) {
-                results.judge = { 
-                    score: item.score || 5, 
-                    title: item.title,
-                    channel: item.channel,
-                    status: "done", 
-                    rationale: item.rationale || "Source evaluated." 
-                }
+
+        if (data) {
+            const unwrapped = data.data || data.payload || data.result || data;
+            results[stageId] = unwrapped;
+
+            if (stageId === 'qa') {
+                const score = (unwrapped as any)?.scores?.publishability || (unwrapped as any)?.publishability;
+                if (score !== undefined) results.publishability = score;
             }
-        } catch (e) { 
-            console.error(`[Results API] Error parsing scorePath for ${sourceId}:`, e)
+        }
+    }));
+
+    // Check for source metadata (Judge results)
+    let meta = await fetchArtifact('sources', `${sourceId}.json`);
+    if (!meta) {
+        // Fallback variants for sources
+        const cleanId = sourceId.replace(/^spotify_/, '');
+        meta = await fetchArtifact('sources', `${cleanId}.json`);
+        if (!meta) meta = await fetchArtifact('sources', `${sourceId}_metadata.json`);
+    }
+
+    if (meta) {
+        const item = Array.isArray(meta) ? meta[0] : meta;
+        if (item) {
+            results.judge = {
+                score: item.score || 5,
+                title: item.title,
+                channel: item.channel,
+                status: "done",
+                rationale: item.rationale || "Source evaluated."
+            }
         }
     }
 

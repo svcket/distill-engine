@@ -1,7 +1,6 @@
 import os
 import json
 import argparse
-import sys
 
 def verify_pipeline(source_id):
     base_dir = os.path.join(os.path.dirname(__file__), ".tmp")

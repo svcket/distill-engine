@@ -4,6 +4,7 @@ import path from 'path'
 import fs from 'fs'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { supabaseAdmin } from '@/lib/supabase'
 
 export async function GET() {
     try {
@@ -35,7 +36,17 @@ export async function GET() {
             return NextResponse.json({ drafts: [] })
         }
 
-        const drafts: Record<string, unknown>[] = []
+        interface DraftExport {
+            id: string;
+            title: string;
+            content: string;
+            wordCount: number;
+            format: string;
+            status: string;
+            createdAt: string;
+        }
+
+        const drafts: DraftExport[] = []
 
         function decodeHtml(html: string) {
             if (!html) return html;
@@ -52,19 +63,46 @@ export async function GET() {
 
         // Build a mapping from Title -> Data to handle the ID mismatch (CUID vs SourceID)
         const diskDrafts = new Map<string, any>()
-        const files = fs.readdirSync(draftsDir)
-        for (const file of files) {
-            if (file.endsWith('_draft.json')) {
-                try {
-                    const raw = fs.readFileSync(path.join(draftsDir, file), 'utf-8')
-                    const data = JSON.parse(raw)
-                    const payload = data.data || data.payload || data
-                    if (data.source_id) {
-                        diskDrafts.set(data.source_id, { data, file })
-                    } else if (payload.title) {
-                        diskDrafts.set(payload.title.trim().toLowerCase(), { data, file })
-                    }
-                } catch { /* skip */ }
+        
+        if (fs.existsSync(draftsDir)) {
+            const files = fs.readdirSync(draftsDir)
+            for (const file of files) {
+                if (file.endsWith('_draft.json')) {
+                    try {
+                        const raw = fs.readFileSync(path.join(draftsDir, file), 'utf-8')
+                        const data = JSON.parse(raw)
+                        const payload = data.data || data.payload || data
+                        if (data.source_id) {
+                            diskDrafts.set(data.source_id, { data, file })
+                        } else if (payload.title) {
+                            diskDrafts.set(payload.title.trim().toLowerCase(), { data, file })
+                        }
+                    } catch { /* skip */ }
+                }
+            }
+        } else if (supabaseAdmin) {
+            // Fallback to Supabase Storage listing (Vercel Prod)
+            try {
+                const { data: files, error } = await supabaseAdmin.storage.from('drafts').list();
+                if (files && !error) {
+                    await Promise.all(files.map(async (f) => {
+                        if (f.name.endsWith('_draft.json')) {
+                            const { data: fileBlob } = await supabaseAdmin!.storage.from('drafts').download(f.name);
+                            if (fileBlob) {
+                                const text = await fileBlob.text();
+                                const data = JSON.parse(text);
+                                const payload = data.data || data.payload || data;
+                                if (data.source_id) {
+                                    diskDrafts.set(data.source_id, { data, file: f.name });
+                                } else if (payload.title) {
+                                    diskDrafts.set(payload.title.trim().toLowerCase(), { data, file: f.name });
+                                }
+                            }
+                        }
+                    }));
+                }
+            } catch (err) {
+                console.error("[Exports API] Supabase fallback failed:", err);
             }
         }
 
@@ -91,10 +129,17 @@ export async function GET() {
 
                     // Also load format styles from angles
                     let angle = null
-                    const anglePath = path.resolve(process.cwd(), `../execution/.tmp/angles/${sourceId}_angle.json`)
-                    if (fs.existsSync(anglePath)) {
+                    const localAnglePath = path.resolve(process.cwd(), `../execution/.tmp/angles/${sourceId}_angle.json`)
+                    if (fs.existsSync(localAnglePath)) {
                         try {
-                            angle = JSON.parse(fs.readFileSync(anglePath, 'utf-8'))
+                            angle = JSON.parse(fs.readFileSync(localAnglePath, 'utf-8'));
+                        } catch { /* skip */ }
+                    } else if (supabaseAdmin) {
+                        try {
+                            const { data: angleBlob } = await supabaseAdmin.storage.from('angles').download(`${sourceId}_angle.json`);
+                            if (angleBlob) {
+                                angle = JSON.parse(await angleBlob.text());
+                            }
                         } catch { /* skip */ }
                     }
 

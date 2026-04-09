@@ -33,8 +33,8 @@ export const payWithPaystack = (options: Omit<PaystackOptions, 'key' | 'onClose'
     currency: options.currency || 'NGN',
     ref: options.ref || '' + Math.floor(Math.random() * 1000000000 + 1),
     metadata: options.metadata,
-    callback: (response: Record<string, unknown>) => {
-      // console.log('Payment successful', response);
+    callback: (_response: Record<string, unknown>) => {
+      // console.log('Payment successful', _response);
       // Refresh the page to pick up the new plan status from the session
       window.location.reload();
     },

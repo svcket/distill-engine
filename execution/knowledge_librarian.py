@@ -1,4 +1,3 @@
-import sys
 import argparse
 
 def archive_knowledge(source_data: str, outputs: list, destination_db: str):

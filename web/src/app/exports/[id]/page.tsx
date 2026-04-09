@@ -179,7 +179,7 @@ export default function DraftWorkspacePage() {
     const editor = useEditor({
         extensions: [StarterKit],
         content: "",
-        immediatelyRender: true,
+        immediatelyRender: false,
         editorProps: {
             attributes: {
                 class: cn(
@@ -216,9 +216,9 @@ export default function DraftWorkspacePage() {
                     const sourceId = foundSource?.id || id
                     setResolvedSourceId(sourceId)
 
-                    const cached = localStorage.getItem(`dqm_${sourceId}`)
-                    if (cached) {
-                        setDqm(JSON.parse(cached))
+                    const cachedDqm = typeof window !== 'undefined' ? localStorage.getItem(`dqm_${sourceId}`) : null
+                    if (cachedDqm) {
+                        setDqm(JSON.parse(cachedDqm))
                     } else {
                         const success = await fetchDQM(sourceId as string)
                         if (!success) {

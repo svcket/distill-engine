@@ -1,4 +1,3 @@
-import sys
 import argparse
 
 def refine_style(draft_path: str) -> str:

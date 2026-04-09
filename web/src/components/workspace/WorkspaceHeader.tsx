@@ -1,10 +1,9 @@
 "use client"
 
 import React, { useState } from 'react'
-import { Plus, Search, Filter, LayoutGrid, List, ChevronRight, Settings, Info, Loader2, X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useLanguage } from '@/context/LanguageContext'
-import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { UnifiedSourceInput } from './UnifiedSourceInput'
 import { useWorkspace } from '@/context/WorkspaceContext'
@@ -33,7 +32,7 @@ export function WorkspaceHeader() {
       } else {
         toast.error(data.error || "Failed to start ingestion")
       }
-    } catch (err) {
+    } catch (_err) {
       toast.error("An error occurred")
     } finally {
       setIsIngesting(false)

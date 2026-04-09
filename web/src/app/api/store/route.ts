@@ -177,6 +177,45 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true })
         }
 
+        // Fetch a stage result artifact for hydration
+        if (body.action === 'get_result') {
+            const { sourceId, stageId } = body
+            if (!sourceId || !stageId) {
+                return NextResponse.json({ error: "Missing sourceId or stageId" }, { status: 400 })
+            }
+
+            try {
+                // Determine the correct bucket and filename based on stageId
+                let bucket = 'transcripts'
+                let filename = `${sourceId}/${sourceId}_raw.json`
+
+                if (stageId === 'summary') {
+                    filename = `${sourceId}/summary.json`
+                } else if (stageId === 'insights') {
+                    filename = `${sourceId}/insights.json`
+                } else if (stageId === 'refine') {
+                    filename = `${sourceId}/refined.json`
+                } else if (stageId === 'draft') {
+                    bucket = 'drafts'
+                    filename = `${sourceId}_draft.json`
+                } else if (stageId === 'qa' || stageId === 'evaluate' || stageId === 'Analyze Matrix') {
+                    bucket = 'evaluations'
+                    filename = `${sourceId}_eval.json`
+                } else if (stageId === 'socialise' || stageId === 'social') {
+                    filename = `${sourceId}/social.json`
+                }
+
+                const result = await StorageAdapter.getJson(bucket, filename)
+                if (!result) {
+                    return NextResponse.json({ error: "Result artifact not found" }, { status: 404 })
+                }
+                return NextResponse.json({ result: (result.payload || result.data || result.result || result) })
+            } catch (e) {
+                console.error(`[Store API] Failed to fetch result for ${stageId} of ${sourceId}:`, e)
+                return NextResponse.json({ error: "Failed to fetch result" }, { status: 500 })
+            }
+        }
+
 
         // Delete a source
         if (body.action === 'delete') {

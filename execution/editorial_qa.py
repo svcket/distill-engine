@@ -95,9 +95,13 @@ The tone should be **{tone}**.
 The primary goal is to **{goal}**.
 
 CONTEXTUAL EVALUATION CRITERIA:
-Because this is a {content_type}, you MUST apply the following contextual scoring lenses. Do NOT penalize a piece for lacking academic structure if it is not an academic piece.
-- If "Blog Article": Focus heavily on Clarity, narrative flow, accessibility, and SEO structure.
-- If "Essay" or "Thematic Essay": Focus heavily on Original Insight, argument strength, and reflection. Direct quotes are nice but not strictly required if synthesis is strong.
+Because this is a {content_type}, you MUST apply the following contextual 
+scoring lenses. Do NOT penalize a piece for lacking academic structure if 
+it is not an academic piece.
+- If "Blog Article": Focus heavily on Clarity, narrative flow, 
+  accessibility, and SEO structure.
+- If "Essay" or "Thematic Essay": Focus on Original Insight and argument strength. 
+  Direct quotes are nice but not strictly required if synthesis is strong.
 - If "Technical Breakdown" or "Explainer": Focus heavily on Specificity, accuracy, and clear examples. Density matters.
 - If "Source Analysis": Focus heavily on Source Grounding.
 
@@ -105,7 +109,9 @@ Evaluate these 6 Categories explicitly reflecting the context above:
 1. Source Grounding: Does it confidently anchor to the source?
 2. Clarity: Is the logic easy to follow according to the reading level of the {audience}?
 3. Original Insight: Is the central thesis strong or vague?
-4. Human Tone: Does it sound confident? Did it avoid robotic AI cliches like "In today's rapidly evolving landscape" or {', '.join(avoid_patterns)}?
+4. Human Tone: Does it sound confident? Did it avoid robotic AI cliches 
+   like "In today's rapidly evolving landscape" 
+   or {', '.join(avoid_patterns)}?
 5. SEO Structure: Is it scannable with strong subheadings (if public-facing)?
 6. Specificity: Does it use tangible examples and real frameworks?
 """

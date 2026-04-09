@@ -1,5 +1,5 @@
 import { auth } from "@/auth"
-import { prisma } from "@/lib/prisma"
+import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import path from 'path'
@@ -23,8 +23,23 @@ export async function POST(request: Request) {
         }
 
         const executionDir = path.resolve(process.cwd(), '../execution')
-        const inputPath = path.join(executionDir, '.tmp', 'refined_transcripts', transcriptId, `${transcriptId}_refined.json`)
-        const outputMd = path.join(executionDir, '.tmp', 'summaries', transcriptId, `${transcriptId}_summary.md`)
+        
+        // DYNAMIC PATH RESOLUTION: Prefer refined, fallback to raw for rescued sources
+        let inputPath = path.join(executionDir, '.tmp', 'refined_transcripts', transcriptId, `${transcriptId}_refined.json`)
+        
+        if (!fs.existsSync(inputPath)) {
+            const rawPath = path.join(executionDir, '.tmp', 'transcripts', transcriptId, `${transcriptId}_raw.json`)
+            if (fs.existsSync(rawPath)) {
+                inputPath = rawPath
+            }
+        }
+        
+        const outputMdDir = path.join(executionDir, '.tmp', 'summaries', transcriptId)
+        if (!fs.existsSync(outputMdDir)) {
+            fs.mkdirSync(outputMdDir, { recursive: true })
+        }
+        
+        const outputMd = path.join(outputMdDir, `${transcriptId}_summary.md`)
 
         const args = ["--input", inputPath, "--output", outputMd]
         if (language) args.push('--lang', language)
@@ -56,21 +71,21 @@ export async function POST(request: Request) {
         }
 
         // Persist stage completion
-        await prisma.source.update({
+        await withRetry(() => prisma.source.update({
             where: { id: transcriptId, userId },
             data: {
                 completedStages: {
                     push: 'summary'
                 }
             }
-        }).catch(() => {
+        })).catch(() => {
             // Fallback for string-based completedStages if push fails
-            return prisma.source.update({
+            return withRetry(() => prisma.source.update({
                 where: { id: transcriptId, userId },
                 data: {
                     completedStages: ['summary']
                 }
-            })
+            }))
         })
 
         return NextResponse.json({ result, message: `Generated summary for: ${transcriptId}` })

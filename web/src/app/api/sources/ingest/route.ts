@@ -37,14 +37,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Pipeline Truth Error: Ingest reported success but artifact is missing.', id: result.source_id }, { status: 500 })
         }
         
-        const userId = session.user.id
-        // SELF-HEALING: Recreate user if deleted during migration but session persists
+        const userId = String(session.user.id)
+        // SELF-HEALING: Recreate user record if deleted during migration but session persists
         const userExists = await withRetry(() => prisma.user.findUnique({ where: { id: userId } }))
         if (!userExists) {
             await withRetry(() => prisma.user.create({
                 data: {
                     id: userId,
-                    name: session.user?.name || 'Anonymous User',
+                    name: session.user?.name || 'Pro User',
                     email: session.user?.email || '',
                     image: session.user?.image || '',
                 }

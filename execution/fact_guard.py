@@ -1,4 +1,3 @@
-import sys
 import argparse
 
 def fact_check(draft_path: str, transcript_path: str) -> dict:

@@ -1,23 +1,11 @@
 import { auth } from "@/auth"
-import { prisma } from "@/lib/prisma"
+import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import path from 'path'
 import fs from 'fs'
 
-async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 500): Promise<T> {
-    try {
-        return await fn();
-    } catch (err: unknown) {
-        const error = err as { message?: string; code?: string };
-        if (retries > 0 && (error.message?.includes("Can't reach database server") || error.code === 'P1001')) {
-            console.warn(`Prisma connection failed, retrying in ${delay}ms... (${retries} retries left)`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            return withRetry(fn, retries - 1, delay * 2);
-        }
-        throw err;
-    }
-}
+
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -49,10 +37,10 @@ export async function POST(request: Request) {
         // SELF-HEALING: If source is missing from user's record but exists globally, 
         // claim it for this user to ensure the pipeline can proceed.
         if (!source) {
-            const globalSource = await prisma.source.findUnique({ where: { id: sourceId } });
+            const globalSource = await withRetry(() => prisma.source.findUnique({ where: { id: sourceId } }));
             if (globalSource) {
                 // console.log(`[Score] Auto-claiming global source ${sourceId} for user ${userId}`);
-                source = await prisma.source.create({
+                source = await withRetry(() => prisma.source.create({
                     data: {
                         id: sourceId,
                         userId: userId,
@@ -64,7 +52,7 @@ export async function POST(request: Request) {
                         duration: globalSource.duration,
                         completedStages: []
                     }
-                });
+                }));
             } else {
                 return NextResponse.json({ 
                     error: "Source not found or access denied",

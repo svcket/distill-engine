@@ -5,6 +5,7 @@ normalized source schema consumed by the rest of the pipeline.
 """
 
 import os
+import sys
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
@@ -114,4 +115,18 @@ class BaseAdapter(ABC):
             f.flush()
             os.fsync(f.fileno())
 
+        # Cloud Bridge: Mirror metadata result to Supabase Storage
+        try:
+            # Handle directory for cloud bridge
+            execution_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if execution_dir not in sys.path:
+                sys.path.append(execution_dir)
+            
+            from supabase_utils import upload_artifact
+            upload_artifact("sources", source.source_id, out_path)
+        except Exception as e:
+            # Non-fatal — we still have the local disk backup for Railway
+            print(f"[BaseAdapter] Cloud sync skipped: {e}")
+
         return out_path
+

@@ -10,6 +10,7 @@ import { LanguageProvider } from "@/context/LanguageContext";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { Providers } from "@/components/providers/Providers";
 import { AuthLayoutWrapper } from "@/components/layout/AuthLayoutWrapper";
+import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
 
 export default function RootLayout({
   children,
@@ -24,21 +25,23 @@ export default function RootLayout({
         )}
       </head>
       <body className={`font-sans`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          forcedTheme="dark"
-          enableSystem={false}
-          disableTransitionOnChange
-        >
-          <Providers>
-            <LanguageProvider>
-              <AuthLayoutWrapper>
-                 {children}
-              </AuthLayoutWrapper>
-            </LanguageProvider>
-          </Providers>
-        </ThemeProvider>
+        <ErrorBoundary>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="dark"
+            forcedTheme="dark"
+            enableSystem={false}
+            disableTransitionOnChange
+          >
+            <Providers>
+              <LanguageProvider>
+                <AuthLayoutWrapper>
+                   {children}
+                </AuthLayoutWrapper>
+              </LanguageProvider>
+            </Providers>
+          </ThemeProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

@@ -20,15 +20,23 @@ class ContentPlan(BaseModel):
     thesis_frame: str = Field(description="The central thesis grounded in tension or contrast.")
     editorial_angle: str = Field(description="The chosen angle (Explainer, Cultural Analysis, Case Study, etc.).")
     voice_persona: str = Field(description="The selected authorial voice (Analyst, Storyteller, Builder, etc.).")
-    structure_architecture: list[str] = Field(description="The narrative flow (Hook -> Context -> Observation -> Example -> Implication -> Conclusion).")
-    section_headings: list[str] = Field(description="Draft punchy, editorial subheadings for each major section of the architecture (H2 level).")
+    structure_architecture: list[str] = Field(
+        description="The narrative flow (Hook -> Context -> Observation -> Example -> Implication -> Conclusion)."
+    )
+    section_headings: list[str] = Field(
+        description="Draft punchy, editorial subheadings for each major section of the architecture (H2 level)."
+    )
     supporting_insights: list[str] = Field(description="Key insights assigned to each logical block.")
     concrete_examples: list[str] = Field(description="Specific, non-abstract examples from the source to illustrate claims.")
 
 from typing import Optional
 from supabase_utils import upload_artifact
 
-def generate_draft(outline_path: str, insights_path: str, packet_path: str, brief_path: Optional[str] = None, feedback: Optional[str] = None, stream: bool = False, lang: str = "en"):
+def generate_draft(
+    outline_path: str, insights_path: str, packet_path: str, 
+    brief_path: Optional[str] = None, feedback: Optional[str] = None, 
+    stream: bool = False, lang: str = "en"
+):
     if not os.path.exists(outline_path) or not os.path.exists(insights_path) or not os.path.exists(packet_path):
         print(json.dumps({"status": "failed", "error": "Missing input payloads."}), file=sys.stderr)
         sys.exit(1)
@@ -56,7 +64,8 @@ def generate_draft(outline_path: str, insights_path: str, packet_path: str, brie
 
     if not os.environ.get("OPENAI_API_KEY"):
         title = outline_data.get("title", "Mock Draft")
-        content = "# Mock Content\n\nThis is a mocked draft. Provide OPENAI_API_KEY to run the real writer.\n\n## Section 1\nThe backend pipeline and streaming architecture are working correctly."
+        content = ("# Mock Content\n\nThis is a mocked draft. Provide OPENAI_API_KEY to run the real writer.\n\n"
+                   "## Section 1\nThe backend pipeline and streaming architecture are working correctly.")
         
         if stream:
             print(json.dumps({"type": "stream_start", "source_id": source_id, "title": title}), flush=True)
@@ -102,14 +111,14 @@ You write like a world-class human author who prioritizes narrative tension, con
 
 YOUR PIECE MUST EXHIBIT:
 1. **Editorial Framing**: Grounded in a clear thesis frame and chosen angle.
-2. **Narrative Progression**: A structure that introduces a new idea in every section, avoiding repetitive explanations.
-3. **Identifiable Voice**: Adhering strictly to the selected voice persona (Analyst, Storyteller, etc.).
+2. **Narrative Progression**: A structure that introduces new ideas, avoiding repetition.
+3. **Identifiable Voice**: Adhering strictly to the selected voice persona.
 
 CRITICAL WRITING RULES:
-- **SPECIFICITY OVER ABSTRACTION**: Reference real tools, cases, dates, or systems. Instead of "People are carving out identities", write "Someone who once introduced themselves as 'John’s girlfriend' now introduces themselves as 'the one who just started ceramics classes'".
-- **NO AI CLICHÉS**: Strictly avoid: "In today's rapidly evolving world", "It is important to note", "As we move forward", "In conclusion", "Dive into", "Tapestry", "Delve", "Harness". These significantly reduce the human-quality score.
-- **PERSPECTIVE OVER COMMENTARY**: Provide a point of view. Explain *why* something matters to a builder or founder.
-- **Structure & Spacing**: Use standard Markdown headers (# for Title, ## for Sections). **NON-NEGOTIABLE**: Every 2-3 paragraphs MUST be separated by a punchy `## Section Header`. A draft with no subheadings is a failure. Use double newlines (\n\n) between every paragraph and section.
+- **SPECIFICITY OVER ABSTRACTION**: Reference real tools, cases, or systems. Avoid vague labels.
+- **NO AI CLICHÉS**: Strictly avoid: "In today's world", "It is important to note", etc.
+- **PERSPECTIVE OVER COMMENTARY**: Provide a point of view. Explain *why* something matters.
+- **Structure & Spacing**: Use standard Markdown headers. Every 2-3 paragraphs MUST have a subhead.
 - **NO HTML**: Do NOT use <h1>, <p>, or other HTML tags. Use ONLY standard Markdown.
 
 TARGET AUDIENCE: {audience}
@@ -140,19 +149,22 @@ Source Transcript Excerpts (Use for specific grounding):
         # Advanced Editorial Reasoning Stage - defined early for both paths
         reasoning_prompt = f"""Before drafting, perform an internal editorial reasoning sequence:
 1. **Frame Builder**: Determine the central thesis of the piece. Capture tension or contrast grounded in the Insight Packet.
-2. **Angle Selector**: Select the editorial angle (Explainer, Cultural Analysis, Narrative Reflection, Builder Insight, Case Study, Concept Breakdown, or Contrarian Hot-Take).
-3. **Voice Persona Selector**: Select the authorial style (Analyst, Storyteller, Builder, Philosopher, Explainer, or Provocateur).
-4. **Structure Architect**: Determine the narrative flow (standard Hook-to-Conclusion, or unconventional models like Inverted Pyramid, Tension-Resolution Loop, or The Hero's Technical Journey).
-5. **Headlining Strategy**: Brainstorm punchy, non-generic subheadings for every section that avoid labels like "Context" or "Conclusion" in favor of editorial energy (e.g., "The Infinite Scaffolding" instead of "Background").
+2. **Angle Selector**: Select the editorial angle (Explainer, Cultural Analysis, Case Study, etc.).
+3. **Voice Persona Selector**: Select the authorial style (Analyst, Storyteller, Builder, etc.).
+4. **Structure Architect**: Determine the narrative flow (standard or unconventional).
+5. **Headlining Strategy**: Brainstorm punchy, non-generic subheadings for every section.
 
 Generate a strict structural plan based on this reasoning. Ensure subheadings are mandated and present for every transition.
 """
 
         # PERFORMANCE UPGRADE: Consolidation logic for streaming
         if stream:
-            print(json.dumps({"type": "status", "message": "Strategizing editorial angle and drafting..."}), flush=True)
+            status_msg = {"type": "status", "message": "Strategizing editorial angle and drafting..."}
+            print(json.dumps(status_msg), flush=True)
             # In streaming mode, we fold the editorial reasoning into the system prompt for a single high-speed pass
-            optimized_system_prompt = system_prompt + "\n\nEDITORIAL REASONING PROTOCOL:\n" + reasoning_prompt
+            optimized_system_prompt = (
+                system_prompt + "\n\nEDITORIAL REASONING PROTOCOL:\n" + reasoning_prompt
+            )
             
             content_chunks = []
             title = outline_data.get("title", "Draft")
@@ -187,8 +199,11 @@ Generate a strict structural plan based on this reasoning. Ensure subheadings ar
             }
             _save_draft(source_id, bundle)
             # Final success signal for frontend state synchronization
-            print(json.dumps({"type": "success", "status": "success", "result": bundle["data"]}), flush=True)
-            print(json.dumps({"type": "stream_end", "source_id": source_id, "word_count": word_count}), flush=True)
+            success_msg = {"type": "success", "status": "success", "result": bundle["data"]}
+            print(json.dumps(success_msg), flush=True)
+            
+            end_msg = {"type": "stream_end", "source_id": source_id, "word_count": word_count}
+            print(json.dumps(end_msg), flush=True)
             return
 
         # BATCH MODE: High-fidelity reasoning + drafting
@@ -260,7 +275,8 @@ Generate a strict structural plan based on this reasoning. Ensure subheadings ar
 3. Are there concrete examples instead of vague abstractions?
 4. Is the SELECTED VOICE PERSONA consistent?
 5. Are there any AI clichés (e.g. "In today's world", "In conclusion")?
-6. **FORMATTING CHECK**: Does the draft have clear, punchy `## Subheadings` for every major section? If it's a long block of text, insert subheadings to break it up effectively.
+6. **FORMATTING CHECK**: Does the draft have clear, punchy `## Subheadings` for every major section? 
+   If it's a long block, insert subheadings to break it up.
 
 CRITICAL: You MUST write your response entirely in the '{lang}' language.
 If there are issues, rewrite the section to be more specific, human, and properly structured with headers. Return the FINAL, polished draft."""
@@ -269,7 +285,10 @@ If there are issues, rewrite the section to be more specific, human, and properl
                 model="gpt-4o-mini", # Speed upgrade
                 messages=[
                     {"role": "system", "content": "You are a master editorial polisher."},
-                    {"role": "user", "content": f"ORIGINAL DRAFT:\n\nTitle: {v1_draft.title}\n\nContent: {v1_draft.content}" + "\n\n" + critic_prompt}
+                    {"role": "user", "content": (
+                        f"ORIGINAL DRAFT:\n\nTitle: {v1_draft.title}\n\n"
+                        f"Content: {v1_draft.content}\n\n{critic_prompt}"
+                    )}
                 ],
                 response_format=WrittenDraft,
             )

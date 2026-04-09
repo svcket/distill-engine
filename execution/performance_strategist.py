@@ -1,4 +1,3 @@
-import sys
 import argparse
 
 def analyze_performance(metrics_data: str) -> dict:

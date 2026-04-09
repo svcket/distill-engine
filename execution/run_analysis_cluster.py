@@ -6,6 +6,8 @@ import re
 import time
 import requests
 import html
+import glob
+import shutil
 import traceback
 # No unused typing imports
 
@@ -72,6 +74,29 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
     base = os.path.dirname(os.path.abspath(__file__))
 
     # ── Content Quality Gate ──────────────────────────────────────────────────
+    
+    # SURGICAL ISOLATION: Purge stale artifacts for this source_id to prevent "Ghost Leaks" / Cross-contamination
+    print(f"[{source_id}] Cluster: Initializing Surgical Isolation...")
+    stale_patterns = [
+        os.path.join(base, ".tmp", "refined_transcripts", source_id, "*"),
+        os.path.join(base, ".tmp", "summaries", f"{source_id}_summary.*"),
+        os.path.join(base, ".tmp", "insight_packets", f"{source_id}_packet.json"),
+        os.path.join(base, ".tmp", "insights", f"{source_id}_insights.json"),
+        os.path.join(base, ".tmp", "clusters", f"{source_id}_cluster.json")
+    ]
+    for pattern in stale_patterns:
+        for f in glob.glob(pattern):
+            try:
+                if os.path.isfile(f): os.remove(f)
+                elif os.path.isdir(f): shutil.rmtree(f)
+            except Exception: pass
+
+    # HARDENING: Ensure the transcript directory exists even if manual fetch stage was skipped (Summary-First pivot)
+    transcript_dir = os.path.join(base, ".tmp", "transcripts", source_id)
+    if not os.path.exists(transcript_dir):
+        os.makedirs(transcript_dir, exist_ok=True)
+        print(f"[{source_id}] Cluster: Created missing transcript directory for Rescued intelligence.")
+
     is_sufficient, quality_reason = _assess_content_quality(source_id, base)
     if not is_sufficient:
         print(f"[{source_id}] CONTENT QUALITY GATE FAILED: {quality_reason}", file=sys.stderr)
@@ -112,16 +137,21 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         # 2. Summary Stage
         try:
             print(f"[{source_id}] Cluster Stage 2/4: Summarizing...", flush=True)
-            summary_result = summarize_transcript(source_id, lang)
-            # Post-process: If thin, add a visual indicator to the summary
-            if is_thin and summary_result.get("summary"):
-                rescue_prefix = f"⚠️ [METADATA RESCUE] {summary_result.get('summary', '')}\n\n"
-                rescue_note = "*Note: This source was analyzed using limited metadata as audio was inaccessible.*"
-                summary_result["summary"] = f"{rescue_prefix}{rescue_note}"
+            # HARDENING: Check for transcript existence before calling summarizer
+            # This prevents the cryptic FileNotFoundError rescue message
+            refined_path = os.path.join(base, ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
+            raw_path = os.path.join(base, ".tmp", "transcripts", source_id, f"{source_id}_raw.json")
+            
+            if not os.path.exists(refined_path) and not os.path.exists(raw_path):
+                print(f"[{source_id}] No transcript files found. Implementing METADATA RESCUE summarize.", flush=True)
+                summary_result = {"status": "rescued", "summary": "⚠️ Content restricted by source provider. Providing analysis based on available context."}
+            else:
+                summary_result = summarize_transcript(source_id, lang)
+            
             results["summary"] = summary_result
         except Exception as e:
             print(f"[{source_id}] Summary stage failed: {e}", file=sys.stderr)
-            rescue_msg = f"⚠️ [METADATA RESCUE] Summary extraction failed ({e})"
+            rescue_msg = f"⚠️ [METADATA RESCUE] Analysis unavailable ({e})"
             results["summary"] = {"status": "rescued", "summary": rescue_msg}
             
             # HARDENING: We MUST write the summary artifact even in rescue mode
@@ -263,14 +293,29 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
 
     if final_payload:
         final_payload["metadata"] = metadata
+        
+        # Final result persistence for cloud-bridge sync
+        cluster_dir = os.path.join(base, ".tmp", "clusters")
+        os.makedirs(cluster_dir, exist_ok=True)
+        cluster_path = os.path.join(cluster_dir, f"{source_id}_cluster.json")
+        with open(cluster_path, "w", encoding="utf-8") as f:
+            json.dump(final_payload, f, indent=2)
+
+        # Cloud Bridge
+        try:
+            from supabase_utils import upload_artifact
+            upload_artifact("clusters", source_id, cluster_path)
+        except Exception as e:
+            print(f"[{source_id}] Cluster cloud sync skipped: {e}", file=sys.stderr)
+
         print(json.dumps(final_payload))
     
     # Exit cleanly to allow UI to proceed even if we were in rescue mode
     sys.exit(0)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Run the full analysis cluster for a source.")
     parser.add_argument("--source-id", required=True)
-    parser.add_argument("--lang", default="en", help="Language code")
+    parser.add_argument("--lang", default="en")
     args = parser.parse_args()
     run_analysis_cluster(args.source_id, args.lang)

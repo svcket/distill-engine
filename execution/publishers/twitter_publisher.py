@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import argparse
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 # Attempt to import tweepy, but don't fail if it's missing (for dev environments)
 try:

@@ -23,7 +23,13 @@ def load_json(filepath: str):
             return None
     return None
 
-def extract_angle(insights_path: str, target_type: Optional[str] = None, target_audience: Optional[str] = None, target_tone: Optional[str] = None, lang: str = "en"):
+def extract_angle(
+    insights_path: str, 
+    target_type: Optional[str] = None, 
+    target_audience: Optional[str] = None, 
+    target_tone: Optional[str] = None, 
+    lang: str = "en"
+):
     if not os.path.exists(insights_path):
         print(json.dumps({"status": "failed", "error": f"Insights not found: {insights_path}"}), file=sys.stderr)
         sys.exit(1)
@@ -87,7 +93,9 @@ def extract_angle(insights_path: str, target_type: Optional[str] = None, target_
     
     Choose a specific, opinionated framing angle based on the insights provided.
     
-    IMPORTANT: If USER INTENT SETTINGS provide a specific 'Format/Type', you MUST output that exactly as the 'recommended_format'. Do NOT use 'Long-form Essay' if the user requested 'blog_article' or 'technical_explainer'.
+    IMPORTANT: If USER INTENT SETTINGS provide a specific 'Format/Type', you MUST 
+    output that exactly as the 'recommended_format'. Do NOT use 'Long-form Essay' 
+    if the user requested 'blog_article' or 'technical_explainer'.
     
     Target the audience specified, or default to technical builders, engineers, and designers.
     CRITICAL: You MUST write your response entirely in the '{lang}' language.
