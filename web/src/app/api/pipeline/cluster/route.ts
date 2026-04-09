@@ -45,7 +45,7 @@ export async function POST(request: Request) {
             }
 
             // The cluster returns results for multiple stages
-            const stages = ['summary', 'packet', 'insights', 'refine']
+            const stages = ['cluster', 'summary', 'packet', 'insights', 'refine']
             
             // Map recovered metadata from Python payload
             const metadata = (result.metadata as Record<string, unknown>) || {}
@@ -94,7 +94,10 @@ export async function POST(request: Request) {
                         console.log("[Cluster API] Salvaging execution via JSON rescue in stderr/stdout.")
                         
                         const resultPayload = (rescuedData.results as Record<string, unknown> | undefined) ?? rescuedData
-                        const stages = ['summary', 'packet', 'insights']
+                        
+                        // Inclusion strategy: We mark all analysis stages as completed 
+                        // as we have produced enough metadata to support the rest of the flow.
+                        const stages = ['cluster', 'summary', 'packet', 'insights', 'refine']
                         
                         // PERSISTENCE: Must update DB even during rescue so UI doesn't retry
                         await withRetry(() => prisma.source.update({

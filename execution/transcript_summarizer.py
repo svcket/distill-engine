@@ -2,6 +2,7 @@ import sys
 import argparse
 import json
 import os
+import re
 from openai import OpenAI
 from typing import Dict, Any
 from supabase_utils import upload_artifact
@@ -88,6 +89,39 @@ def generate_summary(transcript_path: str, output_path: str, lang: str = "en") -
         
     except Exception as e:
         raise e
+
+def infer_title_from_summary(summary_text: str, lang: str = "en") -> str:
+    """
+    Cognitive Identity Recovery: use the summary to infer a high-fidelity title.
+    """
+    if not summary_text or len(summary_text) < 50:
+        return None
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key or api_key == "mock":
+        return None
+        
+    client = OpenAI(api_key=api_key)
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": f"You are a professional editorial curator at Distill. Your goal is to infer an accurate, descriptive, and concise title (max 70 characters) for a podcast episode or article based on its summary. Ensure the title is clear and punchy. Output ONLY the title text, no quotes or metadata. Language: {lang}"},
+                {"role": "user", "content": f"Summarized Content:\n\n{summary_text[:5000]}"}
+            ],
+            temperature=0.5
+        )
+        
+        inferred_title = response.choices[0].message.content.strip()
+        # Clean up any potential markdown or quotes the LLM might have added
+        inferred_title = re.sub(r'^["\']|["\']$', '', inferred_title)
+        
+        return inferred_title
+        
+    except Exception as e:
+        print(f"[IdentityRecovery] LLM title inference failed: {e}")
+        return None
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate a conceptual summary of a refined transcript.")

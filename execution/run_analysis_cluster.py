@@ -4,6 +4,9 @@ import json
 import os
 import re
 import time
+import requests
+import html
+import traceback
 from typing import Dict, Any
 
 # Ensure local imports work by adding directory to path immediately
@@ -13,6 +16,8 @@ from refine_transcript import refine_source_transcript
 from transcript_summarizer import summarize_transcript
 from build_insight_packet import generate_packet_orchestrator
 from insight_extractor import generate_insights_orchestrator
+from adapters.podcast_adapter import is_generic_title
+from transcript_summarizer import infer_title_from_summary
 
 # ─── Content Quality Gate ─────────────────────────────────────────────────────
 
@@ -196,24 +201,40 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
                     metadata = meta_data[0] if isinstance(meta_data, list) else meta_data
                     break
         
-        # IDENTITY RESCUE STRIKE (Last Resort)
-        # If title is still generic, strike Spotify Embed directly one more time.
+        # --- IDENTITY RESCUE STRIKE ---
+        # If title is still missing or generic, we attempt a multi-stage identity recovery.
         title = metadata.get("title", "")
-        if not title or title in ("Podcast Episode", "Unknown Source", "Untitled"):
+        if not title or is_generic_title(title):
+            # STRIKE 1: Direct Embed Scraping (Optimised for Spotify)
             s_id = source_id.replace("spotify_", "")
-            # Only attempt if it looks like a Spotify ID
             if len(s_id) > 20: 
-                embed_url = f"https://open.spotify.com/embed/episode/{s_id}"
-                resp = requests.get(embed_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-                if resp.status_code == 200:
-                    m = re.search(r"<title>(.*?)</title>", resp.text, re.I)
-                    if m:
-                        recovered = html.unescape(m.group(1))
-                        clean = re.sub(r"\s*\|.*$", "", recovered).strip()
-                        if clean and "Spotify" not in clean:
-                            metadata["title"] = clean
-                            metadata["is_shell"] = False # Mark as no longer a shell
-                            print(f"[{source_id}] Analysis Cluster: IDENTITY RECOVERED -> {clean}")
+                try:
+                    embed_url = f"https://open.spotify.com/embed/episode/{s_id}"
+                    resp = requests.get(embed_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+                    if resp.status_code == 200:
+                        m = re.search(r"<title>(.*?)</title>", resp.text, re.I)
+                        if m:
+                            recovered = html.unescape(m.group(1))
+                            clean = re.sub(r"\s*\|.*$", "", recovered).strip()
+                            if clean and not is_generic_title(clean):
+                                metadata["title"] = clean
+                                metadata["is_shell"] = False 
+                                print(f"[{source_id}] Cluster Identity: SCRAPE RECOVERY -> {clean}")
+                except Exception: pass
+
+            # STRIKE 2: Cognitive Recovery (LLM-based naming from summary)
+            # Only run if Strike 1 failed and we have a valid summary.
+            current_title = metadata.get("title", "")
+            if (not current_title or is_generic_title(current_title)) and results.get("summary"):
+                summary_data = results["summary"]
+                summary_text = summary_data.get("summary") if isinstance(summary_data, dict) else ""
+                
+                if summary_text and "[Analysis Rescue Active]" not in summary_text:
+                    inferred = infer_title_from_summary(summary_text, lang)
+                    if inferred:
+                        metadata["title"] = inferred
+                        metadata["is_shell"] = False
+                        print(f"[{source_id}] Cluster Identity: COGNITIVE RECOVERY -> {inferred}")
 
     except Exception as e:
         print(f"[{source_id}] Metadata recovery failed: {str(e)}", file=sys.stderr)

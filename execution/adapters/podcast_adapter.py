@@ -198,14 +198,17 @@ class PodcastAdapter(BaseAdapter):
                  status = "failed_rescue"
                  strategy = "unavailable"
         
-        # INCREASE THRESHOLD: We only rescue to article text if the description is significant (>500 chars)
-        elif not mp3_url and ("spotify.com" in url or "apple.com" in url):
+        # 4. Greedy Rescue Logic: Only fall back to text rescue if NO audio source (MP3 or YouTube rescue) is available
+        is_audio_platform = "spotify.com" in url or "apple.com" in url
+        has_audio_source = mp3_url or final_extract_url.startswith("ytsearch1:")
+
+        if not has_audio_source and is_audio_platform:
             if len(description) > 500: 
-                 print(f"[PodcastAdapter] MP3 not resolved but high-quality description found ({len(description)} chars). Implementing METADATA RESCUE fallback.")
+                 print(f"[PodcastAdapter] No audio source resolved but high-quality description found ({len(description)} chars). Implementing METADATA RESCUE fallback.")
                  status = "rescued_text"
                  strategy = "normalized_text"
             else:
-                 print(f"[PodcastAdapter] WARNING: No MP3 and poor description ({len(description)} chars). Fetch likely to fail.")
+                 print(f"[PodcastAdapter] WARNING: No audio source and poor description ({len(description)} chars). Fetch likely to fail.")
                  status = "failed_rescue"
                  strategy = "unavailable"
         

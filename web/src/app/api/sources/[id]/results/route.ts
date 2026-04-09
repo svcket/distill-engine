@@ -16,25 +16,24 @@ export async function GET(
     const results: Record<string, unknown> = {}
 
     function resolveFilePath(baseDir: string, folder: string, id: string, suffix: string): string {
-        const strictPath = path.join(baseDir, folder, id, `${id}${suffix}`);
-        const shallowPath = path.join(baseDir, folder, `${id}${suffix}`);
-        if (fs.existsSync(strictPath)) return strictPath;
-        if (fs.existsSync(shallowPath)) return shallowPath;
-    
-        const strippedId = id.replace(/^spotify_/, '');
-        const strippedStrictPath = path.join(baseDir, folder, strippedId, `${strippedId}${suffix}`);
-        const strippedShallowPath = path.join(baseDir, folder, `${strippedId}${suffix}`);
-        if (fs.existsSync(strippedStrictPath)) return strippedStrictPath;
-        if (fs.existsSync(strippedShallowPath)) return strippedShallowPath;
-    
+        const pathsToTry = [
+            path.join(baseDir, folder, id, `${id}${suffix}`), // Strict
+            path.join(baseDir, folder, `${id}${suffix}`),    // Shallow
+            path.join(baseDir, folder, id.replace(/^spotify_/, ''), `${id.replace(/^spotify_/, '')}${suffix}`), // Stripped strict
+            path.join(baseDir, folder, `${id.replace(/^spotify_/, '')}${suffix}`), // Stripped shallow
+        ];
+
+        // Also try adding spotify_ prefix if not present
         if (!id.startsWith('spotify_')) {
-            const prefixedStrictPath = path.join(baseDir, folder, `spotify_${id}`, `spotify_${id}${suffix}`);
-            const prefixedShallowPath = path.join(baseDir, folder, `spotify_${id}${suffix}`);
-            if (fs.existsSync(prefixedStrictPath)) return prefixedStrictPath;
-            if (fs.existsSync(prefixedShallowPath)) return prefixedShallowPath;
+            pathsToTry.push(path.join(baseDir, folder, `spotify_${id}`, `spotify_${id}${suffix}`));
+            pathsToTry.push(path.join(baseDir, folder, `spotify_${id}${suffix}`));
         }
 
-        return strictPath; // Default fallback
+        for (const p of pathsToTry) {
+            if (fs.existsSync(p)) return p;
+        }
+
+        return pathsToTry[0]; // Default fallback
     }
 
     // Map stage IDs to their output files using the resolver
@@ -68,6 +67,11 @@ export async function GET(
                     }
                 }
             } catch { /* skip */ }
+        } else {
+            // Diagnostic logging for development
+            if (process.env.NODE_ENV === 'development') {
+                console.warn(`[Results API] Missing artifact for ${stageId}: ${filePath}`);
+            }
         }
     }
 

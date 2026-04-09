@@ -101,6 +101,7 @@ const validateStageGating = (stageId: StageId, results: Record<string, unknown>)
             if (!results.transcript) return { valid: false, missing: "Transcript", type: "error" };
             break;
         case "summary":
+            if (results.summary) return { valid: true }; // Rescue path: if we have a summary, it's valid
             if (!results.refine && !results.transcript) return { valid: false, missing: "Refined Transcript", type: "error" };
             break;
         case "insights":
@@ -299,7 +300,15 @@ export default function SourceMissionControl() {
                     // Sync Completed Stages & Clearing Execution State
                     if (updatedSource.completedStages && Array.isArray(updatedSource.completedStages)) {
                         const newCompleted = new Set(updatedSource.completedStages as StageId[]);
-                        setCompletedStages(newCompleted);
+                        
+                        // STABILITY FIX: During an active local run, MERGE instead of overwrite
+                        // to prevent "disappearing" stages if the DB update has a slight delay.
+                        setCompletedStages(prev => {
+                            if (isRunningAll) {
+                                return new Set([...Array.from(prev), ...Array.from(newCompleted)]);
+                            }
+                            return newCompleted;
+                        });
                         
                         // Clear the active spinner if this stage just finished remotely
                         if (executingStageRef.current && newCompleted.has(executingStageRef.current)) {
@@ -911,30 +920,42 @@ export default function SourceMissionControl() {
                 // Load actual stage result data from disk
                 const res = await fetch(`/api/sources/${id}/results`);
                 const data = await res.json();
-                if (data && data.results) {
-                    setStageResults(data.results);
-                }
+                
+                // STABILITY: Calculate merged result set once to ensure atomic Truth Audit
+                const currentResults = await new Promise<Record<string, any>>(resolve => {
+                    setStageResults(prev => {
+                        const merged = { ...prev, ...(data?.results || {}) };
+                        resolve(merged);
+                        return merged;
+                    });
+                });
+
                 // ════ TRUTH AUDIT ════
-                // If a stage is marked completed in DB but has no artifact on disk,
+                // If a stage is marked completed in DB but has no artifact on disk AND we haven't seen it,
                 // remove it from the local completion set to allow a re-run.
-                if (data && data.results) {
-                    setCompletedStages(prev => {
-                        const validated = new Set(Array.from(prev))
-                        const criticalArtifactStages: StageId[] = ["transcript", "summary", "insights", "angle", "draft", "qa", "socialise"]
-                        
-                        criticalArtifactStages.forEach(sid => {
-                            if (data.results[sid]) {
-                                // Force topological validation to prevent ghost completions from stale disk artifacts
-                                const gate = validateStageGating(sid, data.results);
-                                if (gate.valid) {
-                                    validated.add(sid) // Add if artifact exists and dependencies are met
-                                } else {
-                                    validated.delete(sid) // Drop if upstream dependency is missing
-                                }
-                            } else if (prev.has(sid)) {
-                                validated.delete(sid) // Remove if artifact missing but DB had it
+                setCompletedStages(prev => {
+                    const validated = new Set(Array.from(prev))
+                    const criticalArtifactStages: StageId[] = ["transcript", "summary", "insights", "angle", "draft", "qa", "socialise"]
+                    
+                    criticalArtifactStages.forEach(sid => {
+                        // We check the computed merged results
+                        const hasArtifact = currentResults[sid];
+
+                        if (hasArtifact) {
+                            // Force topological validation to prevent ghost completions from stale disk artifacts
+                            const gate = validateStageGating(sid, currentResults);
+                            if (gate.valid) {
+                                validated.add(sid) 
+                            } else if (!isRunningAll) {
+                                validated.delete(sid) 
                             }
-                        })
+                        } else if (prev.has(sid) && !isRunningAll) {
+                            // Only delete if NOT running AND we are absolutely sure it's missing
+                            validated.delete(sid) 
+                        }
+                    })
+
+
                         
                         // If socialise is done, ensure the whole pipeline is effectively closed
                         if (validated.has("socialise")) {
@@ -943,9 +964,9 @@ export default function SourceMissionControl() {
                         
                         return validated
                     })
-                }
 
                 // Caching enhancement: try loading from localStorage first for immediate UI
+
                 const cachedDqm = localStorage.getItem(`dqm_${id}`)
                 if (cachedDqm) {
                     try {
@@ -993,6 +1014,11 @@ export default function SourceMissionControl() {
         // Ensure transcript stage shows as completed if status is retrieved
         if (stage.id === "transcript" && (tStatus === "transcribed" || tStatus === "rescued_text" || tStatus === "unavailable")) return "completed"
         
+        // Logical Gate: Summary becomes active when transcript is done
+        if (stage.id === "summary" && (completedStages.has("transcript") || tStatus === "transcribed" || tStatus === "rescued_text")) {
+             if (!completedStages.has("summary")) return "active";
+        }
+
         // Force angle to be active if insights are done - handles ghost stage blockage
         if (stage.id === "angle" && (completedStages.has("insights") || activeVisibleIndex === index)) return "active"
         
@@ -1495,24 +1521,24 @@ export default function SourceMissionControl() {
                                 <div className="flex items-center justify-between mb-4">
                                     <h2 className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-widest font-serif">{t("pipelineStages")}</h2>
                                     {activeIndex < STAGES.length && (
-                                                <Button
-                                                    variant="default"
-                                                    size="sm"
-                                                    className={cn(
-                                                        "gap-1.5 h-8 text-[12px] rounded-lg font-bold transition-all duration-300 border-none",
-                                                        isRunningAll ? "bg-emerald-500/90 text-white animate-pulse-vibrant opacity-60" : "bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/10"
-                                                    )}
-                                                    onClick={() => runFullPipeline()}
-                                                    disabled={isRunningAll || !!executingStage}
-                                                >
-                                                    {isRunningAll ? (
-                                                        <><RefreshCw className="w-5 h-5 text-white animate-spin-slow" /> <span className="dots-animate">{t("processing")}</span></>
-                                                    ) : activeIndex > 0 ? (
-                                                        <>{t("continuePipeline")}</>
-                                                    ) : (
-                                                        <><Play className="w-3 h-3 fill-current" /> {t("runPipeline")}</>
-                                                    )}
-                                                </Button>
+                                                    <Button
+                                                        variant="default"
+                                                        size="sm"
+                                                        className={cn(
+                                                            "gap-1.5 h-8 text-[12px] rounded-lg font-bold transition-all duration-300 border-none",
+                                                            isRunningAll ? "bg-emerald-500/90 text-white animate-pulse-vibrant opacity-60" : "bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/10"
+                                                        )}
+                                                        onClick={() => runFullPipeline()}
+                                                        disabled={isRunningAll || !!executingStage}
+                                                    >
+                                                        {isRunningAll ? (
+                                                            <><RefreshCw className="w-[14px] h-[14px] text-white animate-spin-slow" /> <span className="dots-animate">{t("processing")}</span></>
+                                                        ) : activeIndex > 0 ? (
+                                                            <>{t("continuePipeline")}</>
+                                                        ) : (
+                                                            <><Play className="w-[14px] h-[14px] fill-current" /> {t("runPipeline")}</>
+                                                        )}
+                                                    </Button>
                                             )}
                                         </div>
     
@@ -1670,9 +1696,9 @@ export default function SourceMissionControl() {
                                                                      disabled={isRunningAll || !!executingStage}
                                                                  >
                                                                      {isRunningAll || executingStage === "angle" ? (
-                                                                         <><RefreshCw className="w-3.5 h-3.5 text-white animate-spin-slow"/> <span className="dots-animate">Processing</span></>
+                                                                         <><RefreshCw className="w-[14px] h-[14px] text-white animate-spin-slow"/> <span className="dots-animate">Processing</span></>
                                                                      ) : (
-                                                                         <><Play className="w-3.5 h-3.5 fill-current"/> Continue Pipeline</>
+                                                                         <><Play className="w-[14px] h-[14px] fill-current"/> Continue Pipeline</>
                                                                      )}
                                                                 </Button>
                                                             </div>
