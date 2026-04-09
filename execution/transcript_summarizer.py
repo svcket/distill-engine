@@ -90,11 +90,11 @@ def generate_summary(transcript_path: str, output_path: str, lang: str = "en") -
     except Exception as e:
         raise e
 
-def infer_title_from_summary(summary_text: str, lang: str = "en") -> str:
+def infer_source_name(text: str, lang: str = "en") -> str:
     """
-    Cognitive Identity Recovery: use the summary to infer a high-fidelity title.
+    Cognitive Identity Recovery: use summary or description to infer a high-fidelity title.
     """
-    if not summary_text or len(summary_text) < 50:
+    if not text or len(text) < 10:
         return None
 
     api_key = os.getenv("OPENAI_API_KEY")
@@ -107,8 +107,8 @@ def infer_title_from_summary(summary_text: str, lang: str = "en") -> str:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": f"You are a professional editorial curator at Distill. Your goal is to infer an accurate, descriptive, and concise title (max 70 characters) for a podcast episode or article based on its summary. Ensure the title is clear and punchy. Output ONLY the title text, no quotes or metadata. Language: {lang}"},
-                {"role": "user", "content": f"Summarized Content:\n\n{summary_text[:5000]}"}
+                {"role": "system", "content": f"You are a professional editorial curator at Distill. Your goal is to infer an accurate, descriptive, and concise title (max 70 characters) for a podcast episode or article based on its content summary or description. Ensure the title is clear and punchy. Output ONLY the title text, no quotes or metadata. Language: {lang}"},
+                {"role": "user", "content": f"Input Content:\n\n{text[:5000]}"}
             ],
             temperature=0.5
         )

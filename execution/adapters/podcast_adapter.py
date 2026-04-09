@@ -23,7 +23,8 @@ def is_generic_title(title: str) -> bool:
         "podcast episode", "episode", "podcast", "full episode", 
         "spotify - web player", "spotify \u2013 web player", "page not found",
         "unknown", "untitled", "direct audio source", "spotify",
-        "listen to episodes", "play on spotify", "404", "error", "forbidden", "access denied"
+        "listen to episodes", "play on spotify", "404", "error", "forbidden", "access denied",
+        "unable to generate title", "missing summary content", "missing metadata", "title extraction failed"
     ]
     t_lower = title.lower().strip()
     # Check for exact matches in generic terms

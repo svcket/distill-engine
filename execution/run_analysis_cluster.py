@@ -13,11 +13,10 @@ from typing import Dict, Any
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from refine_transcript import refine_source_transcript
-from transcript_summarizer import summarize_transcript
+from transcript_summarizer import summarize_transcript, infer_source_name
 from build_insight_packet import generate_packet_orchestrator
 from insight_extractor import generate_insights_orchestrator
 from adapters.podcast_adapter import is_generic_title
-from transcript_summarizer import infer_title_from_summary
 
 # ─── Content Quality Gate ─────────────────────────────────────────────────────
 
@@ -222,19 +221,32 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
                                 print(f"[{source_id}] Cluster Identity: SCRAPE RECOVERY -> {clean}")
                 except Exception: pass
 
-            # STRIKE 2: Cognitive Recovery (LLM-based naming from summary)
-            # Only run if Strike 1 failed and we have a valid summary.
+            # STRIKE 2: Cognitive Recovery (LLM-based naming from summary or description)
+            # Only run if Strike 1 failed.
             current_title = metadata.get("title", "")
-            if (not current_title or is_generic_title(current_title)) and results.get("summary"):
-                summary_data = results["summary"]
-                summary_text = summary_data.get("summary") if isinstance(summary_data, dict) else ""
+            if not current_title or is_generic_title(current_title):
+                # 1. Choose the best available source text for inference
+                summary_data = results.get("summary", {})
+                summary_text = summary_data.get("summary", "") if isinstance(summary_data, dict) else ""
                 
-                if summary_text and "[Analysis Rescue Active]" not in summary_text:
-                    inferred = infer_title_from_summary(summary_text, lang)
-                    if inferred:
+                # If summary is missing or is just an error message, fallback to raw description
+                source_text = ""
+                if summary_text and "[METADATA RESCUE]" not in summary_text and "[Analysis Rescue Active]" not in summary_text:
+                    source_text = summary_text
+                else:
+                    source_text = metadata.get("description", "")
+                
+                # 2. Trigger Inference if we have valid source text
+                if source_text and len(source_text) > 30:
+                    inferred = infer_source_name(source_text, lang)
+                    
+                    # 3. Final Validation: Don't allow LLM to return generic failure strings
+                    if inferred and not is_generic_title(inferred):
                         metadata["title"] = inferred
                         metadata["is_shell"] = False
                         print(f"[{source_id}] Cluster Identity: COGNITIVE RECOVERY -> {inferred}")
+                    else:
+                        print(f"[{source_id}] Cluster Identity: COGNITIVE RECOVERY FAILED (Generic or empty result)")
 
     except Exception as e:
         print(f"[{source_id}] Metadata recovery failed: {str(e)}", file=sys.stderr)
