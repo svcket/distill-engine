@@ -35,7 +35,7 @@ export async function GET() {
             return NextResponse.json({ drafts: [] })
         }
 
-        const drafts: any[] = []
+        const drafts: Record<string, unknown>[] = []
 
         function decodeHtml(html: string) {
             if (!html) return html;

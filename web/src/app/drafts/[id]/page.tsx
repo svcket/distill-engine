@@ -223,14 +223,14 @@ export default function DraftStudioPage() {
                         </CardHeader>
                         <CardContent>
                             <ul className="space-y-3">
-                                {strategy.working_titles?.map((title: string, i: number) => (
-                                    <li key={i} className="flex gap-2 text-sm">
-                                        <span className="text-brand shrink-0 mt-0.5 font-bold">{i + 1}.</span>
-                                        <span className="font-medium">{title}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </CardContent>
+                                {blueprint.sections?.map((section: { title: string; content: string }, idx: number) => (
+                            <div key={idx} className="space-y-4 pt-6 border-t border-border/50 first:pt-0 first:border-0">
+                                <h3 className="text-xl font-serif font-semibold">{section.title}</h3>
+                                <div className="prose prose-sm prose-zinc dark:prose-invert max-w-none">
+                                    {section.content}
+                                </div>
+                            </div>
+                        ))}</CardContent>
                     </Card>
 
                     <Card>
@@ -306,7 +306,7 @@ export default function DraftStudioPage() {
 
                     <div className="grid gap-4">
                         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                        {blueprint.sections?.map((section: any, idx: number) => (
+                        {blueprint.sections?.map((section: unknown, idx: number) => (
                             <Card key={idx}>
                                 <CardHeader className="pb-3 flex flex-row items-center justify-between">
                                     <CardTitle className="text-base flex items-center gap-2">

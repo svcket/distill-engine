@@ -20,7 +20,7 @@ import urllib.request
 import urllib.parse
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from dataclasses import dataclass
 from pathlib import Path
 

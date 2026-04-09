@@ -23,7 +23,7 @@ export async function POST(request: Request) {
         // In a real scenario, we might want to preserve the metadata
         // For now, we update the data.content field in the JSON file
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let existingData: any = {}
+        let existingData: Record<string, unknown> = {}
         if (fs.existsSync(draftPath)) {
             existingData = JSON.parse(fs.readFileSync(draftPath, 'utf8'))
         }

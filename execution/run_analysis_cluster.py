@@ -7,7 +7,7 @@ import time
 import requests
 import html
 import traceback
-from typing import Dict, Any
+# No unused typing imports
 
 # Ensure local imports work by adding directory to path immediately
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
