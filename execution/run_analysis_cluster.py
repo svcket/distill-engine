@@ -4,9 +4,6 @@ import json
 import os
 import re
 import time
-import traceback
-import requests
-import html
 from typing import Dict, Any
 
 # Ensure local imports work by adding directory to path immediately
@@ -118,7 +115,20 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             results["summary"] = summary_result
         except Exception as e:
             print(f"[{source_id}] Summary stage failed: {e}", file=sys.stderr)
-            results["summary"] = {"status": "rescued", "summary": f"⚠️ [METADATA RESCUE] Summary extraction failed ({e})"}
+            rescue_msg = f"⚠️ [METADATA RESCUE] Summary extraction failed ({e})"
+            results["summary"] = {"status": "rescued", "summary": rescue_msg}
+            
+            # HARDENING: We MUST write the summary artifact even in rescue mode
+            # to prevent downstream "No summary artifact found" errors in the parallel stages.
+            try:
+                summary_dir = os.path.join(base, ".tmp", "summaries")
+                os.makedirs(summary_dir, exist_ok=True)
+                summary_path = os.path.join(summary_dir, f"{source_id}_summary.json")
+                with open(summary_path, 'w', encoding='utf-8') as f:
+                    json.dump({"summary": rescue_msg, "status": "rescued", "source_id": source_id}, f, indent=2)
+                print(f"[{source_id}] Rescued summary artifact persisted to disk.", flush=True)
+            except Exception as io_err:
+                print(f"[{source_id}] Critical Failure: Could not write rescued summary: {io_err}", file=sys.stderr)
 
         # 3. Packet / Density Mapping (Hidden)
         try:
