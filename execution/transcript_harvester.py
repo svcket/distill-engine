@@ -43,6 +43,7 @@ except ImportError:
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from monitoring import log_rescue_attempt
 from supabase_utils import upload_artifact
+from adapters.podcast_adapter import is_generic_title
 
 def get_audio_duration(filepath: str) -> float:
     """Helper to get audio duration using ffprobe/ffmpeg."""
@@ -365,27 +366,7 @@ def fetch_youtube_transcript(source_id: str, output_dir: str, max_segments: int 
         "chunk_count": len(transcript_list),
         "segments": transcript_list[:100]
     }
-
-
-def is_generic_title(title: str) -> bool:
-    """Check if the provided title is a generic platform placeholder."""
-    if not title: return True
-    generic_terms = [
-        "podcast episode", "episode", "podcast", "full episode", 
-        "spotify - web player", "spotify \u2013 web player", "page not found",
-        "unknown", "untitled", "direct audio source", "spotify",
-        "listen to episodes", "play on spotify", "404", "error", "forbidden", "access denied"
-    ]
-    t_lower = title.lower().strip()
-    # Check for exact matches in generic terms
-    if any(term == t_lower for term in generic_terms): return True
-    
-    # Check for specific suspicious substrings
-    suspicious_substrings = ["web player", "webplayer", "page not found", "404", "access denied"]
-    if any(sub in t_lower for sub in suspicious_substrings): return True
-    
-    # Check for very short or purely numeric titles
-    return len(t_lower) < 3 or t_lower.isdigit()
+# Note: is_generic_title is imported from adapters.podcast_adapter above.()
 
 
 

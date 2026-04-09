@@ -6,7 +6,7 @@ import subprocess
 # Ensure we can import from execution/
 sys.path.append(os.path.join(os.getcwd(), "execution"))
 
-from transcript_harvester import is_generic_title
+from adapters.podcast_adapter import is_generic_title
 
 def test_generic_titles():
     # Test cases for the guard
