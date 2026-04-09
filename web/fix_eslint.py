@@ -1,17 +1,40 @@
 import json
 import subprocess
 import os
+import shutil
 
 def get_eslint_errors():
     """Fetch current ESLint errors in JSON format."""
-    res = subprocess.run(["npx", "eslint", "src/", "--format", "json"], capture_output=True, text=True)
+    npx = shutil.which("npx")
+    if not npx:
+        raise RuntimeError("npx executable not found in PATH")
+
+    try:
+        res = subprocess.run(
+            [npx, "eslint", "src/", "--format", "json"], 
+            capture_output=True, 
+            text=True,
+            timeout=60
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("ESLint execution timed out (60s)")
+
+    if res.returncode not in (0, 1):
+        raise RuntimeError(f"ESLint failed (exit {res.returncode}): {res.stderr}")
+
     try:
         return json.loads(res.stdout)
-    except Exception:
+    except json.JSONDecodeError:
+        # If output is empty or invalid but process succeeded/failed normally, return empty
         return []
 
 def main():
-    errors = get_eslint_errors()
+    try:
+        errors = get_eslint_errors()
+    except Exception as e:
+        print(f"Error fetching ESLint report: {e}")
+        return
+
     if not errors:
         print("No ESLint errors found.")
         return

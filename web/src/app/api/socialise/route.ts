@@ -14,7 +14,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { transcriptId, language } = await request.json()
+    const body = await request.json()
+    const transcriptId = body.transcriptId || body.transcript_id || body.sourceId || body.source_id || body.id
+    const { language } = body
     const sourceId = transcriptId
 
     if (!sourceId) {
@@ -105,7 +107,12 @@ export async function POST(request: Request) {
         })
 
         if (!success) {
-            return NextResponse.json({ error: "Thread generation failed", details: error }, { status: 500 })
+            console.error(`[Social API] Thread generation failed for ${sourceId}:`, error)
+            return NextResponse.json({ 
+                error: "Thread generation failed", 
+                details: error,
+                rawOutput: data // Include whatever we managed to capture
+            }, { status: 500 })
         }
 
         await withRetry(() => prisma.source.update({

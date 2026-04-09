@@ -149,8 +149,14 @@ export async function POST(request: Request) {
 
         // Mark a stage as completed
         if (body.action === 'complete_stage') {
-            const { sourceId, stageId } = body
-            const source = await prisma.source.findUnique({ where: { id: sourceId } })
+            const { sourceId, source_id, stageId } = body
+            const targetId = source_id || sourceId
+            
+            if (!targetId) {
+                return NextResponse.json({ error: "Missing 'source_id' parameter." }, { status: 400 })
+            }
+
+            const source = await prisma.source.findUnique({ where: { id: targetId } })
             
             if (source) {
                 // Verify ownership or ADMIN role
@@ -163,7 +169,7 @@ export async function POST(request: Request) {
                 if (!stages.includes(stageId)) {
                     stages.push(stageId)
                     await prisma.source.update({
-                        where: { id: sourceId },
+                        where: { id: targetId },
                         data: { completedStages: stages }
                     })
                 }

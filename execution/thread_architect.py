@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import logging
 import argparse
@@ -75,6 +76,7 @@ Return ONLY the JSON structure."""
         except Exception as e:
             logger.error(f"Error generating thread: {e}")
             return {
+                "status": "failed",
                 "error": str(e),
                 "hook": "Error generating thread hook.",
                 "thread": [],
@@ -109,8 +111,12 @@ def main():
     if args.output:
         with open(args.output, "w") as f:
             json.dump(thread_data, f, indent=2)
-    else:
-        print(json.dumps(thread_data, indent=2))
+    
+    # Always print as fallback for the runner to capture
+    print(json.dumps(thread_data))
+    
+    if thread_data.get("status") == "failed":
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

@@ -43,7 +43,7 @@ def get_git_diff(compare_with: Optional[str] = None, staged: bool = False) -> st
         return result.stdout
     except subprocess.CalledProcessError as e:
         print(f"Error: Git diff failed (Exit {e.returncode}):\n{e.stderr}", file=sys.stderr)
-        return ""
+        return None
 
 # ─── Analysis Engine ──────────────────────────────────────────────────────────
 
@@ -53,7 +53,7 @@ def analyze_diff(diff_text: str, project_hint: str = "general") -> Optional[str]
         return "No changes detected in Git diff."
 
     if "OPENAI_API_KEY" not in os.environ:
-        return "Error: OPENAI_API_KEY not found in environment."
+        raise RuntimeError("OPENAI_API_KEY not found in environment.")
 
     client = OpenAI()
     
@@ -75,7 +75,7 @@ def analyze_diff(diff_text: str, project_hint: str = "general") -> Optional[str]
         )
         return completion.choices[0].message.content
     except Exception as e:
-        return f"Audit Error: {str(e)}"
+        raise RuntimeError(f"Audit Error: {str(e)}") from e
 
 # ─── Main Interface ───────────────────────────────────────────────────────────
 
@@ -91,12 +91,18 @@ def main():
     # 1. Capture Changes
     diff = get_git_diff(compare_with=args.base, staged=args.staged)
     
+    if diff is None:
+        sys.exit(1)
     if not diff:
         print("No changes found to audit.")
         sys.exit(0)
 
     # 2. Run Audit
-    report = analyze_diff(diff, project_hint=args.project)
+    try:
+        report = analyze_diff(diff, project_hint=args.project)
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
 
     # 3. Handle Output
     if args.output:

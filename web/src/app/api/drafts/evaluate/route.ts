@@ -29,7 +29,9 @@ export async function POST(request: Request) {
     }
 
     try {
-        const { sourceId, language } = await request.json()
+        const body = await request.json()
+        const sourceId = body.sourceId || body.source_id || body.transcriptId || body.id
+        const { language } = body
         
         if (!sourceId) {
             return NextResponse.json({ error: "Missing sourceId" }, { status: 400 })

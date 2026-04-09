@@ -46,6 +46,21 @@ const DQMCard = ({
     // or we can pass a simple prop if needed, but per the plan we move it to header.
     const isQAing = !dqm && variant === "collapsed"; 
     const isCollapsed = variant === "collapsed"
+
+    const totalScore = dqm?.scores ? (dqm.scores.total_score ?? dqm.scores.publishability ?? 0) : 0
+    const clampedScore = Math.max(0, Math.min(100, totalScore))
+    
+    // Tier helpers to prevent duplicated logic
+    const getTierClass = (score: number) => {
+        if (score >= 80) return "bg-emerald-500"
+        if (score >= 60) return "bg-amber-500"
+        return "bg-orange-500"
+    }
+    const getTextTierClass = (score: number) => {
+        if (score >= 80) return "text-emerald-600"
+        if (score >= 60) return "text-amber-600"
+        return "text-orange-500"
+    }
     return (
         <TooltipProvider>
             <div className="space-y-8">
@@ -92,11 +107,9 @@ const DQMCard = ({
                                     <div 
                                         className={cn(
                                             "h-full rounded-full transition-all duration-1000 ease-out",
-                                            ((dqm && dqm.scores) 
-                                                ? ((dqm.scores.total_score ?? dqm.scores.publishability ?? 0) >= 80 ? "bg-emerald-500" : (dqm.scores.total_score ?? dqm.scores.publishability ?? 0) >= 60 ? "bg-amber-500" : "bg-orange-500")
-                                                : "bg-muted")
+                                            dqm && dqm.scores ? getTierClass(clampedScore) : "bg-muted"
                                         )} 
-                                        style={{ width: `${(dqm && dqm.scores) ? (dqm.scores.total_score ?? dqm.scores.publishability ?? 0) : 0}%` } as React.CSSProperties} 
+                                        style={{ width: `${clampedScore}%` } as React.CSSProperties} 
                                     />
                             </div>
                         )}
@@ -107,7 +120,7 @@ const DQMCard = ({
                                 <div className="flex items-center gap-2 px-1">
                                     <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse shrink-0" />
                                     <p className="text-[13px] font-bold text-muted-foreground uppercase tracking-wider">
-                                        {isQAing ? "Analyzing matrix..." : "Pending analysis"}
+                                        Analyzing matrix...
                                     </p>
                                 </div>
                                 <div className="h-[1px] w-full bg-border/60 mt-3" />
@@ -228,7 +241,7 @@ const DQMCard = ({
                                         </div>
                                         <span className={cn(
                                             "text-sm font-bold",
-                                            m.score >= 80 ? "text-emerald-600" : m.score >= 60 ? "text-amber-600" : "text-orange-500"
+                                            getTextTierClass(m.score)
                                         )}>{m.score}</span>
                                     </div>
                                 ))}

@@ -928,6 +928,10 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
                     print(f"[{source_id}] {err_msg}")
                     raise Exception(err_msg) # RAISE to trigger the rescue catch
 
+                if not audio_file_path:
+                    # Construct safe path if yt-dlp produced nothing
+                    audio_file_path = f"{temp_audio}.{ext}"
+
                 with open(audio_file_path, "wb") as f:
                     for chunk in resp.iter_content(chunk_size=128 * 1024): # Larger chunks
                         if chunk: f.write(chunk)
@@ -1529,6 +1533,8 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
     # Update metadata with resolved type for strategy determination
     metadata["source_type"] = source_type
     metadata["url"] = source_url
+    if lang:
+        metadata["language"] = lang
     
     output_dir = os.path.join(base, ".tmp", "transcripts", source_id)
     os.makedirs(output_dir, exist_ok=True)
@@ -1670,7 +1676,7 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
                         if mirror_url:
                              print(f"[{source_id}] PIVOT: Bounty Hunt successful. Transcribing mirror...")
                              try:
-                                 return fetch_transcript(source_id, source_url=mirror_url, source_type="youtube", max_segments=max_segments)
+                                 return fetch_transcript(source_id, source_url=mirror_url, source_type="youtube", max_segments=max_segments, lang=lang)
                              except: pass
 
                     # 3. UNIVERSAL SCRAPE PIVOT (Podtail etc)

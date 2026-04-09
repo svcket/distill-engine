@@ -32,7 +32,8 @@ def _assess_content_quality(source_id: str, base: str) -> tuple:
         return False, "Transcript file is empty. No content to analyse."
 
     # Count real words (non-URL tokens)
-    url_pattern = re.compile(r"https?://\S+|www\.\S+|\S+\.\S+/\S*")
+    # Tighter regex to avoid false-positive dot/slash matches
+    url_pattern = re.compile(r"https?://\S+|www\.\S+|[a-zA-Z0-9-]+\.(com|org|net|io|co|edu|gov|info|biz|me)/\S*")
     tokens = raw.split()
     url_tokens  = [t for t in tokens if url_pattern.match(t)]
     word_tokens = [t for t in tokens if not url_pattern.match(t) and len(t) > 1]
@@ -152,10 +153,10 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             "source_id": source_id,
             "duration": time.time() - start_time,
             "results": {
-                "refine":   {"status": "success", "chunk_count": 0},
-                "summary":  {"status": "success", "summary": f"[Analysis Rescue Active]\n\nThe engine was unable to generate a high-fidelity summary for this source ({clean_error}), but the following rescued metadata was preserved."},
-                "packet":   {"status": "success"},
-                "insights": {"status": "success", "insights": ["Metadata rescue initiated."]}
+                "refine":   {"status": "skipped", "chunk_count": 0},
+                "summary":  {"status": "rescued", "summary": f"[Analysis Rescue Active]\n\nThe engine was unable to generate a high-fidelity summary for this source ({clean_error}), but the following rescued metadata was preserved."},
+                "packet":   {"status": "skipped"},
+                "insights": {"status": "skipped", "insights": ["Metadata rescue initiated."]}
             },
             "is_rescue": True,
             "error_detail": clean_error

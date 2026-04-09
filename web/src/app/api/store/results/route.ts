@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url)
-    const sourceId = searchParams.get('sourceId')
+    const sourceId = searchParams.get('sourceId') || searchParams.get('source_id')
 
     if (!sourceId) {
         return NextResponse.json({ error: 'Missing sourceId' }, { status: 400 })

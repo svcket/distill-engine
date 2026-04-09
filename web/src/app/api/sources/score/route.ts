@@ -27,10 +27,14 @@ export async function POST(request: Request) {
     const userId = session.user.id;
 
     try {
-        const { sourceId } = await request.json()
+        const body = await request.json()
+        const sourceId = body.source_id || body.sourceId
 
         if (!sourceId) {
-            return NextResponse.json({ error: "Missing 'sourceId' parameter." }, { status: 400 })
+            return NextResponse.json({ 
+                error: "Missing 'source_id' parameter.",
+                details: "Expected either 'source_id' or 'sourceId' in the request body."
+            }, { status: 400 })
         }
 
         const executionDir = path.resolve(process.cwd(), '../execution')

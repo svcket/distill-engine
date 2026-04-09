@@ -262,7 +262,7 @@ export default function SourceMissionControl() {
             await fetch("/api/store", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "complete_stage", source_id: id, stageId })
+                body: JSON.stringify({ action: "complete_stage", sourceId: id, stageId })
             })
         } catch (e) {
             console.error(`Failed to persist completion for ${stageId}:`, e)

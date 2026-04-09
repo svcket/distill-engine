@@ -12,7 +12,9 @@ export async function POST(request: Request) {
     const userId = session.user.id
 
     try {
-        const { sourceId, language } = await request.json()
+        const body = await request.json()
+        const sourceId = body.sourceId || body.source_id || body.transcriptId || body.id
+        const { language } = body
         
         // SECURITY: Verify ownership before spawning compute-heavy worker
         const source = await withRetry(() => prisma.source.findUnique({

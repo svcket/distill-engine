@@ -11,9 +11,12 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    print("Error: Missing Supabase credentials in .env")
-    exit(1)
+def _require_supabase_env():
+    """Verify Supabase credentials exist before performing operations."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise RuntimeError("Missing Supabase credentials (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY) in .env")
+
+# Removed top-level exit(1) to prevent module import failures in non-DB contexts
 
 def recover_title_from_text(text, current_title):
     if not text or len(text) < 100: return None
@@ -40,6 +43,7 @@ GENERIC_TITLES_DENYLIST = ["Podcast Episode", "unknown", "untitled", "Episode"]
 
 def update_source_metadata(source_id, updates):
     """Update source metadata in Supabase via REST API."""
+    _require_supabase_env()
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -54,6 +58,7 @@ def update_source_metadata(source_id, updates):
         print(f"  -> DB Update success for {source_id}.")
 
 def repair_via_cloud_storage(refetch_all=False):
+    _require_supabase_env()
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -64,7 +69,7 @@ def repair_via_cloud_storage(refetch_all=False):
     url = f"{SUPABASE_URL}/rest/v1/Source"
     # Filter for generic titles in the list
     params = {
-        "or": "(title.eq.Podcast%20Episode,title.eq.unknown,title.eq.Episode)"
+        "or": "(title.eq.Podcast Episode,title.eq.unknown,title.eq.Episode)"
     }
     resp = requests.get(url, headers=headers, params=params, timeout=30)
     if resp.status_code != 200:

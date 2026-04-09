@@ -14,7 +14,9 @@ export async function POST(request: Request) {
     const userId = session.user.id
 
     try {
-        const { transcriptId, language } = await request.json()
+        const body = await request.json()
+        const transcriptId = body.transcriptId || body.transcript_id || body.sourceId || body.source_id || body.id
+        const { language } = body
 
         if (!transcriptId) {
             return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })

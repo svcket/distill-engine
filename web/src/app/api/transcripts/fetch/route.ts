@@ -23,7 +23,9 @@ export async function POST(request: Request) {
     const userId = session.user.id
 
     try {
-        const { url, sourceId, sourceType, language } = await request.json()
+        const body = await request.json()
+        const sourceId = body.sourceId || body.source_id || body.transcriptId || body.id
+        const { url, sourceType, language } = body
         let activeUrl = url
         let activeSourceType = sourceType
         
