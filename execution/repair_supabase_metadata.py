@@ -26,7 +26,12 @@ def recover_title_from_text(text, current_title):
             response_format={"type": "json_object"}
         )
         res = json.loads(response.choices[0].message.content)
-        return res.get("title")
+        new_title = res.get("title")
+        if new_title:
+             normalized = new_title.strip().lower()
+             if normalized in [t.lower() for t in GENERIC_TITLES_DENYLIST]:
+                 return None
+        return new_title
     except Exception as e:
         print(f"AI Recovery failed: {e}")
         return None
@@ -42,7 +47,7 @@ def update_source_metadata(source_id, updates):
         "Prefer": "return=minimal"
     }
     url = f"{SUPABASE_URL}/rest/v1/Source?id=eq.{source_id}"
-    resp = requests.patch(url, headers=headers, json=updates)
+    resp = requests.patch(url, headers=headers, json=updates, timeout=30)
     if resp.status_code not in (200, 201, 204):
         print(f"  -> DB Update failed for {source_id}: {resp.text}")
     else:
@@ -61,7 +66,7 @@ def repair_via_cloud_storage(refetch_all=False):
     params = {
         "or": "(title.eq.Podcast%20Episode,title.eq.unknown,title.eq.Episode)"
     }
-    resp = requests.get(url, headers=headers, params=params)
+    resp = requests.get(url, headers=headers, params=params, timeout=30)
     if resp.status_code != 200:
         print(f"Fetch failed: {resp.text}")
         return
@@ -70,9 +75,12 @@ def repair_via_cloud_storage(refetch_all=False):
     print(f"Attempting cloud repair/refetch for {len(sources)} sources...")
 
     import subprocess
+    import sys
+    from pathlib import Path
+
+    harvester_path = Path(__file__).parent / "transcript_harvester.py"
 
     for src in sources:
-        # Use ID or source_id (Prisma models can vary)
         source_id = src.get("id") or src.get("source_id")
         source_url = src.get("url")
         source_type = src.get("type") or "spotify"
@@ -82,16 +90,26 @@ def repair_via_cloud_storage(refetch_all=False):
         
         if refetch_all and source_url:
             print(f"  -> FORCED REFETCH: Triggering Harvester...")
-            harvest_cmd = ["python3", "transcript_harvester.py", "--source-id", source_id, "--url", source_url, "--source-type", source_type]
+            harvest_cmd = [sys.executable, str(harvester_path), "--source-id", source_id, "--url", source_url, "--source-type", source_type]
             try:
-                subprocess.run(harvest_cmd, capture_output=True, text=True, timeout=300)
+                h_res = subprocess.run(harvest_cmd, capture_output=True, text=True, timeout=300)
+                if h_res.returncode != 0:
+                    print(f"  -> Harvester crashed (Exit {h_res.returncode})")
+                
+                # Check JSON output for logic failures
+                try:
+                    h_out = json.loads(h_res.stdout)
+                    if h_out.get("is_failure"):
+                        print(f"  -> Harvester operational failure: {h_out.get('error_detail')}")
+                except:
+                    pass
                 print(f"  -> Harvester complete.")
             except Exception as e:
                 print(f"  -> Harvester failed: {e}")
 
         # Standard cloud storage recovery fallback
         storage_url = f"{SUPABASE_URL}/storage/v1/object/authenticated/transcripts/{source_id}/{source_id}_raw.json"
-        s_resp = requests.get(storage_url, headers=headers)
+        s_resp = requests.get(storage_url, headers=headers, timeout=30)
         
         if s_resp.status_code == 200:
             try:

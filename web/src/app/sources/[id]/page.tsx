@@ -74,13 +74,13 @@ interface SocialiseResult { hook?: string; hooks?: string[]; thread?: string[]; 
 type StageResultData = JudgeResult | TranscriptResult | RefineResult | SummaryResult | PacketResult | InsightsResult | StrategyResult | DraftResult | QAResult | SocialiseResult | Record<string, unknown>;
 
 const STAGES: WorkflowStage[] = [
-    { id: "judge", label: "Judge Alignment", description: "Enrich source metadata and evaluate against NorthStar Profile", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ sourceId: id }), hidden: true },
-    { id: "transcript", label: "Fetch Transcript", description: "Retrieve indexing data via Fast-Path or Whisper", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (id) => ({ sourceId: id }) },
-    { id: "refine", label: "Refine Context", description: "Denoise transcript and segment into logical chunks", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (id) => ({ transcriptId: id }), hidden: true },
-    { id: "cluster", label: "Analysis Cluster", description: "Unified high-performance analysis (Refine, Summary, Insights)", icon: Sparkles, apiEndpoint: "/api/pipeline/cluster", apiBody: (id) => ({ sourceId: id }), hidden: true },
-    { id: "summary", label: "Source Summary", description: "Concise summary and key framework identification", icon: FileText, apiEndpoint: "/api/transcripts/summary", apiBody: (id) => ({ transcriptId: id }) },
-    { id: "packet", label: "Density Mapping", description: "Identify high-signal segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcriptId: id }), hidden: true },
-    { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (id) => ({ transcriptId: id }) },
+    { id: "judge", label: "Judge Alignment", description: "Enrich source metadata and evaluate against NorthStar Profile", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (id) => ({ source_id: id }), hidden: true },
+    { id: "transcript", label: "Fetch Transcript", description: "Retrieve indexing data via Fast-Path or Whisper", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (id) => ({ source_id: id }) },
+    { id: "refine", label: "Refine Context", description: "Denoise transcript and segment into logical chunks", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (id) => ({ transcript_id: id }), hidden: true },
+    { id: "cluster", label: "Analysis Cluster", description: "Unified high-performance analysis (Refine, Summary, Insights)", icon: Sparkles, apiEndpoint: "/api/pipeline/cluster", apiBody: (id) => ({ source_id: id }), hidden: true },
+    { id: "summary", label: "Source Summary", description: "Concise summary and key framework identification", icon: FileText, apiEndpoint: "/api/transcripts/summary", apiBody: (id) => ({ transcript_id: id }) },
+    { id: "packet", label: "Density Mapping", description: "Identify high-signal segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (id) => ({ transcript_id: id }), hidden: true },
+    { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (id) => ({ transcript_id: id }) },
     { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (id, params) => ({ transcriptId: id, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (id) => ({ sourceId: id }) },
@@ -262,7 +262,7 @@ export default function SourceMissionControl() {
             await fetch("/api/store", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "complete_stage", sourceId: id, stageId })
+                body: JSON.stringify({ action: "complete_stage", source_id: id, stageId })
             })
         } catch (e) {
             console.error(`Failed to persist completion for ${stageId}:`, e)
@@ -352,7 +352,7 @@ export default function SourceMissionControl() {
                     const clusterRes = await fetch("/api/pipeline/cluster", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ sourceId: id, language: lang })
+                        body: JSON.stringify({ source_id: id, language: lang })
                     });
                     
                     if (!clusterRes.ok) {
@@ -593,9 +593,11 @@ export default function SourceMissionControl() {
                     let fullContent = "";
                     let buffer = "";
 
+                    let shouldAbortStream = false;
+
                     while (true) {
                         const { done, value } = await reader.read();
-                        if (done) break;
+                        if (done || shouldAbortStream) break;
 
                         buffer += decoder.decode(value, { stream: true });
                         const lines = buffer.split("\n");
@@ -634,6 +636,7 @@ export default function SourceMissionControl() {
                                     console.error("Streaming error chunk received:", parsed.message);
                                     setLogs(prev => [{ event: `ERROR: ${parsed.message}`, time: "Just now", status: "error" }, ...prev]);
                                     data = { status: "error", error: parsed.message } as unknown as StagePayload;
+                                    shouldAbortStream = true; 
                                     break; 
                                 } else if (parsed.type === "success" || parsed.status === "success" || (parsed as StagePayload).data || parsed.result) {
                                     data = parsed as StagePayload;
@@ -1421,11 +1424,15 @@ export default function SourceMissionControl() {
                                         Completed
                                     </Badge>
                                 )}
-                                {(stageResults.transcript as {result?: {used_url?: string}})?.result?.used_url?.includes('ytsearch') && (
-                                    <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20 uppercase tracking-widest text-[10px] h-5 px-2 font-bold animate-pulse">
-                                        Sourced via YouTube Search
-                                    </Badge>
-                                )}
+                                {(() => {
+                                    const tr = stageResults.transcript as { used_url?: string; result?: { used_url?: string }; data?: { used_url?: string } };
+                                    const usedUrl = tr?.used_url || tr?.result?.used_url || tr?.data?.used_url;
+                                    return usedUrl?.includes('ytsearch') ? (
+                                        <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20 uppercase tracking-widest text-[10px] h-5 px-2 font-bold animate-pulse">
+                                            Sourced via YouTube Search
+                                        </Badge>
+                                    ) : null;
+                                })()}
                             </div>
                             <h1 className="text-4xl font-bold tracking-tight text-foreground font-serif leading-tight max-w-4xl">
                                 {source.title}

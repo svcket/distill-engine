@@ -42,7 +42,7 @@ def get_git_diff(compare_with: Optional[str] = None, staged: bool = False) -> st
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return result.stdout
     except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to get git diff: {e.stderr}", file=sys.stderr)
+        print(f"Error: Git diff failed (Exit {e.returncode}):\n{e.stderr}", file=sys.stderr)
         return ""
 
 # ─── Analysis Engine ──────────────────────────────────────────────────────────

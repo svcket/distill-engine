@@ -1414,9 +1414,15 @@ def discover_true_duration_from_page(url: str) -> Optional[int]:
                         h = re.search(r'(\d+)H', dur_str)
                         m = re.search(r'(\d+)M', dur_str)
                         s = re.search(r'(\d+)S', dur_str)
-                        total = (int(h.group(1)) * 3600 if h else 0) + \
-                                (int(m.group(1)) * 60 if m else 0) + \
-                                (int(s.group(1)) if s else 0)
+                        
+                        # Fallback for simple numeric duration strings ("3600")
+                        if not any([h, m, s]) and dur_str.isdigit():
+                            total = int(dur_str)
+                        else:
+                            total = (int(h.group(1)) * 3600 if h else 0) + \
+                                    (int(m.group(1)) * 60 if m else 0) + \
+                                    (int(s.group(1)) if s else 0)
+                                    
                         if total > 0: return total
             except: continue
     except: pass

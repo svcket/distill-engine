@@ -141,7 +141,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return false
       }
     },
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       try {
         if (user) {
           console.log(`JWT: Hydrating token for user ${user.id}`)

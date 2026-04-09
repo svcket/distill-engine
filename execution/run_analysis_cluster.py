@@ -148,12 +148,12 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         # ABSOLUTE FINAL RESCUE: If analysis fails, return a stub success
         # to prevent the UI from halting on a completed transcription.
         final_payload = {
-            "status": "success",
+            "status": "rescued",
             "source_id": source_id,
             "duration": time.time() - start_time,
             "results": {
                 "refine":   {"status": "success", "chunk_count": 0},
-                "summary":  {"status": "success", "summary": f"[Analysis Rescue Active]\n\nThe engine was unable to generate a high-fidelity summary for this source ({clean_error}), but the following rescued metadata was preserved:\n\nLink: {source_id}"},
+                "summary":  {"status": "success", "summary": f"[Analysis Rescue Active]\n\nThe engine was unable to generate a high-fidelity summary for this source ({clean_error}), but the following rescued metadata was preserved."},
                 "packet":   {"status": "success"},
                 "insights": {"status": "success", "insights": ["Metadata rescue initiated."]}
             },

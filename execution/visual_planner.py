@@ -51,7 +51,7 @@ def plan_visuals(source_id: str, draft_path: str = None, execute: bool = False, 
     if os.environ.get("OPENAI_API_KEY"):
         try:
             client = OpenAI()
-            safe_lang = (lang or "en").strip()
+            safe_lang = (lang or "en").strip() or "en"
             if len(safe_lang) > 10 or not all(c.isalnum() or c in '-' for c in safe_lang):
                 safe_lang = "en"
 

@@ -56,12 +56,16 @@ async def repair_titles():
             show = result.get("show_name")
             
             if title and len(title) > 3:
+                normalized_title = title.strip().lower()
+                if normalized_title in [t.lower() for t in GENERIC_TITLES_DENYLIST]:
+                    print(f"[{source_id}] Recovered title is a placeholder: {title}. Skipping update.")
+                    continue
+                    
                 print(f"[{source_id}] Recovered: {title} | {show}")
                 await db.source.update(
                     where={"id": source_id},
                     data={
-                        "title": title,
-                        "creator": show or source.creator
+                        "title": title
                     }
                 )
             else:
