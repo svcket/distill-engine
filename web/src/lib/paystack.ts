@@ -34,12 +34,12 @@ export const payWithPaystack = (options: Omit<PaystackOptions, 'key' | 'onClose'
     ref: options.ref || '' + Math.floor(Math.random() * 1000000000 + 1),
     metadata: options.metadata,
     callback: (response: Record<string, unknown>) => {
-      console.log('Payment successful', response);
+      // console.log('Payment successful', response);
       // Refresh the page to pick up the new plan status from the session
       window.location.reload();
     },
     onClose: () => {
-      console.log('Window closed');
+      // console.log('Window closed');
     },
   });
 

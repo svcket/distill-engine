@@ -22,7 +22,8 @@ export async function POST(request: Request) {
         
         // In a real scenario, we might want to preserve the metadata
         // For now, we update the data.content field in the JSON file
-        let existingData: any = {}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let existingData: Record<string, unknown> = {}
         if (fs.existsSync(draftPath)) {
             existingData = JSON.parse(fs.readFileSync(draftPath, 'utf8'))
         }
@@ -39,8 +40,9 @@ export async function POST(request: Request) {
         fs.writeFileSync(draftPath, JSON.stringify(updatedData, null, 2))
 
         return NextResponse.json({ success: true, message: "Draft saved successfully" })
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[API Drafts Save Error]', error)
-        return NextResponse.json({ error: "Failed to save draft", details: error.message }, { status: 500 })
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return NextResponse.json({ error: "Failed to save draft", details: msg }, { status: 500 })
     }
 }

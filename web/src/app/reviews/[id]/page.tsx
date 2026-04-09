@@ -30,8 +30,8 @@ export default function ReviewPage() {
 
             router.push("/exports")
 
-        } catch (err: any) {
-            setError(err.message)
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : String(err))
         } finally {
             setIsExporting(false)
         }
@@ -98,7 +98,7 @@ export default function ReviewPage() {
                                     <div>
                                         <h4 className="font-medium text-sm text-orange-900">Stylistic Polish Removed Nuance</h4>
                                         <p className="text-sm text-orange-700 mt-1 mb-3">
-                                            The sentence <span className="italic">"Prompt-chains always break"</span> is slightly stronger than the source claim <span className="italic">"Prompt-chains are usually brittle in complex loops."</span>
+                                            The sentence <span className="italic">&quot;Prompt-chains always break&quot;</span> is slightly stronger than the source claim <span className="italic">&quot;Prompt-chains are usually brittle in complex loops.&quot;</span>
                                         </p>
                                         <div className="flex gap-2">
                                             <Button size="sm" variant="outline" className="h-7 text-xs bg-white">Accept Deviation</Button>

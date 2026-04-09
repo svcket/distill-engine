@@ -31,13 +31,14 @@ export async function POST(req: NextRequest) {
       // Optional: Log successful payment or update usage credits
       break
     default:
-      console.log(`Unhandled Paystack event: ${event}`)
+      // console.log(`Unhandled Paystack event: ${event}`)
   }
 
   return NextResponse.json({ received: true })
 }
 
-async function handleSubscriptionChange(data: any, plan: "free" | "pro") {
+interface WebhookData { customer: { email: string }; [key: string]: unknown; }
+async function handleSubscriptionChange(data: WebhookData, plan: "free" | "pro") {
   const email = data.customer.email
   
   const user = await prisma.user.findUnique({
@@ -59,6 +60,6 @@ async function handleSubscriptionChange(data: any, plan: "free" | "pro") {
         draftsGenerated: 0,
       }
     })
-    console.log(`Updated plan for ${email} to ${plan}`)
+    // console.log(`Updated plan for ${email} to ${plan}`)
   }
 }

@@ -1,32 +1,46 @@
 import { auth } from "@/auth"
-import { prisma } from "@/lib/prisma"
+import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import fs from 'fs'
 
+interface StagePayload {
+    status?: string;
+    segments?: Record<string, unknown>[];
+    json_path?: string;
+    text_path?: string;
+    duration?: number;
+    title?: string;
+    transcript_status?: string;
+    error_detail?: string;
+}
 
 export async function POST(request: Request) {
     const session = await auth()
     if (!session?.user?.id) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+    const userId = session.user.id
 
     try {
-        const { url, sourceId, sourceType } = await request.json()
+        const body = await request.json()
+        const sourceId = body.sourceId || body.source_id || body.transcriptId || body.id
+        const { url, sourceType, language } = body
         let activeUrl = url
         let activeSourceType = sourceType
         
         let activeTitle = ""
         
+        let dbSource: import("@prisma/client").Source | null = null
         // If url is missing, try to find it in the database
         if (sourceId) {
-            const source = await prisma.source.findUnique({
+            dbSource = await withRetry(() => prisma.source.findUnique({
                 where: { id: sourceId }
-            })
-            if (source) {
-                activeUrl = activeUrl || source.url
-                activeSourceType = activeSourceType || source.type || 'youtube'
-                activeTitle = source.title || ""
+            }))
+            if (dbSource) {
+                activeUrl = activeUrl || dbSource.url
+                activeSourceType = activeSourceType || dbSource.type || 'youtube'
+                activeTitle = dbSource.title || ""
             }
         }
 
@@ -38,18 +52,24 @@ export async function POST(request: Request) {
         const args = ['--url', activeUrl, '--source-id', sourceId]
         if (activeSourceType) args.push('--source-type', activeSourceType)
         if (activeTitle) args.push('--title', activeTitle)
+        if (language) args.push('--lang', language)
 
         // Synchronously run for direct pipeline stability
-        const { success, data, error: scriptError } = await runPythonScript<any>('transcript_harvester.py', [
+        const { success, data, error: scriptError } = await runPythonScript<StagePayload>('transcript_harvester.py', [
             ...args,
             '--max-segments', '60'
         ], {
-            expectedArtifact: `.tmp/transcripts/${sourceId}/${sourceId}_raw.json`
+            env: { 
+                EXPECTED_DURATION: dbSource?.duration?.split(':').reduce((acc: number, time: string, index: number, arr: string[]) => {
+                    const unit = Math.pow(60, arr.length - index - 1);
+                    return acc + (parseInt(time) || 0) * unit;
+                }, 0)?.toString() || "" 
+            }
         })
         
         if (success && data) {
             // Update the source record to indicate transcription is ready
-            const result = data as any
+            const result = data as StagePayload
             const finalStatus = result.status === 'rescued_text' ? 'rescued_text' : 'transcribed'
             
             // Read content from the textPath if available
@@ -63,11 +83,14 @@ export async function POST(request: Request) {
             if (!result.segments && result.json_path && fs.existsSync(result.json_path)) {
                 try {
                     const rawJson = fs.readFileSync(result.json_path, 'utf-8')
-                    result.segments = JSON.parse(rawJson) // Return all segments, the UI handles scaling
-                } catch (e) {
-                    console.error("Failed to read segments from json_path", e)
+                    result.segments = JSON.parse(rawJson)
+                } catch {
+                    console.error("Failed to read segments from json_path")
                 }
             }
+
+            // LOG: Successful resolution
+            // console.log(`[Transcript API] Source ${sourceId} resolved as ${finalStatus}. Segments: ${result.segments?.length || 0}`)
 
             // Format duration as M:SS string if present
             let durationString = undefined
@@ -77,8 +100,8 @@ export async function POST(request: Request) {
                 durationString = `${mins}:${String(secs).padStart(2, '0')}`
             }
 
-            await prisma.source.update({
-                where: { id: sourceId, userId: session.user.id },
+            await withRetry(() => prisma.source.update({
+                where: { id: sourceId, userId: userId },
                 data: { 
                     status: finalStatus,
                     transcriptStatus: finalStatus,
@@ -89,7 +112,7 @@ export async function POST(request: Request) {
                         push: 'transcript'
                     }
                 }
-            })
+            }))
             return NextResponse.json({ 
                 message: "Transcription completed", 
                 status: finalStatus,
@@ -98,7 +121,7 @@ export async function POST(request: Request) {
         } else {
             // Check if the error is a graceful "unavailable" status (e.g. Spotify DRM)
             let isGracefulUnavailable = false
-            let errorDetail = scriptError as any
+            let errorDetail = (scriptError as string) || "Unknown error"
             
             try {
                 const parsedError = typeof scriptError === 'string' ? JSON.parse(scriptError) : scriptError
@@ -106,12 +129,12 @@ export async function POST(request: Request) {
                     isGracefulUnavailable = true
                     errorDetail = parsedError.error_detail || "Audio transcription unavailable"
                 }
-            } catch (e) { /* fallback to hard failure if not parseable JSON */ }
+            } catch { /* fallback to hard failure if not parseable JSON */ }
 
             if (isGracefulUnavailable) {
                 // Rescue: Allow pipeline to proceed with metadata instead of hard failure
                 await prisma.source.update({
-                    where: { id: sourceId, userId: session.user.id },
+                    where: { id: sourceId, userId: userId },
                     data: { 
                         status: 'rescued_text',
                         transcriptStatus: 'unavailable',
@@ -126,8 +149,8 @@ export async function POST(request: Request) {
             }
 
             // Hard failure for actual script crashes or network issues
-            await (prisma.source.update as any)({
-                where: { id: sourceId, userId: (session.user as any).id },
+            await prisma.source.update({
+                where: { id: sourceId, userId: userId },
                 data: { 
                     status: 'failed',
                     transcriptStatus: 'failed'

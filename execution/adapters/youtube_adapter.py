@@ -85,7 +85,8 @@ class YouTubeAdapter(BaseAdapter):
                 params = urllib.parse.urlencode({
                     "part": "snippet,contentDetails",
                     "id": video_id,
-                    "key": api_key
+                    "key": api_key,
+                    "hl": "en"
                 })
                 req = urllib.request.Request(
                     f"https://www.googleapis.com/youtube/v3/videos?{params}",
@@ -120,7 +121,7 @@ class YouTubeAdapter(BaseAdapter):
             import re
             req = urllib.request.Request(
                 f"https://www.youtube.com/watch?v={video_id}",
-                headers={"User-Agent": "Mozilla/5.0"}
+                headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"}
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
                 html = resp.read().decode("utf-8")

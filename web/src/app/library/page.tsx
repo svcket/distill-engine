@@ -240,7 +240,7 @@ export default function LibraryPage() {
                             </div>
                             <h3 className="font-medium">No archived insights found</h3>
                             <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-                                We couldn't find any insights matching your search query. Try different keywords or themes.
+                                We couldn&apos;t find any insights matching your search query. Try different keywords or themes.
                             </p>
                             <button 
                                 onClick={() => setSearchQuery("")}

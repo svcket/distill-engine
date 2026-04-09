@@ -21,10 +21,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       from: process.env.RESEND_FROM || "onboarding@resend.dev",
       async sendVerificationRequest({ identifier, url, provider }) {
         if (process.env.NODE_ENV === "development") {
-          console.log("-----------------------------------------")
-          console.log(`MAGIC LINK FOR ${identifier}:`)
-          console.log(url)
-          console.log("-----------------------------------------")
+          // console.log("-----------------------------------------")
+          // console.log(`MAGIC LINK FOR ${identifier}:`)
+          // console.log(url)
+          // console.log("-----------------------------------------")
           // We no longer return here, so Resend is also called if configured
         }
         
@@ -77,7 +77,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // 1. Password Bypass (dawg)
         if (credentials?.password === "dawg") {
           const targetEmail = (credentials?.email as string) || "operator@distill.agency"
-          console.log(`Authorize: Operator Bypass for ${targetEmail}`)
+          // console.log(`Authorize: Operator Bypass for ${targetEmail}`)
           
           let user = await withRetry(() => prisma.user.findUnique({
             where: { email: targetEmail }
@@ -102,11 +102,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async signIn({ user, account }) {
       try {
-        console.log(`SignIn Attempt: ${user.email} via ${account?.provider}`)
+        // console.log(`SignIn Attempt: ${user.email} via ${account?.provider}`)
         
         // 1. Always allow Developer Access bypass
         if (user.email === "operator@distill.agency") {
-          console.log("SignIn: Developer Access granted.")
+          // console.log("SignIn: Developer Access granted.")
           return true
         }
 
@@ -114,18 +114,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (account?.provider === "google" || account?.provider === "resend") {
           // Development Bypass for User's email
           if (process.env.NODE_ENV === "development" && user.email === "nsikan.design@gmail.com") {
-            console.log(`SignIn: Development bypass for ${user.email}`)
+            // console.log(`SignIn: Development bypass for ${user.email}`)
             return true
           }
 
           // Safeguard: Check if model exists on prisma object
-          const betaWhitelist = (prisma as any).betaWhitelist;
+          const betaWhitelist = prisma.betaWhitelist
           if (!betaWhitelist) {
             console.error("Critical: 'betaWhitelist' model not found on Prisma client.")
-            return true // Allow in dev if the table is missing
+            return process.env.NODE_ENV === "development"
           }
 
-          const whitelisted = await withRetry(() => betaWhitelist.findUnique({
+          const whitelisted = await withRetry(() => prisma.betaWhitelist.findUnique({
             where: { email: user.email! }
           }))
           
@@ -133,7 +133,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             console.warn(`SignIn: Denied. ${user.email} not in betaWhitelist table.`)
             return false 
           }
-          console.log(`SignIn: Success for whitelisted user ${user.email}`)
+          // console.log(`SignIn: Success for whitelisted user ${user.email}`)
         }
         return true
       } catch (error) {
@@ -141,10 +141,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return false
       }
     },
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       try {
         if (user) {
-          console.log(`JWT: Hydrating token for user ${user.id}`)
+          // console.log(`JWT: Hydrating token for user ${user.id}`)
           token.id = user.id
           token.role = (user as { role?: string }).role || "USER"
           

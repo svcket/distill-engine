@@ -18,11 +18,12 @@ export async function POST(request: Request) {
         }
 
         // Convert raw script output to UI SourceCandidate[] models
-        const sources = adaptScoutResponse(rawOutput || "", query)
+        const sources = adaptScoutResponse(rawOutput || "")
 
         return NextResponse.json({ sources, message: `Discovered sources for: ${query}` })
 
-    } catch (err: any) {
-        return NextResponse.json({ error: err.message }, { status: 500 })
+    } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err)
+        return NextResponse.json({ error: errorMsg }, { status: 500 })
     }
 }

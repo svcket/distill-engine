@@ -14,7 +14,7 @@ export function OneSignalProvider({ children }: { children: React.ReactNode }) {
                 body: JSON.stringify({ oneSignalUserId }),
                 headers: { "Content-Type": "application/json" }
             })
-            console.log("OneSignal ID synced with Distill Database.")
+            // console.log("OneSignal ID synced with Distill Database.")
         } catch (error) {
             console.error("Failed to sync OneSignal ID:", error)
         }

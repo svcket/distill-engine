@@ -34,6 +34,20 @@ class DQMMetrics(BaseModel):
     suggestions: List[str] = Field(description="Actionable improvements.")
     rationale: str = Field(description="A concise summary explaining the scores and the overall publishability decision.")
 
+def calculate_deterministic_metrics(content: str) -> Dict:
+    """Basic linguistic metrics without LLM."""
+    words = content.split()
+    sentences = re.split(r'[.!?]+', content)
+    cliches = ["In today's", "In conclusion", "It is important", "Moreover", "Furthermore"]
+    cliche_count = sum(content.lower().count(c.lower()) for c in cliches)
+    
+    return {
+        "word_count": len(words),
+        "heading_count": len(re.findall(r'^#+ ', content, re.MULTILINE)),
+        "cliche_count": cliche_count,
+        "sentence_variation": len(set(len(s.split()) for s in sentences if s.strip()))
+    }
+
 def _persist_evaluation(source_id: str, result: Dict, base_dir: str):
     """
     Shared helper to save evaluation result to disk and upload to cloud storage.
@@ -59,7 +73,7 @@ def _persist_evaluation(source_id: str, result: Dict, base_dir: str):
     upload_artifact("evaluations", source_id, eval_path)
     return final_json
 
-def evaluate_dqm(source_id: str):
+def evaluate_dqm(source_id: str, lang: str = "en"):
     base = os.path.dirname(__file__)
     draft_file = os.path.join(base, ".tmp", "drafts", f"{source_id}_draft.json")
     
@@ -137,6 +151,11 @@ def evaluate_dqm(source_id: str):
 
     client = OpenAI()
     
+    # Sanitize language
+    safe_lang = (lang or "en").strip()
+    if len(safe_lang) > 10 or not all(c.isalnum() or c in '-' for c in safe_lang):
+        safe_lang = "en"
+
     system_prompt = f"""You are the Distill Quality Matrix (DQM) Analyst.
 Evaluate the provided draft strictly and accurately across 7 dimensions (0-100).
 
@@ -154,6 +173,7 @@ Below 50: Weak, failed logic or excessive AI artifacts.
 
 COMPOSITE WEIGHTS:
 20% Grounding, 15% Insight, 15% Humanness, 10% Clarity, 10% Structure, 15% SEO, 15% AEO.
+CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.
 """
 
     user_prompt = f"""DRAFT CONTENT:
@@ -212,5 +232,6 @@ BRIEF CONTEXT:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate a draft via DQM Matrix.")
     parser.add_argument("--source-id", "--video-id", dest="source_id", required=True)
+    parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
-    evaluate_dqm(args.source_id)
+    evaluate_dqm(args.source_id, args.lang)

@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import logging
 import argparse
@@ -39,7 +40,7 @@ class ThreadArchitect:
             logger.warning("Directive file x_thread_architect.md not found. Using default internal prompt.")
             self.system_prompt = "You are a world-class social strategist. Generate a high-performance X thread from the provided content. Return ONLY JSON."
 
-    def generate_thread(self, draft_content: str, transcript_summary: str, source_url: Optional[str] = None) -> Dict[str, Any]:
+    def generate_thread(self, draft_content: str, transcript_summary: str, source_url: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
         logger.info("Generating X Thread from draft and transcript context...")
         
         user_prompt = f"""Draft Content:
@@ -53,11 +54,17 @@ Source URL (for CTA): {source_url or "None"}
 Transform the above into a high-performance X thread following our directives. 
 Return ONLY the JSON structure."""
 
+        # Sanitize language
+        safe_lang = (lang or "en").strip()
+        if len(safe_lang) > 10 or not all(c.isalnum() or c in '-' for c in safe_lang):
+            safe_lang = "en"
+
         try:
+            system_msg = self.system_prompt + f"\nCRITICAL: You MUST write your response entirely in the '{safe_lang}' language."
             response = self.client.beta.chat.completions.parse(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": self.system_prompt},
+                    {"role": "system", "content": system_msg},
                     {"role": "user", "content": user_prompt}
                 ],
                 response_format=XThread
@@ -69,6 +76,7 @@ Return ONLY the JSON structure."""
         except Exception as e:
             logger.error(f"Error generating thread: {e}")
             return {
+                "status": "failed",
                 "error": str(e),
                 "hook": "Error generating thread hook.",
                 "thread": [],
@@ -82,8 +90,8 @@ def main():
     parser.add_argument("--url", help="Original source URL")
     parser.add_argument("--output", help="Output JSON file path")
     
+    parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
-    
     # Load content
     if os.path.exists(args.draft):
         with open(args.draft, "r") as f:
@@ -98,13 +106,17 @@ def main():
         transcript_content = args.transcript
         
     architect = ThreadArchitect()
-    thread_data = architect.generate_thread(draft_content, transcript_content, args.url)
+    thread_data = architect.generate_thread(draft_content, transcript_content, args.url, args.lang)
     
     if args.output:
         with open(args.output, "w") as f:
             json.dump(thread_data, f, indent=2)
-    else:
-        print(json.dumps(thread_data, indent=2))
+    
+    # Always print as fallback for the runner to capture
+    print(json.dumps(thread_data))
+    
+    if thread_data.get("status") == "failed":
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

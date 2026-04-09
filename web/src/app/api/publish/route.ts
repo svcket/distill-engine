@@ -29,6 +29,7 @@ export async function POST(request: Request) {
 
     if (!source) {
         // Fallback: Check if sourceId was actually a draftId
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const draft = await (prisma as any).draft?.findUnique({
             where: { id: sourceId }
         })
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
     try {
         // Handle Twitter/X
         if (platform === 'twitter' || platform === 'x') {
-            const { success, error, data } = await runPythonScript<any>('publishers/twitter_publisher.py', [
+            const { success, error, data } = await runPythonScript<unknown>('publishers/twitter_publisher.py', [
                 '--content', contentPath,
             ])
 

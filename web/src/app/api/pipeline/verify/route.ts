@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     }
 
     try {
-        const { success, data, error } = await runPythonScript<any>('verify_pipeline.py', ['--source-id', sourceId])
+        const { success, data, error } = await runPythonScript<unknown>('verify_pipeline.py', ['--source-id', sourceId])
 
         if (!success) {
             return NextResponse.json({ error: "Verification failed", details: error }, { status: 500 })

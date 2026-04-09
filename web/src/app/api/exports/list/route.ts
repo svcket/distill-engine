@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server'
 import path from 'path'
 import fs from 'fs'
@@ -34,7 +35,7 @@ export async function GET() {
             return NextResponse.json({ drafts: [] })
         }
 
-        const drafts: any[] = []
+        const drafts: Record<string, unknown>[] = []
 
         function decodeHtml(html: string) {
             if (!html) return html;

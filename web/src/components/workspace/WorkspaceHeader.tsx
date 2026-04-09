@@ -11,7 +11,7 @@ import { useWorkspace } from '@/context/WorkspaceContext'
 import { toast } from 'sonner'
 
 export function WorkspaceHeader() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [isPanelOpen, setIsPanelOpen] = useState(false)
   const { workspaceId, refreshSources } = useWorkspace()
   const [isIngesting, setIsIngesting] = useState(false)
@@ -20,10 +20,10 @@ export function WorkspaceHeader() {
     if (!url) return
     setIsIngesting(true)
     try {
-      const res = await fetch('/api/pipeline/ingest', {
+      const res = await fetch('/api/sources/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, workspaceId })
+        body: JSON.stringify({ url, workspaceId, language: lang })
       })
       const data = await res.json()
       if (data.success) {

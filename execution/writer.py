@@ -28,7 +28,7 @@ class ContentPlan(BaseModel):
 from typing import Optional
 from supabase_utils import upload_artifact
 
-def generate_draft(outline_path: str, insights_path: str, packet_path: str, brief_path: Optional[str] = None, feedback: Optional[str] = None, stream: bool = False):
+def generate_draft(outline_path: str, insights_path: str, packet_path: str, brief_path: Optional[str] = None, feedback: Optional[str] = None, stream: bool = False, lang: str = "en"):
     if not os.path.exists(outline_path) or not os.path.exists(insights_path) or not os.path.exists(packet_path):
         print(json.dumps({"status": "failed", "error": "Missing input payloads."}), file=sys.stderr)
         sys.exit(1)
@@ -119,6 +119,7 @@ GOAL: {goal}
 MUST INCLUDE:
 {chr(10).join([f"   - {item}" for item in must_include])}
 
+CRITICAL: You MUST write your response entirely in the '{lang}' language.
 Format strictly in clean, pure Markdown with double newlines between blocks. Only use HTML if explicitly requested (rare)."""
 
     user_prompt = f"""Structure Blueprint:
@@ -185,6 +186,8 @@ Generate a strict structural plan based on this reasoning. Ensure subheadings ar
                 "data": {"title": title, "content": full_content, "word_count": word_count}
             }
             _save_draft(source_id, bundle)
+            # Final success signal for frontend state synchronization
+            print(json.dumps({"type": "success", "status": "success", "result": bundle["data"]}), flush=True)
             print(json.dumps({"type": "stream_end", "source_id": source_id, "word_count": word_count}), flush=True)
             return
 
@@ -259,6 +262,7 @@ Generate a strict structural plan based on this reasoning. Ensure subheadings ar
 5. Are there any AI clichés (e.g. "In today's world", "In conclusion")?
 6. **FORMATTING CHECK**: Does the draft have clear, punchy `## Subheadings` for every major section? If it's a long block of text, insert subheadings to break it up effectively.
 
+CRITICAL: You MUST write your response entirely in the '{lang}' language.
 If there are issues, rewrite the section to be more specific, human, and properly structured with headers. Return the FINAL, polished draft."""
 
             final_completion = client.beta.chat.completions.parse(
@@ -304,6 +308,7 @@ if __name__ == "__main__":
     parser.add_argument("--brief_input", required=False, help="Intent-Aware Content Brief payload.")
     parser.add_argument("--feedback", required=False, help="Editorial feedback for revision loop.")
     parser.add_argument("--stream", action="store_true", help="Enable streaming output.")
+    parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
     generate_draft(
         args.outline_input, 
@@ -311,5 +316,6 @@ if __name__ == "__main__":
         args.packet_input,
         brief_path=args.brief_input,
         feedback=args.feedback, 
-        stream=args.stream
+        stream=args.stream,
+        lang=args.lang
     )

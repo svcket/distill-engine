@@ -18,7 +18,7 @@ class ArticleArchitecture(BaseModel):
     total_word_count_target: int = Field(description="Estimated total word length.")
     sections: List[SectionBlueprint] = Field(description="The structural blueprint.")
 
-def generate_blueprint(angle_path: str, insights_path: str):
+def generate_blueprint(angle_path: str, insights_path: str, lang: str = "en"):
     if not os.path.exists(angle_path) or not os.path.exists(insights_path):
         print(json.dumps({"status": "failed", "error": "Missing input payloads."}), file=sys.stderr)
         sys.exit(1)
@@ -75,10 +75,11 @@ def generate_blueprint(angle_path: str, insights_path: str):
 
     client = OpenAI()
     
-    system_prompt = """
+    system_prompt = f"""
     You are the Article Architect. Your job is to take an editorial angle and the raw extracted insights,
     and build a rigid structural blueprint for the final written piece.
     Provide precise section headings, word count targets, and the key narrative beats for each section.
+    CRITICAL: You MUST write your response entirely in the '{lang}' language.
     """
     
     user_prompt = f"""
@@ -127,5 +128,6 @@ if __name__ == "__main__":
     parser.add_argument("--angle_input", required=True, help="Path to angle strategy JSON.")
     parser.add_argument("--insights_input", required=True, help="Path to insights JSON.")
     
+    parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
-    generate_blueprint(args.angle_input, args.insights_input)
+    generate_blueprint(args.angle_input, args.insights_input, args.lang)

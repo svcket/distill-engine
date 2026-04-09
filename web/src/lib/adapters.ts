@@ -1,4 +1,4 @@
-import { SourceCandidate, TranscriptChunk, Status } from "./mockData"
+import { SourceCandidate, Status } from "./mockData"
 import fs from 'fs'
 
 /**
@@ -8,12 +8,12 @@ import fs from 'fs'
  */
 
 // 1. Adapter for `discover_youtube_sources.py`
-export function adaptScoutResponse(rawOutput: string, query: string): SourceCandidate[] {
+export function adaptScoutResponse(rawOutput: string): SourceCandidate[] {
     try {
         const data = JSON.parse(rawOutput);
         if (!Array.isArray(data)) return [];
 
-        return data.map((item: Record<string, any>) => {
+        return data.map((item: Record<string, string | undefined>) => {
             // Parse ISO 8601 duration (e.g., PT1H2M10S or PT5M33S) roughly for UI
             let formattedDuration = item.duration;
             if (typeof formattedDuration === 'string' && formattedDuration.startsWith('PT')) {
@@ -79,7 +79,7 @@ export function adaptTranscriptResponse(rawOutput: string): { segments: { start:
         const payload = JSON.parse(rawOutput);
         if ((payload.status === "success" || payload.status === "success_mocked") && payload.json_path && fs.existsSync(payload.json_path)) {
             const rawData = JSON.parse(fs.readFileSync(payload.json_path, 'utf8'));
-            const segments = rawData.map((c: any) => ({
+            const segments = rawData.map((c: Record<string, string | number>) => ({
                 start: c.start || 0,
                 text: c.text || "",
                 duration: c.duration || 0,
@@ -110,7 +110,7 @@ export function adaptRefinerResponse(rawOutput: string): { segments: { text: str
             const rawData = JSON.parse(fs.readFileSync(outPath, 'utf8'));
             const segments = Array.isArray(rawData) ? rawData : (rawData.segments || []);
             return {
-                segments: segments.map((s: any) => ({ text: s.text || s })),
+                segments: segments.map((s: { text?: string } | string) => ({ text: typeof s === 'string' ? s : s.text || "" })),
                 segment_count: segments.length,
                 status: "done"
             };
@@ -126,7 +126,7 @@ export function adaptRefinerResponse(rawOutput: string): { segments: { text: str
 }
 
 // 5. Adapter for `insight_extractor.py` (Now build_insight_packet)
-export function adaptInsightResponse(rawOutput: string): { status: Status, payload?: any } {
+export function adaptInsightResponse(rawOutput: string): { status: Status, payload?: Record<string, unknown> | null } {
     try {
         const payload = JSON.parse(rawOutput);
         if (payload.status === "success" || payload.status === "success_mocked") {

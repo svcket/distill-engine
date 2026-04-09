@@ -14,7 +14,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { transcriptId } = await request.json()
+    const body = await request.json()
+    const transcriptId = body.transcriptId || body.transcript_id || body.sourceId || body.source_id || body.id
+    const { language } = body
     const sourceId = transcriptId
 
     if (!sourceId) {
@@ -88,27 +90,35 @@ export async function POST(request: Request) {
     }
 
     try {
-        const { success, error, data } = await runPythonScript<{
-            hook: string;
-            thread: string[];
-            cta: string;
-        }>('thread_architect.py', [
+        const args = [
             '--draft', draftPath,
             '--transcript', summaryPath,
             '--url', source.url || "",
             '--output', outputPath
-        ], {
+        ]
+        if (language) args.push('--lang', language)
+
+        const { success, error, data } = await runPythonScript<{
+            hook: string;
+            thread: string[];
+            cta: string;
+        }>('thread_architect.py', args, {
             expectedArtifact: `.tmp/socialise/${sourceId}_thread.json`
         })
 
         if (!success) {
-            return NextResponse.json({ error: "Thread generation failed", details: error }, { status: 500 })
+            console.error(`[Social API] Thread generation failed for ${sourceId}:`, error)
+            return NextResponse.json({ 
+                error: "Thread generation failed", 
+                details: error,
+                rawOutput: data // Include whatever we managed to capture
+            }, { status: 500 })
         }
 
         await withRetry(() => prisma.source.update({
             where: { id: sourceId, userId: session.user?.id },
             data: { 
-                status: 'completed',
+                status: 'done',
                 completedStages: {
                     push: 'socialise'
                 }

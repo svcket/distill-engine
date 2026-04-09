@@ -27,10 +27,14 @@ export async function POST(request: Request) {
     const userId = session.user.id;
 
     try {
-        const { sourceId } = await request.json()
+        const body = await request.json()
+        const sourceId = body.source_id || body.sourceId
 
         if (!sourceId) {
-            return NextResponse.json({ error: "Missing 'sourceId' parameter." }, { status: 400 })
+            return NextResponse.json({ 
+                error: "Missing 'source_id' parameter.",
+                details: "Expected either 'source_id' or 'sourceId' in the request body."
+            }, { status: 400 })
         }
 
         const executionDir = path.resolve(process.cwd(), '../execution')
@@ -47,7 +51,7 @@ export async function POST(request: Request) {
         if (!source) {
             const globalSource = await prisma.source.findUnique({ where: { id: sourceId } });
             if (globalSource) {
-                console.log(`[Score] Auto-claiming global source ${sourceId} for user ${userId}`);
+                // console.log(`[Score] Auto-claiming global source ${sourceId} for user ${userId}`);
                 source = await prisma.source.create({
                     data: {
                         id: sourceId,

@@ -1,20 +1,44 @@
-# Environment Variables
+# ─── Environment ──────────────────────────────────────────────────
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+web/.env
+web/.env.local
 
-# Google API Credentials
-credentials.json
-token.json
-
-# Python
+# ─── Python ───────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+distill_env/
+.pytest_cache/
+.mypy_cache/
 
-# Distill Artifacts & Data
-.tmp/
-execution/data/
+# ─── Node / Next.js ───────────────────────────────────────────────
+node_modules/
+.next/
+out/
+build/
+dist/
+.vercel
+*.tsbuildinfo
 next-env.d.ts
 
-# AI & Agentic Workflow
+# ─── Local Artifacts & Data ───────────────────────────────────────
+.tmp/
+temp/
+logs/
+*.log
+execution/data/
+web/public/exports/
+!web/public/exports/.gitkeep
+
+# ─── AI & Workflow (Internal-Only) ───────────────────────────────
 .agents/
 .antigravity/
 .agent/
@@ -40,11 +64,7 @@ tmp/
 implementation_plan.md
 task.md
 walkthrough.md
-node_modules/
-.next/
-dist/
-build/
-coverage/
+
+# ─── System ───────────────────────────────────────────────────────
 .DS_Store
-*.log
-.eslintcache
+Thumbs.db

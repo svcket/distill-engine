@@ -34,6 +34,7 @@ export const StorageAdapter = {
 
     // 2. Try Supabase Storage (Production)
     try {
+      if (!supabaseAdmin) return null;
       const { data, error } = await supabaseAdmin
         .storage
         .from(category)
@@ -56,6 +57,7 @@ export const StorageAdapter = {
    * Typically used after an ingestion or refinement stage completes.
    */
   async upload(category: string, filename: string, body: string | Buffer) {
+    if (!supabaseAdmin) return null;
     const { data, error } = await supabaseAdmin
       .storage
       .from(category)

@@ -11,7 +11,8 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        const { sourceId } = await req.json()
+        const body = await req.json()
+        const sourceId = body.sourceId || body.source_id || body.transcriptId || body.id
         if (!sourceId) {
             return NextResponse.json({ error: 'Missing sourceId' }, { status: 400 })
         }

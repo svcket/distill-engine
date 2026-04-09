@@ -76,9 +76,11 @@ export async function PATCH(request: Request) {
         // 2. Update Preferences
         const preferences = await withRetry(() => prisma.userPreferences.upsert({
             where: { userId },
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             update: rest as any,
             create: {
                 userId,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 ...(rest as any)
             }
         }))

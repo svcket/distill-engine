@@ -211,7 +211,8 @@ export default function DraftWorkspacePage() {
                     setEditedContent(contentToLoad)
                     if (editor) editor.commands.setContent(contentToLoad)
 
-                    const foundSource = sources.find((s: any) => s.title && s.title.trim() === foundDraft.title.trim())
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const foundSource = sources.find((s: { title: string }) => s.title && s.title.trim() === foundDraft.title.trim())
                     const sourceId = foundSource?.id || id
                     setResolvedSourceId(sourceId)
 

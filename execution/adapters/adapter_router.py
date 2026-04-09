@@ -63,12 +63,13 @@ def route_source(url: str, shell: bool = False) -> NormalizedSource:
     )
 
 
-def ingest(url: str, base_dir: str, shell: bool = False) -> dict:
+def ingest(url: str, base_dir: str, shell: bool = False, lang: str = "en") -> dict:
     """
     Full ingest: normalize the source, save it to disk, and return the saved path.
     This is the main function called by the API route.
     """
     source = route_source(url, shell=shell)
+    source.language = lang
     adapter = next(a for a in ADAPTERS if a.detect(url))
     saved_path = adapter.save(source, base_dir)
 
@@ -83,6 +84,7 @@ def ingest(url: str, base_dir: str, shell: bool = False) -> dict:
         "transcript_status": source.transcript_status,
         "saved_path": saved_path,
         "is_shell": shell,
+        "language": source.language,
     }
 
 
@@ -93,10 +95,11 @@ if __name__ == "__main__":
     parser.add_argument("--base-dir", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         help="Base directory for .tmp file storage.")
     parser.add_argument("--shell", action="store_true", help="Return immediate shell source without full metadata.")
+    parser.add_argument("--lang", default="en", help="Language code to propagate across the pipeline.")
     args = parser.parse_args()
 
     try:
-        result = ingest(args.url, args.base_dir, shell=args.shell)
+        result = ingest(args.url, args.base_dir, shell=args.shell, lang=args.lang)
         print(json.dumps(result))
     except Exception as e:
         print(json.dumps({"status": "error", "error_detail": str(e)}), file=sys.stderr)

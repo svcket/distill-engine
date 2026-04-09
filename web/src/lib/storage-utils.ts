@@ -31,7 +31,7 @@ export function deleteSourceFiles(sourceId: string) {
         if (fs.existsSync(subfolder) && fs.lstatSync(subfolder).isDirectory()) {
             try {
                 fs.rmSync(subfolder, { recursive: true, force: true })
-                console.log(`[Storage Cleanup] Deleted folder: ${subfolder}`)
+                // console.log(`[Storage Cleanup] Deleted folder: ${subfolder}`)
             } catch (err) {
                 console.error(`[Storage Cleanup] Failed to delete folder ${subfolder}:`, err)
             }
@@ -45,7 +45,7 @@ export function deleteSourceFiles(sourceId: string) {
                     const filePath = path.join(dirPath, file)
                     if (fs.lstatSync(filePath).isFile()) {
                         fs.unlinkSync(filePath)
-                        console.log(`[Storage Cleanup] Deleted file: ${filePath}`)
+                        // console.log(`[Storage Cleanup] Deleted file: ${filePath}`)
                     }
                 }
             })

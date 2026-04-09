@@ -8,7 +8,7 @@ import { SourceCandidate } from "@/lib/mockData"
 import Link from "next/link"
 import {
     Plus, Search, ChevronDown,
-    Grid, List, Trash2,
+    Trash2,
     Paperclip, Mic
 } from "lucide-react"
 import { UnifiedSourceInput, type UnifiedSourceInputHandle } from "@/components/workspace/UnifiedSourceInput"
@@ -73,7 +73,7 @@ export default function SourcesPage() {
     const router = useRouter()
     
     const [activeTab, setActiveTab] = useState<Tab>("processed")
-    const [viewMode, setViewMode] = useState<ViewMode>("list")
+    const [viewMode, setViewMode] = useState<ViewMode>("grid")
     const [sources, setSources] = useState<SourceCandidate[]>([])
     const [platformFilter, setPlatformFilter] = useState("All")
     const [showFilters, setShowFilters] = useState(false)
@@ -168,6 +168,12 @@ export default function SourcesPage() {
                 if (res.ok && data.result?.id) router.push(`/sources/${data.result.id}`)
                 else setIngestStatus({ type: 'error', message: data.error || "Failed to ingest source." })
             } else {
+                // GUARD: Topic discovery should only trigger on concise keywords. 
+                // Long strings (likely failed URL pastes) should be rejected or trimmed.
+                if (input.length > 150) {
+                    setIngestStatus({ type: 'error', message: "Search term too long. Please provide a brief topic or a valid URL." });
+                    return;
+                }
                 const res = await fetch("/api/sources/discover", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -221,14 +227,14 @@ export default function SourcesPage() {
 
             {ingestStatus && (
                 <div className={cn(
-                    "p-4 rounded-lg border text-sm animate-in fade-in slide-in-from-top-2",
+                    "p-4 rounded-lg border text-sm max-h-[150px] overflow-y-auto animate-in fade-in slide-in-from-top-2",
                     ingestStatus.type === 'success' ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-800"
                 )}>
-                    {ingestStatus.message}
+                    <p className="line-clamp-3 overflow-y-auto">{ingestStatus.message}</p>
                 </div>
             )}
 
-            <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4 w-full mb-6 lg:mb-8">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-2 w-full mb-6 lg:mb-8">
                 <div className="w-full lg:flex-1 min-w-0">
                     <UnifiedSourceInput 
                         ref={sourceInputRef}
@@ -238,27 +244,25 @@ export default function SourcesPage() {
                     />
                 </div>
                 
-                <div className="flex items-center justify-between w-full lg:w-auto mt-2 lg:mt-0">
-                    <div className="flex items-center gap-2">
-                        <Button 
-                            variant="outline" 
-                            size="icon"
-                            className="h-10 w-10 lg:h-12 lg:w-12 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground hover:bg-muted/80 transition-all shadow-sm group"
-                            onClick={() => sourceInputRef.current?.upload()}
-                            title="Attach source"
-                        >
-                            <Paperclip className="w-4 h-4 group-hover:text-brand transition-colors" />
-                        </Button>
-                        <Button 
-                            variant="outline"
-                            size="icon"
-                            className="h-10 w-10 lg:h-12 lg:w-12 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground hover:bg-muted/80 transition-all shadow-sm group"
-                            onClick={() => sourceInputRef.current?.record()}
-                            title="Record audio"
-                        >
-                            <Mic className="w-4 h-4 group-hover:text-brand transition-colors" />
-                        </Button>
-                    </div>
+                <div className="flex items-center gap-2 mt-2 lg:mt-0">
+                    <Button 
+                        variant="outline" 
+                        size="icon"
+                        className="h-10 w-10 lg:h-12 lg:w-12 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground hover:bg-muted/80 transition-all shadow-sm group"
+                        onClick={() => sourceInputRef.current?.upload()}
+                        title="Attach source"
+                    >
+                        <Paperclip className="w-4 h-4 group-hover:text-brand transition-colors" />
+                    </Button>
+                    <Button 
+                        variant="outline"
+                        size="icon"
+                        className="h-10 w-10 lg:h-12 lg:w-12 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground hover:bg-muted/80 transition-all shadow-sm group"
+                        onClick={() => sourceInputRef.current?.record()}
+                        title="Record audio"
+                    >
+                        <Mic className="w-4 h-4 group-hover:text-brand transition-colors" />
+                    </Button>
                     
                     <button 
                         onClick={() => setShowFilters(!showFilters)}
@@ -323,8 +327,6 @@ export default function SourcesPage() {
                         </button>
                     ))}
                     <div className="ml-auto flex items-center gap-1 pb-3">
-                        <button title="Grid View" onClick={() => setViewMode("grid")} className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50")}><Grid className="w-4 h-4" /></button>
-                        <button title="List View" onClick={() => setViewMode("list")} className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50")}><List className="w-4 h-4" /></button>
                     </div>
                 </div>
 
@@ -371,8 +373,8 @@ export default function SourcesPage() {
                                         <h3 className="font-serif font-semibold text-[18px] leading-snug line-clamp-2 mb-4 text-foreground/90 group-hover:text-white transition-colors">{source.title}</h3>
                                         
                                         <div className="mt-auto flex items-center justify-between pt-4 border-t border-white/5">
-                                            <div className="text-[10px] font-black uppercase tracking-widest tabular-nums text-foreground">
-                                                DQM: {source.dqmScore || "0"}/100
+                                            <div className="text-[12px] font-black uppercase tracking-widest tabular-nums text-foreground">
+                                                DQM: {source.score || source.dqmScore || "0"}/100
                                             </div>
                                             <div className="text-[9px] text-muted-foreground/40 font-bold uppercase tracking-tighter whitespace-nowrap">
                                                 {formatDisplayDate(source.createdAt)}

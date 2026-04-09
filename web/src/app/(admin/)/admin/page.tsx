@@ -46,6 +46,7 @@ export default async function AdminDashboard() {
             take: 10, 
             orderBy: { id: "desc" } 
         }) as Promise<UserWithUsage[]>,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (prisma as any).betaWhitelist.findMany({ 
             orderBy: { createdAt: "desc" } 
         }),

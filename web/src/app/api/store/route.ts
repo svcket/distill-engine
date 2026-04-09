@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/auth'
@@ -148,8 +149,14 @@ export async function POST(request: Request) {
 
         // Mark a stage as completed
         if (body.action === 'complete_stage') {
-            const { sourceId, stageId } = body
-            const source = await prisma.source.findUnique({ where: { id: sourceId } })
+            const { sourceId, source_id, stageId } = body
+            const targetId = source_id || sourceId
+            
+            if (!targetId) {
+                return NextResponse.json({ error: "Missing 'source_id' parameter." }, { status: 400 })
+            }
+
+            const source = await prisma.source.findUnique({ where: { id: targetId } })
             
             if (source) {
                 // Verify ownership or ADMIN role
@@ -162,7 +169,7 @@ export async function POST(request: Request) {
                 if (!stages.includes(stageId)) {
                     stages.push(stageId)
                     await prisma.source.update({
-                        where: { id: sourceId },
+                        where: { id: targetId },
                         data: { completedStages: stages }
                     })
                 }
@@ -189,7 +196,7 @@ export async function POST(request: Request) {
                 })
 
                 // 2. Cleanup file artifacts (Cascading Cleanup)
-                console.log(`[Store API] Triggering file cleanup for ${sourceId}`)
+                // console.log(`[Store API] Triggering file cleanup for ${sourceId}`)
                 deleteSourceFiles(sourceId)
             }
             
