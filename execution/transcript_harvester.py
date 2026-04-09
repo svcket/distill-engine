@@ -1,5 +1,6 @@
 """
 Transcript Harvester — multi-source transcript fetcher.
+# flake8: noqa: E501
 Routes to the appropriate adapter based on source type.
 Supports: YouTube (youtube_transcript_api), Vimeo (manual), Podcast/Upload (Whisper stub).
 """
@@ -423,7 +424,9 @@ def resolve_apple_podcast_audio(url: str, source_id: Optional[str] = None) -> st
     
     return url
 def resolve_spotify_via_itunes(title: str, show_name: Optional[str] = None, source_id: Optional[str] = None) -> Optional[str]:
-    """Try to find a public Apple Podcast link for a Spotify episode via Title search."""
+    """Try to find a public Apple Podcast link for a Spotify episode via Title search.
+# flake8: noqa: E501
+"""
     # 0. GENERIC TITLE GUARD: Prevent "Ghost Podcast Leaks"
     if is_generic_title(title):
         print(f"[Spotify-Resolver] ABORTED: Title '{title}' is generic. Skipping iTunes search to prevent data leak.", flush=True)

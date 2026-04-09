@@ -55,7 +55,11 @@ def generate_summary(transcript_path: str, output_path: str, lang: str = "en") -
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": f"You are a professional editorial assistant at Distill. Your goal is to provide a concise, readable, and faithful summary of a transcript. Focus on high-level themes, major arguments, and structural overview. Use Markdown formatting with clear sections.\nCRITICAL: You MUST write your response entirely in the '{lang}' language."},
+                {"role": "system", "content": f"You are a professional editorial assistant at Distill. Your goal is to "
+                                             f"provide a concise, readable, and faithful summary of a transcript. "
+                                             f"Focus on high-level themes, major arguments, and structural overview. "
+                                             f"Use Markdown formatting with clear sections.\n"
+                                             f"CRITICAL: You MUST write your response entirely in the '{lang}' language."},
                 {"role": "user", "content": f"Please summarize the following transcript:\n\n{capped_text}"}
             ],
             temperature=0.3
@@ -111,7 +115,12 @@ def infer_source_name(text: str, hint: str = None, lang: str = "en") -> str:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": f"You are a professional editorial curator at Distill. Your goal is to infer the EXACT original title of a podcast episode or article. Use the provided content summary/description and any title hint to accurately align with the creator's original naming. Filter out generic suffixes like '| Podcast on Spotify' or 'Episode 123'. Output ONLY the clean title text (max 70 chars). Language: {lang}"},
+                {"role": "system", "content": f"You are a professional editorial curator at Distill. Your goal is to "
+                                             f"infer the EXACT original title of a podcast episode or article. Use "
+                                             f"the provided content summary/description and any title hint to "
+                                             f"accurately align with the creator's original naming. Filter out "
+                                             f"generic suffixes like '| Podcast on Spotify' or 'Episode 123'. "
+                                             f"Output ONLY the clean title text (max 70 chars). Language: {lang}"},
                 {"role": "user", "content": f"Source Content:\n{text[:4000]}{hint_context}"}
             ],
             temperature=0.3

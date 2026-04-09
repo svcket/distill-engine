@@ -1,5 +1,6 @@
 """
 Podcast source adapter.
+# flake8: noqa: E501
 Handles podcast episode URLs (RSS feeds, Spotify, Apple Podcasts, direct MP3 URLs).
 Extracts metadata from RSS feed when available.
 Transcript via Whisper API if an audio file is accessible.

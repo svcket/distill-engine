@@ -922,10 +922,10 @@ export default function SourceMissionControl() {
                 const data = await res.json();
                 
                 // STABILITY: Calculate merged result set once to ensure atomic Truth Audit
-                const currentResults = await new Promise<Record<string, unknown>>(resolve => {
+                const loadedResults = await new Promise<Record<string, StageResultData>>(resolve => {
                     setStageResults(prev => {
                         const merged = { ...prev, ...(data?.results || {}) };
-                        resolve(merged);
+                        resolve(merged as Record<string, StageResultData>);
                         return merged;
                     });
                 });
@@ -939,11 +939,11 @@ export default function SourceMissionControl() {
                     
                     criticalArtifactStages.forEach(sid => {
                         // We check the computed merged results
-                        const hasArtifact = currentResults[sid];
+                        const hasArtifact = loadedResults[sid];
 
                         if (hasArtifact) {
                             // Force topological validation to prevent ghost completions from stale disk artifacts
-                            const gate = validateStageGating(sid, currentResults);
+                            const gate = validateStageGating(sid, loadedResults);
                             if (gate.valid) {
                                 validated.add(sid) 
                             } else if (!isRunningAll) {

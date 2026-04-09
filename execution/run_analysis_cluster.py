@@ -115,7 +115,9 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             summary_result = summarize_transcript(source_id, lang)
             # Post-process: If thin, add a visual indicator to the summary
             if is_thin and summary_result.get("summary"):
-                summary_result["summary"] = f"⚠️ [METADATA RESCUE] {summary_result['summary']}\n\n*Note: This source was analyzed using limited metadata as audio was inaccessible.*"
+                rescue_prefix = f"⚠️ [METADATA RESCUE] {summary_result.get('summary', '')}\n\n"
+                rescue_note = "*Note: This source was analyzed using limited metadata as audio was inaccessible.*"
+                summary_result["summary"] = f"{rescue_prefix}{rescue_note}"
             results["summary"] = summary_result
         except Exception as e:
             print(f"[{source_id}] Summary stage failed: {e}", file=sys.stderr)
@@ -176,7 +178,11 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             "duration": time.time() - start_time,
             "results": {
                 "refine":   {"status": "skipped", "chunk_count": 0},
-                "summary":  {"status": "rescued", "summary": f"[Analysis Rescue Active]\n\nThe engine was unable to generate a high-fidelity summary for this source ({clean_error}), but the following rescued metadata was preserved."},
+                "summary":  {
+                    "status": "rescued", 
+                    "summary": f"[Analysis Rescue Active]\n\nThe engine was unable to generate a high-fidelity summary "
+                               f"for this source ({clean_error}), but the following rescued metadata was preserved."
+                },
                 "packet":   {"status": "skipped"},
                 "insights": {"status": "skipped", "insights": ["Metadata rescue initiated."]}
             },
@@ -234,7 +240,8 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
                 
                 # If summary is missing or rescued, fallback to raw description
                 source_text = ""
-                if summary_text and "[METADATA RESCUE]" not in summary_text and "[Analysis Rescue Active]" not in summary_text:
+                is_rescue = "[METADATA RESCUE]" in summary_text or "[Analysis Rescue Active]" in summary_text
+                if summary_text and not is_rescue:
                     source_text = summary_text
                 else:
                     source_text = metadata.get("description", "")
