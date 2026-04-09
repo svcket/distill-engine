@@ -14,8 +14,31 @@ import subprocess
 import datetime
 import requests
 import html
+import time
+import urllib.request
+import urllib.parse
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
+from pathlib import Path
+
+# External optimized libraries
+try:
+    import imageio_ffmpeg
+except ImportError:
+    imageio_ffmpeg = None
+
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
+try:
+    from youtube_transcript_api import YouTubeTranscriptApi
+except ImportError:
+    YouTubeTranscriptApi = None
+
 # Ensure execution dir is in path for relative imports if run as script
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from monitoring import log_rescue_attempt
@@ -24,7 +47,6 @@ from supabase_utils import upload_artifact
 def get_audio_duration(filepath: str) -> float:
     """Helper to get audio duration using ffprobe/ffmpeg."""
     try:
-        import subprocess
         # 1. Try ffprobe first (Fastest)
         cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filepath]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
@@ -32,7 +54,8 @@ def get_audio_duration(filepath: str) -> float:
             return float(res.stdout.strip())
             
         # 2. Fallback to extracting from ffmpeg -i stderr
-        import imageio_ffmpeg
+        if not imageio_ffmpeg:
+             return 0.0
         f_exe = imageio_ffmpeg.get_ffmpeg_exe()
         cmd = [f_exe, "-i", filepath]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
@@ -106,9 +129,6 @@ def extract_video_id(url_or_id: str) -> str:
 
 def load_source_metadata(source_id: str) -> dict:
     """Load normalized source from .tmp/judgments/ or .tmp/sources/."""
-    base = os.path.dirname(__file__)
-    import time
-
     # 1. Try exact source metadata file first (Most detailed)
     direct = os.path.join(base, ".tmp", "sources", f"{source_id}.json")
     
@@ -125,7 +145,6 @@ def load_source_metadata(source_id: str) -> dict:
             time.sleep(0.5)
 
     # 2. Loop through discovery files
-    import glob
     for file in glob.glob(os.path.join(base, ".tmp", "sources", "*.json")):
         try:
             with open(file, "r", encoding="utf-8") as f:
@@ -151,7 +170,6 @@ def load_source_metadata(source_id: str) -> dict:
 
     # 4. CASE-INSENSITIVE FALLBACK (New)
     # If we didn't find the exact ID, try a case-insensitive search in the sources directory
-    import glob
     all_sources = glob.glob(os.path.join(base, ".tmp", "sources", "*.json"))
     for file in all_sources:
         if os.path.basename(file).lower() == f"{source_id.lower()}.json":
@@ -166,7 +184,8 @@ def load_source_metadata(source_id: str) -> dict:
 
 def refine_metadata_from_transcript(source_id: str, transcript_text: str):
     """If the current title is generic, use LLM to extract the actual episode title and show name."""
-    from openai import OpenAI
+    if not OpenAI:
+        return
     client = OpenAI()
     
     metadata = load_source_metadata(source_id)
@@ -372,8 +391,6 @@ def is_generic_title(title: str) -> bool:
 
 def resolve_apple_podcast_audio(url: str, source_id: Optional[str] = None) -> str:
     """Uses iTunes API to find the direct episodeUrl and title for an Apple Podcasts page."""
-    import urllib.request
-    import json
     try:
         # Extract ID from URL
         m = re.search(r"/id(\d+)", url)
@@ -429,12 +446,6 @@ def resolve_apple_podcast_audio(url: str, source_id: Optional[str] = None) -> st
     return url
 def resolve_spotify_via_itunes(title: str, show_name: Optional[str] = None, source_id: Optional[str] = None) -> Optional[str]:
     """Try to find a public Apple Podcast link for a Spotify episode via Title search."""
-    import urllib.request
-    import urllib.parse
-    import json
-    import re
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    
     # 0. GENERIC TITLE GUARD: Prevent "Ghost Podcast Leaks"
     if is_generic_title(title):
         print(f"[Spotify-Resolver] ABORTED: Title '{title}' is generic. Skipping iTunes search to prevent data leak.", flush=True)
@@ -588,8 +599,6 @@ def resolve_spotify_via_itunes(title: str, show_name: Optional[str] = None, sour
 def extract_spotify_title(url: str) -> Optional[str]:
     """Robust title extraction from Spotify page using mobile UA and embed fallback."""
     try:
-        import urllib.request
-        import re
         
         user_agents = [
             "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
@@ -622,7 +631,6 @@ def extract_spotify_title(url: str) -> Optional[str]:
         try:
             next_data_m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html_page)
             if next_data_m:
-                 import json
                  nd = json.loads(next_data_m.group(1))
                  pp = nd.get("props", {}).get("pageProps", {})
                  entity = pp.get("episode") or pp.get("track") or pp.get("show")
@@ -642,7 +650,6 @@ def extract_spotify_title(url: str) -> Optional[str]:
             schema_match = re.search(r'<script type="application/ld\+json">(.*?)</script>', html_page, re.DOTALL)
             if schema_match:
                 try:
-                    import json, html
                     schema_data = json.loads(schema_match.group(1))
                     if isinstance(schema_data, dict) and "name" in schema_data:
                         title = html.unescape(schema_data["name"])
@@ -666,9 +673,6 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
     """
     Whisper-based transcription using yt-dlp to download and OpenAI to transcribe.
     """
-    import subprocess
-    import glob
-    from openai import OpenAI
     
     # Proactive environment check to prevent silent hangs
     if not os.environ.get("OPENAI_API_KEY"):
@@ -886,7 +890,6 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
                     last_err = "\n".join(lines).strip() or "Unknown error (suppressed warnings)"
                 
                 if attempt < 2:
-                    import time
                     time.sleep(2 ** attempt) # Exponential backoff: 1s, 2s
 
         if last_err:
@@ -904,7 +907,6 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
             # If yt-dlp fails but the URL is likely a direct audio link, try requests
             print(f"[{source_id}] yt-dlp produced no file. Trying direct download fallback...")
             try:
-                import requests
                 # Use browser-like headers for direct download too
                 resp = requests.get(source_url, stream=True, timeout=60, headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -981,8 +983,8 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
     # Check filesize limit (OpenAI Whisper max 25MB)
     # Ensure pydub uses our local ffmpeg
     try:
-        import imageio_ffmpeg
-        os.environ["IMAGEIO_FFMPEG_EXE"] = imageio_ffmpeg.get_ffmpeg_exe()
+        if imageio_ffmpeg:
+            os.environ["IMAGEIO_FFMPEG_EXE"] = imageio_ffmpeg.get_ffmpeg_exe()
     except Exception: pass
 
     file_size_mb = os.path.getsize(audio_file_path) / (1024 * 1024)
@@ -991,9 +993,8 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
     if file_size_mb > 24:
         # Slice natively using ffmpeg binary (avoids pydub's ffprobe dependency)
         try:
-            import imageio_ffmpeg
-            import subprocess
-            import glob
+            if not imageio_ffmpeg:
+                 raise ImportError("imageio_ffmpeg not found")
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
             
             print(f"[{source_id}] File is {file_size_mb:.1f}MB. Chunking via ffmpeg segmenting...")
@@ -1019,15 +1020,14 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
 
     # 2. Transcribe via OpenAI
     try:
-        from openai import OpenAI
+        if not OpenAI:
+             raise ImportError("OpenAI not found")
         client = OpenAI()
         transcript_list = []
         
         # Get normalized language from metadata if available to guide Whisper
         metadata = load_source_metadata(source_id)
         req_lang = metadata.get("language")
-
-        import concurrent.futures
 
         def transcribe_chunk(chunk_info):
             ch_path, offset_sec = chunk_info
@@ -1072,7 +1072,6 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
                     wait_time = 5 * (2 ** attempt) if "429" in str(ex) or "500" in str(ex) else 2
                     print(f"[{source_id}] Whisper chunk failed (attempt {attempt+1}): {ex}. Retrying in {wait_time}s...")
                     if attempt < 2:
-                        import time
                         time.sleep(wait_time)
             
             raise last_ex
@@ -1137,11 +1136,9 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
 
 def fetch_rss_transcript_if_available(url: str) -> str:
     """Check RSS/URL for a pre-existing transcript link to avoid Whisper."""
-    import urllib.request
-    import re
     # Improved Headers to bypass common bot-blocking (403)
     HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/122.0.0.0",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Cache-Control": "no-cache",
@@ -1176,10 +1173,9 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
     Fetch text content for a non-podcast RSS/Blog source, 
     or a pre-existing transcript link discovered in RSS.
     """
-    import urllib.request
     # Improved Headers to bypass common bot-blocking (403)
     HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/122.0.0.0",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9"
     }
@@ -1290,13 +1286,14 @@ def scrape_url_as_last_resort(url: str, source_id: str) -> Optional[str]:
         
         ld_text = ""
         try:
-            import json
             ld_matches = re.findall(r'<script type="application/ld\+json">(.*?)</script>', content, re.DOTALL)
             for ld in ld_matches:
-                data = json.loads(ld)
-                if isinstance(data, dict) and data.get("description"):
-                    ld_text = html.unescape(data["description"])
-                    break
+                try:
+                    data = json.loads(ld)
+                    if isinstance(data, dict) and data.get("description"):
+                        ld_text = html.unescape(data["description"])
+                        break
+                except: continue
         except: pass
 
         # 4. Synthesis
@@ -1398,7 +1395,7 @@ def discover_true_duration_from_page(url: str) -> Optional[int]:
     if not url: return None
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/122.0.0.0",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         }
         resp = requests.get(url, headers=headers, timeout=12)
@@ -1455,7 +1452,6 @@ def search_youtube_for_mirror(title: str, podcast_name: str = None, creator_name
             "--no-playlist",
             f"ytsearch1:{search_query}"
         ]
-        import subprocess
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         video_id = result.stdout.strip()
         

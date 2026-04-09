@@ -103,7 +103,7 @@ const DQMCard = ({
                     <div className="space-y-4 relative z-10">
                         {dqm && dqm.scores && (
                             <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                                    {/* eslint-disable-next-line react/no-inline-styles */}
+
                                     <div 
                                         className={cn(
                                             "h-full rounded-full transition-all duration-1000 ease-out",

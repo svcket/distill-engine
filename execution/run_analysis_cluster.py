@@ -4,8 +4,16 @@ import json
 import os
 import re
 import time
+import traceback
 from typing import Dict, Any
 
+# Ensure local imports work by adding directory to path immediately
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from refine_transcript import refine_source_transcript
+from transcript_summarizer import summarize_transcript
+from build_insight_packet import generate_packet_orchestrator
+from insight_extractor import generate_insights_orchestrator
 
 # ─── Content Quality Gate ─────────────────────────────────────────────────────
 
@@ -59,9 +67,6 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
     into a single process to eliminate process startup latency.
     """
     base = os.path.dirname(__file__)
-    # Add base to sys.path to ensure local imports work when run from anywhere
-    if base not in sys.path:
-        sys.path.append(base)
 
     # ── Content Quality Gate ──────────────────────────────────────────────────
     is_sufficient, quality_reason = _assess_content_quality(source_id, base)
@@ -83,12 +88,6 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         }
         print(json.dumps(final_payload))
         sys.exit(0)  # Clean exit so the UI handles it gracefully
-
-    # Import existing logic from individual scripts
-    from refine_transcript import refine_source_transcript
-    from transcript_summarizer import summarize_transcript
-    from build_insight_packet import generate_packet_orchestrator
-    from insight_extractor import generate_insights_orchestrator
 
     start_time = time.time()
     results = {}
@@ -138,7 +137,6 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         print(json.dumps(final_payload))
 
     except Exception as e:
-        import traceback
         error_str = str(e)
         print(f"Cluster failure: {error_str}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
