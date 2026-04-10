@@ -18,4 +18,6 @@ export const supabaseAdmin = (typeof window === 'undefined' && supabaseServiceKe
   : null
 
 // Standard client for client-side operations (uses public anon key)
-export const supabase = createClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '')
+export const supabase = (supabaseUrl && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  ? createClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  : null as any
