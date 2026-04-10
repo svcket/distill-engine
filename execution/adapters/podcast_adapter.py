@@ -23,7 +23,7 @@ except ImportError:
 
 
 def is_generic_title(title: str) -> bool:
-    """Check if the provided title is a generic platform placeholder."""
+    """Check if the provided title is a generic platform placeholder or an LLM refusal."""
     if not title: return True
     generic_terms = [
         "podcast episode", "episode", "podcast", "full episode", 
@@ -33,6 +33,15 @@ def is_generic_title(title: str) -> bool:
         "unable to generate title", "missing summary content", "missing metadata", "title extraction failed"
     ]
     t_lower = title.lower().strip()
+
+    # REFUSAL GUARD: Catch LLM apologies / refusals
+    refusal_patterns = [
+        "i'm sorry", "cannot assist", "i am unable", "unable to perform", 
+        "i can't help", "ai assistant", "as an ai", "policy"
+    ]
+    if any(p in t_lower for p in refusal_patterns):
+        return True
+
     # Check for exact matches in generic terms
     if any(term == t_lower for term in generic_terms): return True
     
@@ -57,14 +66,23 @@ def recover_title_from_text(text: str, current_title: str) -> tuple[Optional[str
                   f"(which could be show notes or a partial transcript).\n\n"
                   f"Current (possibly generic) title: {current_title}\n"
                   f"Text:\n{prefix}\n\n"
-                  f"Return ONLY a JSON object with 'title' and 'show_name'.")
+                  f"Return ONLY a JSON object with 'title' and 'show_name'. "
+                  f"If you are unable to find this information, return null for both fields. "
+                  f"DO NOT explain your refusal.")
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
         res = json.loads(response.choices[0].message.content)
-        return res.get("title"), res.get("show_name")
+        title = res.get("title")
+        show = res.get("show_name")
+        
+        # Verify the title isn't a refusal message
+        if title and is_generic_title(title):
+            return None, None
+            
+        return title, show
     except Exception as e:
         print(f"[MetadataRescue] AI recovery failed: {e}")
         return None, None
@@ -224,7 +242,8 @@ class PodcastAdapter(BaseAdapter):
             # 1. High-Fidelity Rescue: YouTube Mirror Search
             if current_title and not is_generic:
                 clean_title = current_title.replace(" | Spotify", "").replace(" - Apple Podcasts", "").strip()
-                yt_query = f"{clean_title} {content_show or ''} podcast"
+                # Enhanced query: add "full podcast audio" to bias towards the actual episode
+                yt_query = f"{clean_title} {content_show or ''} full podcast audio"
                 final_extract_url = f"ytsearch1:{yt_query.strip()}"
                 has_audio_source = True
                 status = "pending_whisper"

@@ -438,6 +438,29 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
 
 function AngleResult({ data }: { data: Record<string, unknown> }) {
     const d = (data.payload || data.data || data) as Record<string, unknown>
+    
+    // ERROR GUARD: Handle failed status (e.g., Sparse Context)
+    if (!d || d.status === "failed") {
+        const error = (d?.error as string) || "Editorial Strategy Generation Failed"
+        const isSparse = error.toLowerCase().includes("sparse")
+        
+        return (
+            <div className="p-6 rounded-xl bg-red-500/5 border border-red-500/20 text-center">
+                <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-3">
+                    <Zap className={cn("w-5 h-5", isSparse ? "text-amber-500" : "text-red-500")} />
+                </div>
+                <h3 className="text-sm font-bold text-foreground mb-1">
+                    {isSparse ? "Insufficient Source Depth" : "Generation Halted"}
+                </h3>
+                <p className="text-xs text-muted-foreground max-w-[280px] mx-auto leading-relaxed">
+                    {isSparse 
+                        ? "The source metadata is too thin for strategic analysis. Try a source with a full transcript or more detailed show notes." 
+                        : error}
+                </p>
+            </div>
+        )
+    }
+
     const format = getStr(d, "recommended_format")
     const secondaryFormats = getArr(d, "secondary_formats")
     const audience = getStr(d, "target_audience")
