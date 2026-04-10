@@ -122,14 +122,20 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
 
     is_thin = (quality_reason == "THIN")
     
-    try:
-        if is_thin:
-            print(f"[{source_id}] INGESTION RESILIENCE: Content is thin. Running degraded analysis mode.")
-        
+        # Cloud Storage Handshake (Mirroring intermediate results for Split Architecture)
+        try:
+            from supabase_utils import upload_artifact
+        except Exception:
+            upload_artifact = None
+
         # 1. Refine Stage (Hidden)
         try:
             print(f"[{source_id}] Cluster Stage 1/4: Refining Transcript...", flush=True)
             results["refine"] = refine_source_transcript(source_id)
+            if upload_artifact:
+                refined_path = os.path.join(base, ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
+                if os.path.exists(refined_path):
+                    upload_artifact("transcripts", f"{source_id}_refined", refined_path)
         except Exception as e:
             print(f"[{source_id}] Refine stage failed: {e}", file=sys.stderr)
             results["refine"] = {"status": "skipped", "error": str(e)}
@@ -138,7 +144,6 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         try:
             print(f"[{source_id}] Cluster Stage 2/4: Summarizing...", flush=True)
             # HARDENING: Check for transcript existence before calling summarizer
-            # This prevents the cryptic FileNotFoundError rescue message
             refined_path = os.path.join(base, ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
             raw_path = os.path.join(base, ".tmp", "transcripts", source_id, f"{source_id}_raw.json")
             
@@ -149,27 +154,36 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
                 summary_result = summarize_transcript(source_id, lang)
             
             results["summary"] = summary_result
+            
+            if upload_artifact:
+                summary_path = os.path.join(base, ".tmp", "summaries", f"{source_id}_summary.json")
+                if os.path.exists(summary_path):
+                    upload_artifact("summaries", source_id, summary_path)
         except Exception as e:
             print(f"[{source_id}] Summary stage failed: {e}", file=sys.stderr)
             rescue_msg = f"⚠️ [METADATA RESCUE] Analysis unavailable ({e})"
             results["summary"] = {"status": "rescued", "summary": rescue_msg}
             
             # HARDENING: We MUST write the summary artifact even in rescue mode
-            # to prevent downstream "No summary artifact found" errors in the parallel stages.
             try:
                 summary_dir = os.path.join(base, ".tmp", "summaries")
                 os.makedirs(summary_dir, exist_ok=True)
                 summary_path = os.path.join(summary_dir, f"{source_id}_summary.json")
                 with open(summary_path, 'w', encoding='utf-8') as f:
                     json.dump({"summary": rescue_msg, "status": "rescued", "source_id": source_id}, f, indent=2)
-                print(f"[{source_id}] Rescued summary artifact persisted to disk.", flush=True)
-            except Exception as io_err:
-                print(f"[{source_id}] Critical Failure: Could not write rescued summary: {io_err}", file=sys.stderr)
+                if upload_artifact:
+                    upload_artifact("summaries", source_id, summary_path)
+                print(f"[{source_id}] Rescued summary artifact persisted to disk and cloud.", flush=True)
+            except Exception: pass
 
         # 3. Packet / Density Mapping (Hidden)
         try:
             print(f"[{source_id}] Cluster Stage 3/4: Building Density Packet...", flush=True)
             results["packet"] = generate_packet_orchestrator(source_id)
+            if upload_artifact:
+                packet_path = os.path.join(base, ".tmp", "insight_packets", f"{source_id}_packet.json")
+                if os.path.exists(packet_path):
+                    upload_artifact("packets", source_id, packet_path)
         except Exception as e:
             print(f"[{source_id}] Packet stage failed: {e}", file=sys.stderr)
             results["packet"] = {"status": "error", "error": str(e)}
@@ -178,6 +192,10 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         try:
             print(f"[{source_id}] Cluster Stage 4/4: Extracting Insights...", flush=True)
             results["insights"] = generate_insights_orchestrator(source_id, lang)
+            if upload_artifact:
+                insights_path = os.path.join(base, ".tmp", "insights", f"{source_id}_insights.json")
+                if os.path.exists(insights_path):
+                    upload_artifact("insights", source_id, insights_path)
         except Exception as e:
             print(f"[{source_id}] Insights stage failed: {e}", file=sys.stderr)
             results["insights"] = {"status": "failed", "error": str(e)}

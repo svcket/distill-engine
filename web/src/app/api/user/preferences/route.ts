@@ -21,9 +21,9 @@ export async function GET() {
             user = await withRetry(() => prisma.user.create({
                 data: {
                     id: userId,
-                    name: session.user.name || 'Pro User',
-                    email: session.user.email || '',
-                    image: session.user.image || '',
+                    name: session.user?.name || 'Pro User',
+                    email: session.user?.email || '',
+                    image: session.user?.image || '',
                 }
             }))
         }
@@ -56,9 +56,9 @@ export async function PATCH(request: Request) {
             user = await withRetry(() => prisma.user.create({
                 data: {
                     id: userId,
-                    name: session.user.name || 'Pro User',
-                    email: session.user.email || '',
-                    image: session.user.image || '',
+                    name: session.user?.name || 'Pro User',
+                    email: session.user?.email || '',
+                    image: session.user?.image || '',
                 }
             }))
         }

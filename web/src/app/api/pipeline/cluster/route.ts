@@ -63,7 +63,7 @@ export async function POST(request: Request) {
                 updates.title = metadata.title as string
             }
             if (metadata.duration) {
-                updates.duration = formatDuration(metadata.duration)
+                updates.duration = formatDuration(metadata.duration as any)
             }
 
             // Update the source record with completed stages and metadata

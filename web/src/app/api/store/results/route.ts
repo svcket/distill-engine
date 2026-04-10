@@ -41,7 +41,7 @@ export async function GET(request: Request) {
     const results: Record<string, unknown> = {}
 
     // Optimized Hybrid Artifact Fetcher
-    const fetchArtifact = async (bucket: string, fileName: string) => {
+    const fetchArtifact = async (bucket: string, fileName: string, folderId?: string) => {
         // 1. Try local disk (Railway/Dev)
         const localPath = path.join(baseDir, bucket, fileName);
         if (fs.existsSync(localPath)) {
@@ -51,7 +51,10 @@ export async function GET(request: Request) {
         // 2. Fallback to Supabase Storage (Vercel Prod)
         if (supabaseAdmin) {
             try {
-                const { data, error } = await supabaseAdmin.storage.from(bucket).download(fileName);
+                // Determine remote path: we mirror the [source_id]/[filename] structure
+                const remotePath = folderId ? `${folderId}/${fileName}` : fileName;
+                
+                const { data, error } = await supabaseAdmin.storage.from(bucket).download(remotePath);
                 if (data && !error) {
                     const text = await data.text();
                     return JSON.parse(text);
@@ -86,14 +89,14 @@ export async function GET(request: Request) {
                        stageId === 'summary' ? '_summary.json' :
                        `_${stageId === 'qa' ? 'eval' : stageId === 'blueprint' ? 'outline' : stageId}.json`;
         
-        let data = await fetchArtifact(bucket, `${sourceId}${suffix}`);
+        let data = await fetchArtifact(bucket, `${sourceId}${suffix}`, sourceId);
         
         // Resilient fallback for naming mismatches
         if (!data) {
             const cleanId = sourceId.replace(/^spotify_/, '');
-            data = await fetchArtifact(bucket, `${cleanId}${suffix}`);
+            data = await fetchArtifact(bucket, `${cleanId}${suffix}`, cleanId);
             if (!data && !sourceId.startsWith('spotify_')) {
-                data = await fetchArtifact(bucket, `spotify_${sourceId}${suffix}`);
+                data = await fetchArtifact(bucket, `spotify_${sourceId}${suffix}`, `spotify_${sourceId}`);
             }
         }
 
@@ -109,12 +112,12 @@ export async function GET(request: Request) {
     }));
 
     // Check for source metadata (Judge results)
-    let meta = await fetchArtifact('sources', `${sourceId}.json`);
+    let meta = await fetchArtifact('sources', `${sourceId}.json`, sourceId);
     if (!meta) {
         // Fallback variants for sources
         const cleanId = sourceId.replace(/^spotify_/, '');
-        meta = await fetchArtifact('sources', `${cleanId}.json`);
-        if (!meta) meta = await fetchArtifact('sources', `${sourceId}_metadata.json`);
+        meta = await fetchArtifact('sources', `${cleanId}.json`, cleanId);
+        if (!meta) meta = await fetchArtifact('sources', `${sourceId}_metadata.json`, sourceId);
     }
 
     if (meta) {
