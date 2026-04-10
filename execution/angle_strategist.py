@@ -54,14 +54,19 @@ def extract_angle(
 
     # SPARSE CONTEXT GUARD: If input text is less than 500 characters, analysis is meaningless
     if len(input_text.strip()) < 500:
-        msg = "Source context too sparse for editorial strategy extraction."
-        print(json.dumps({"status": "failed", "error": msg}), file=sys.stderr)
+        msg = "Insufficient source context for strategic analysis. (Metadata and notes combined < 500 chars)"
+        print(json.dumps({
+            "status": "failed", 
+            "error": msg,
+            "error_code": "SPARSE_CONTEXT",
+            "source_id": source_id
+        }), file=sys.stderr)
         # Still write a failure artifact so the UI can catch it
         out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "angles")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{source_id}_angle.json")
         with open(out_path, 'w', encoding='utf-8') as f:
-            json.dump({"status": "failed", "error": msg, "source_id": source_id}, f, indent=2)
+            json.dump({"status": "failed", "error": msg, "error_code": "SPARSE_CONTEXT", "source_id": source_id}, f, indent=2)
         sys.exit(1)
     
     if "OPENAI_API_KEY" not in os.environ or not os.environ["OPENAI_API_KEY"]:

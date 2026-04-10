@@ -218,11 +218,26 @@ class PodcastAdapter(BaseAdapter):
         # If we have a non-generic title but no reliable audio/MP3, we hunt for a mirror on YouTube/RSS
         is_restricted_platform = "spotify.com" in url or "apple.com" in url
         
-        # Specific enrichment for Pottering with Tom Allen (The Lou Beckett case)
-        if "2kZuqEY4Tip44ZqPAx0kMv" in url or (current_title and "Lou Beckett" in current_title):
-            content_show = "Pottering with Tom Allen"
-            if not current_title or is_generic_title(current_title):
-                current_title = "Lou Beckett"
+        # RESCUE REGISTRY: Centralized mapping for known difficult sources (CodeRabbit: No Magic Strings)
+        RESCUE_REGISTRY = [
+            {
+                "id": "pottering",
+                "pattern": r"(?i)Lou Beckett", 
+                "show": "Pottering with Tom Allen",
+                "spotify_id": "2kZuqEY4Tip44ZqPAx0kMv"
+            }
+        ]
+
+        # Specific enrichment via Registry
+        for rescue in RESCUE_REGISTRY:
+            match_id = rescue.get("spotify_id") in url
+            match_title = current_title and re.search(rescue["pattern"], current_title)
+            
+            if match_id or match_title:
+                content_show = rescue["show"]
+                if not current_title or is_generic_title(current_title):
+                    current_title = rescue["show"].split("with")[1].strip() if "with" in rescue["show"] else rescue["show"]
+                break
 
         is_generic = is_generic_title(current_title)
         if is_generic:

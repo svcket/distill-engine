@@ -442,7 +442,7 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
     // ERROR GUARD: Handle failed status (e.g., Sparse Context)
     if (!d || d.status === "failed") {
         const error = (d?.error as string) || "Editorial Strategy Generation Failed"
-        const isSparse = error.toLowerCase().includes("sparse")
+        const isSparse = d?.error_code === "SPARSE_CONTEXT" || error.toLowerCase().includes("sparse")
         
         return (
             <div className="p-6 rounded-xl bg-red-500/5 border border-red-500/20 text-center">

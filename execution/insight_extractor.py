@@ -148,7 +148,7 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
         based on the official source metadata and description.
         
         CRITICAL RULES:
-        1. STRICK GROUNDING: Only use facts from the provided text. Do NOT use prior knowledge of people, companies, or tech founders (including names like Karri Saarinen or Linear) unless they are in the text.
+        1. STRICT GROUNDING: Only use facts from the provided text. Do NOT use prior knowledge of people, companies, or tech founders (including names like Karri Saarinen or Linear) unless they are in the text.
         2. NO FIELD LEAKAGE: Do NOT include field names like 'source_context', 'contradictions', or 'frameworks' in your text output.
         3. Identify the strategic pillars and intended audience impact.
         4. Capture controversies, tensions, or competitive positioning inherent in the subject.
@@ -162,7 +162,7 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
         Your task is to extract dense, actionable, and analytical intelligence from this source material.
         
         CRITICAL RULES:
-        1. STRICK GROUNDING: Use ONLY the provided transcript. Do NOT invent claims or use prior knowledge of the speaker's other work or famous tech companies unless mentioned.
+        1. STRICT GROUNDING: Use ONLY the provided transcript. Do NOT invent claims or use prior knowledge of the speaker's other work or famous tech companies unless mentioned.
         2. NO FIELD LEAKAGE: Internal model names (e.g., 'source_context', 'key_claims', 'implications') must NEVER appear in the text values you provide.
         3. Identify frameworks, metrics, and step-by-step models explicitly stated.
         4. Perform deep analysis: surface controversies, contradictions, and second-order implications.
