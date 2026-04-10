@@ -38,9 +38,19 @@ class ThreadArchitect:
         
         if not self.system_prompt:
             logger.warning("Directive file x_thread_architect.md not found. Using default internal prompt.")
-            self.system_prompt = "You are a world-class social strategist. Generate a high-performance X thread from the provided content. Return ONLY JSON."
+            self.system_prompt = (
+                "You are a world-class social strategist. Generate a "
+                "high-performance X thread from the provided content. "
+                "Return ONLY JSON."
+            )
 
-    def generate_thread(self, draft_content: str, transcript_summary: str, source_url: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
+    def generate_thread(
+        self, 
+        draft_content: str, 
+        transcript_summary: str, 
+        source_url: Optional[str] = None, 
+        lang: str = "en"
+    ) -> Dict[str, Any]:
         logger.info("Generating X Thread from draft and transcript context...")
         
         user_prompt = f"""Draft Content:

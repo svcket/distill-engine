@@ -3,7 +3,7 @@ import sys
 import subprocess
 import json
 import argparse
-from typing import List, Dict, Optional
+from typing import Optional
 from openai import OpenAI
 
 # ─── Configuration & Personas ────────────────────────────────────────────────
@@ -16,7 +16,8 @@ STRICT REVIEW CRITERIA:
 1. SECURITY: Look for auth bypasses, hardcoded secrets, prompt injection, sanitization failures, and fail-open logic.
 2. LOGIC: Identify edge cases, race conditions, incorrect state handling, and pipeline stalls.
 3. PERFORMANCE: Flag redundant API calls, large memory allocations, and blocking I/O in async contexts.
-4. BRAND STANDARDS: Ensure compliance with the 'Distill' aesthetic (premium, high-fidelity) and engineering standards (Agency Layer 3).
+4. BRAND STANDARDS: Ensure compliance with the 'Distill' aesthetic
+    (premium, high-fidelity) and engineering standards (Agency Layer 3).
 
 REPORT FORMAT:
 Summary: A concise 1-2 sentence overview of the change.

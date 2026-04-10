@@ -7,6 +7,8 @@ import os
 import re
 import json
 import hashlib
+import urllib.request
+import urllib.parse
 from typing import Optional
 
 from .base_adapter import BaseAdapter, NormalizedSource
@@ -79,9 +81,6 @@ class YouTubeAdapter(BaseAdapter):
 
         if api_key:
             try:
-                import urllib.request
-                import urllib.parse
-
                 params = urllib.parse.urlencode({
                     "part": "snippet,contentDetails",
                     "id": video_id,
@@ -117,8 +116,6 @@ class YouTubeAdapter(BaseAdapter):
 
         # Fallback: Scrape the page for the <title> tag if API is missing or fails
         try:
-            import urllib.request
-            import re
             req = urllib.request.Request(
                 f"https://www.youtube.com/watch?v={video_id}",
                 headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"}
@@ -139,9 +136,9 @@ class YouTubeAdapter(BaseAdapter):
         # Minimal stub if all else fails
         return {
             "title": f"YouTube Video ({video_id})",
-            "channel": "Unknown",
+            "channel": "YouTube",
             "duration_seconds": 0,
-            "description": "",
+            "description": f"No detailed metadata was available for YouTube video {video_id}. Transcription rescue is active.",
         }
 
     def _parse_iso_duration(self, s: str) -> int:

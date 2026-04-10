@@ -1,7 +1,6 @@
 import os
 import json
 import requests
-import re
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -14,7 +13,9 @@ SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 def _require_supabase_env():
     """Verify Supabase credentials exist before performing operations."""
     if not SUPABASE_URL or not SUPABASE_KEY:
-        raise RuntimeError("Missing Supabase credentials (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY) in .env")
+        msg = ("Missing Supabase credentials (NEXT_PUBLIC_SUPABASE_URL or "
+               "SUPABASE_SERVICE_ROLE_KEY) in .env")
+        raise RuntimeError(msg)
 
 # Removed top-level exit(1) to prevent module import failures in non-DB contexts
 
@@ -22,7 +23,13 @@ def recover_title_from_text(text, current_title):
     if not text or len(text) < 100: return None
     try:
         client = OpenAI()
-        prompt = f"Identify the podcast episode title and show name from the following transcript snippet.\nCurrent (generic) title: {current_title}\nText:\n{text[:2000]}\n\nReturn JSON: {{'title': '...', 'show_name': '...'}}"
+        prompt = (
+            "Identify the podcast episode title and show name from the "
+            "following transcript snippet.\n"
+            f"Current (generic) title: {current_title}\n"
+            f"Text:\n{text[:2000]}\n\n"
+            "Return JSON: {'title': '...', 'show_name': '...'}"
+        )
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
@@ -95,7 +102,12 @@ def repair_via_cloud_storage(refetch_all=False):
         
         if refetch_all and source_url:
             print(f"  -> FORCED REFETCH: Triggering Harvester...")
-            harvest_cmd = [sys.executable, str(harvester_path), "--source-id", source_id, "--url", source_url, "--source-type", source_type]
+            harvest_cmd = [
+                sys.executable, str(harvester_path), 
+                "--source-id", source_id, 
+                "--url", source_url, 
+                "--source-type", source_type
+            ]
             try:
                 h_res = subprocess.run(harvest_cmd, capture_output=True, text=True, timeout=300)
                 if h_res.returncode != 0:

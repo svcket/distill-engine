@@ -1,3 +1,5 @@
+import { auth } from "@/auth"
+import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import path from 'path'
 import fs from 'fs'
@@ -6,10 +8,25 @@ export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const session = await auth()
+    if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const { id: sourceId } = await params;
+    const userId = session.user.id;
 
     if (!sourceId) {
         return NextResponse.json({ error: 'Missing sourceId' }, { status: 400 })
+    }
+
+    // SECURITY: Ensure the user owns this source before returning disk artifacts
+    const source = await withRetry(() => prisma.source.findUnique({
+        where: { id: sourceId, userId }
+    }))
+
+    if (!source) {
+        return NextResponse.json({ error: "Source not found or access denied." }, { status: 404 })
     }
 
     const baseDir = path.resolve(process.cwd(), '../execution/.tmp')

@@ -50,7 +50,10 @@ def get_audio_duration(filepath: str) -> float:
     """Helper to get audio duration using ffprobe/ffmpeg."""
     try:
         # 1. Try ffprobe first (Fastest)
-        cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filepath]
+        cmd = [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration", 
+            "-of", "default=noprint_wrappers=1:nokey=1", filepath
+        ]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         if res.returncode == 0:
             return float(res.stdout.strip())
@@ -89,10 +92,13 @@ def determine_transcript_strategy(source_id: str, metadata: dict) -> tuple[str, 
         return "direct", "vtt_srt"
 
     # 3. Podcast: Check for platform URLs or MP3 resolution
-    if source_type in ("podcast", "apple_podcast", "spotify_podcast", "spotify") or "spotify.com" in url or "podcasts.apple.com" in url or "rss.com" in url:
+    is_pod_platform = "spotify.com" in url or "podcasts.apple.com" in url or "rss.com" in url
+    is_pod_type = source_type in ("podcast", "apple_podcast", "spotify_podcast", "spotify")
+    if is_pod_type or is_pod_platform:
         # If it's a known platform, we'll try Whisper strategy even without explicit .mp3
         # (yt-dlp handles many of these platform URLs natively)
-        if "spotify.com" in url or "apple.com" in url or "rss.com" in url or source_type in ("apple_podcast", "spotify_podcast", "spotify"):
+        is_direct_rescue = "spotify.com" in url or "apple.com" in url or "rss.com" in url
+        if is_direct_rescue or source_type in ("apple_podcast", "spotify_podcast", "spotify"):
             return "audio_fallback", "audio_whisper"
         
         # Fallback check for direct audio extensions
@@ -423,19 +429,25 @@ def resolve_apple_podcast_audio(url: str, source_id: Optional[str] = None) -> st
         print(f"iTunes Resolution failed for {url}: {e}")
     
     return url
-def resolve_spotify_via_itunes(title: str, show_name: Optional[str] = None, source_id: Optional[str] = None) -> Optional[str]:
+def resolve_spotify_via_itunes(
+    title: str, show_name: Optional[str] = None, source_id: Optional[str] = None
+) -> Optional[str]:
     """Try to find a public Apple Podcast link for a Spotify episode via Title search.
 # flake8: noqa: E501
 """
     # 0. GENERIC TITLE GUARD: Prevent "Ghost Podcast Leaks"
     if is_generic_title(title):
-        print(f"[Spotify-Resolver] ABORTED: Title '{title}' is generic. Skipping iTunes search to prevent data leak.", flush=True)
+        print(f"[Spotify-Resolver] ABORTED: Title '{title}' is generic. "
+              f"Skipping iTunes search to prevent data leak.", flush=True)
         return None
 
     try:
         # 1. Improved Title Cleaning (Sync with adapter)
         clean_title = title.split("|")[0].split("\u2022")[0].strip()
-        clean_title = re.sub(r'^(?:Season|Episode|Ep|S)?\s*\d+[:\s-]*(?:Episode|Ep|E)?\s*\d*[:\s-]*', '', clean_title, flags=re.IGNORECASE).strip()
+        clean_title = re.sub(
+            r'^(?:Season|Episode|Ep|S)?\s*\d+[:\s-]*(?:Episode|Ep|E)?\s*\d*[:\s-]*', 
+            '', clean_title, flags=re.IGNORECASE
+        ).strip()
         
         if len(clean_title) < 5:
              clean_title = title.split("|")[0].split("\u2022")[0].strip()
@@ -547,7 +559,8 @@ def resolve_spotify_via_itunes(title: str, show_name: Optional[str] = None, sour
                     break
             
             if is_generic or len(episode_name.strip()) < 4:
-                print(f"[Spotify-Resolver] Title '{episode_name}' / '{title}' is too generic. Aborting YouTube rescue to prevent data leakage.", flush=True)
+                print(f"[Spotify-Resolver] Title '{episode_name}' / '{title}' is too generic. "
+                      f"Aborting YouTube rescue to prevent data leakage.", flush=True)
                 log_rescue_attempt("spotify", "aborted", "Title too generic for YouTube search")
                 return None
 
@@ -582,8 +595,10 @@ def extract_spotify_title(url: str) -> Optional[str]:
     try:
         
         user_agents = [
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 "
+             "(KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"),
+            ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+             "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"),
             "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
         ]
         
@@ -597,10 +612,14 @@ def extract_spotify_title(url: str) -> Optional[str]:
             except Exception: continue
             
         # Try Embed URL if main URL failed to yield metadata in header
-        if is_generic_title(re.search(r'property="og:title" content="(.*?)"', html_page).group(1) if re.search(r'property="og:title" content="(.*?)"', html_page) else "unknown"):
+        og_match = re.search(r'property="og:title" content="(.*?)"', html_page)
+        og_title = og_match.group(1) if og_match else "unknown"
+        if is_generic_title(og_title):
             try:
                 # Handle episode, track, show
-                embed_url = re.sub(r"open\.spotify\.com/(track|episode|show|album)/", r"open.spotify.com/embed/\1/", url).split("?")[0]
+                clean_url = url.split("?")[0]
+                embed_url = re.sub(r"open\.spotify\.com/(track|episode|show|album)/", 
+                                   r"open.spotify.com/embed/\1/", clean_url)
                 req = urllib.request.Request(embed_url, headers={"User-Agent": user_agents[1]})
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     embed_html = resp.read().decode("utf-8", errors="ignore")
@@ -650,7 +669,13 @@ def extract_spotify_title(url: str) -> Optional[str]:
         pass
     return None
 
-def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, is_local_source: bool = False, referer: str = None) -> dict:
+def fetch_whisper_transcript(
+    source_id: str, 
+    source_url: str, 
+    output_dir: str, 
+    is_local_source: bool = False, 
+    referer: str = None
+) -> dict:
     """
     Whisper-based transcription using yt-dlp to download and OpenAI to transcribe.
     """
@@ -716,7 +741,9 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
         try:
             # Add Referer for Vimeo especially
             headers = [
-                "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "--user-agent", ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                 "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                 "Chrome/122.0.0.0 Safari/537.36"),
                 "--add-header", "Referer:https://vimeo.com/",
                 "--add-header", "Origin:https://vimeo.com/"
             ]
@@ -738,7 +765,8 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
                     # Matches patterns like 00:00:00.000 --> 00:00:05.000 or 00:00,000 --> 00:00,000
                     blocks = re.split(r'\n\s*\n', content)
                     for block in blocks:
-                        time_match = re.search(r'(\d{2}:\d{2}:\d{2}[\.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[\.,]\d{3})', block)
+                        time_pattern = r'(\d{2}:\d{2}:\d{2}[\.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[\.,]\d{3})'
+                    time_match = re.search(time_pattern, block)
                         if time_match:
                             start_str, end_str = time_match.groups()
                             # Convert HH:MM:SS.mmm to seconds
@@ -748,7 +776,10 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
                             
                             start = to_sec(start_str)
                             end = to_sec(end_str)
-                            text = re.sub(r'<[^>]+>', '', re.sub(r'^\d+\n', '', block.split('-->')[-1].split('\n', 1)[-1], flags=re.MULTILINE)).strip()
+                            # Clean text from tags and segment numbers
+                            raw_text = block.split('-->')[-1].split('\n', 1)[-1]
+                            text = re.sub(r'<[^>]+>', '', re.sub(r'^\d+\n', '', 
+                                   raw_text, flags=re.MULTILINE)).strip()
                             if text:
                                 transcript_list.append({"text": text, "start": start, "duration": end - start})
                     
@@ -824,7 +855,9 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
                  "--no-warnings",
                  "--socket-timeout", "10",  # Even faster failure on stalled connections
                  "--concurrent-fragments", "4",
-                 "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                 "--user-agent", ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                  "Chrome/122.0.0.0 Safari/537.36")
              ])
              
              # Vimeo-specific impersonation fix
@@ -933,8 +966,10 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
              if 0 < actual_dur < expected_num * 0.5 and actual_dur < 1200:
                   os.remove(audio_file_path)
                   audio_file_path = None
-                  print(f"[{source_id}] FIDELITY FAILURE: Downloaded {actual_dur:.1f}s, expected {expected_num}s. File is likely a truncated preview. Rejecting and pivoting to Rescue.")
-                  raise Exception(f"Truncated audio detected ({int(actual_dur)}s vs {expected_num}s). Rejecting as preview clip.")
+                  print(f"[{source_id}] FIDELITY FAILURE: Downloaded {actual_dur:.1f}s, expected {expected_num}s. "
+                        f"File is likely a truncated preview. Rejecting and pivoting to Rescue.")
+                  raise Exception(f"Truncated audio detected ({int(actual_dur)}s vs {expected_num}s). "
+                                f"Rejecting as preview clip.")
 
     if not audio_file_path:
         # PIVOT TO UNIVERSAL RESCUE: If audio is inaccessible, use description/metadata to proceed
@@ -1024,7 +1059,10 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
                         )
                     
                     # Format to list of segments
-                    segments = transcript.segments if hasattr(transcript, "segments") else transcript.model_dump().get("segments", [])
+                    if hasattr(transcript, "segments"):
+                        segments = transcript.segments
+                    else:
+                        segments = transcript.model_dump().get("segments", [])
                     if not segments:
                         text_val = transcript.text if hasattr(transcript, "text") else transcript.model_dump().get("text", "")
                         segments = [{"text": text_val, "start": 0.0, "end": float(len(text_val.split()) * 0.4)}] # rough guess
@@ -1096,7 +1134,8 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
     is_preview = (total_duration > 0 and total_duration < 300 and expected_duration > 600)
     
     if is_preview or is_truncated:
-        error_msg = f"Audio source appears to be a truncated preview or incomplete stream (Got {int(total_duration)}s, expected {expected_duration}s)."
+        error_msg = (f"Audio source appears to be a truncated preview or incomplete stream "
+                     f"(Got {int(total_duration)}s, expected {expected_duration}s).")
         print(f"[{source_id}] {error_msg}")
         # Raising this will trigger the global rescue logic (Bounty Hunt) in fetch_transcript
         raise Exception(error_msg)
@@ -1117,8 +1156,10 @@ def fetch_whisper_transcript(source_id: str, source_url: str, output_dir: str, i
 def fetch_rss_transcript_if_available(url: str) -> str:
     """Check RSS/URL for a pre-existing transcript link to avoid Whisper."""
     # Improved Headers to bypass common bot-blocking (403)
+    ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/122.0.0.0")
     HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/122.0.0.0",
+        "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Cache-Control": "no-cache",
@@ -1176,7 +1217,9 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
             item_xml = item_match.group(1) if item_match else content
             
             # 1. Try common content tags (including high-res content)
-            content_m = re.search(r"<(?:content:encoded|description|body)>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</(?:content:encoded|description|body)>", item_xml, re.DOTALL | re.IGNORECASE)
+            pattern = (r"<(?:content:encoded|description|body)>(?:<!\[CDATA\[)?"
+                       r"(.*?)(?:\]\]>)?</(?:content:encoded|description|body)>")
+            content_m = re.search(pattern, item_xml, re.DOTALL | re.IGNORECASE)
             text = content_m.group(1) if content_m else ""
             
             # 2. If text is suspiciously short for a podcast, it's likely just a summary, not a transcript
@@ -1185,7 +1228,8 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
             word_count = len(text.split())
             char_count = len(text)
             if word_count < 100 or char_count < 500:
-                print(f"[{source_id}] RSS text check: {word_count} words, {char_count} chars. Threshold not met (min 100/500). Skipping Fast-Path.")
+                print(f"[{source_id}] RSS text check: {word_count} words, {char_count} chars. "
+                      f"Threshold not met (min 100/500). Skipping Fast-Path.")
                 return None
         else:
             # HTML - very naive para extraction
@@ -1195,7 +1239,8 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
             # If text is short, try to rescue from meta description (Essential for X/Twitter)
             if len(text.split()) < 50:
                  # Try og:description or twitter:description
-                 meta_m = re.search(r'<meta\s+(?:property|name)="(?:og|twitter):description"\s+content="(.*?)"', content, re.IGNORECASE)
+                 m_pattern = r'<meta\s+(?:property|name)="(?:og|twitter):description"\s+content="(.*?)"'
+                 meta_m = re.search(m_pattern, content, re.IGNORECASE)
                  if meta_m:
                      text = meta_m.group(1).strip()
                      print(f"[{source_id}] Content rescue via Meta Description: {text[:50]}...")
@@ -1234,8 +1279,10 @@ def fetch_rss_text_transcript(source_id: str, url: str, output_dir: str) -> dict
 def scrape_url_as_last_resort(url: str, source_id: str) -> Optional[str]:
     """Universal scraper fallback to extract text from ANY URL if audio fails."""
     print(f"[{source_id}] UNIVERSAL RESCUE: Attempting web scrape for {url}...")
+    ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/122.0.0.0")
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/122.0.0.0",
+        "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
     }
     try:
@@ -1375,7 +1422,9 @@ def discover_true_duration_from_page(url: str) -> Optional[int]:
     if not url: return None
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/122.0.0.0",
+            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                           "AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/122.0.0.0 Safari/122.0.0.0"),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         }
         resp = requests.get(url, headers=headers, timeout=12)
@@ -1452,7 +1501,8 @@ def search_youtube_for_mirror(title: str, podcast_name: str = None, creator_name
                     elif len(parts) == 2: mirror_secs = int(parts[0])*60 + int(parts[1])
                     
                     if mirror_secs < expected_secs * 0.8:
-                        print(f"[MIRROR REJECTED] Found match but duration {dur_str} is too short compared to {expected_secs}s.")
+                        print(f"[MIRROR REJECTED] Found match but duration {dur_str} "
+                              f"is too short compared to {expected_secs}s.")
                         return None
             
             return f"https://www.youtube.com/watch?v={video_id}"
@@ -1461,7 +1511,10 @@ def search_youtube_for_mirror(title: str, podcast_name: str = None, creator_name
         
     return None
 
-def fetch_transcript(source_id: str, source_url: str = None, source_type: str = None, max_segments: int = 2000, passed_title: str = None, lang: str = "en"):
+def fetch_transcript(
+    source_id: str, source_url: str = None, source_type: str = None, 
+    max_segments: int = 2000, passed_title: str = None, lang: str = "en"
+):
     """Main entrypoint — dispatch to correct fetcher based on source type."""
     base = os.path.dirname(os.path.abspath(__file__))
 
@@ -1480,7 +1533,9 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
     if metadata.get("source_type") == "youtube" and not metadata.get("url"):
         if "vimeo.com" in (source_url or "") or source_id.startswith("vimeo_"):
             source_type = "vimeo"
-        elif "spotify.com" in (source_url or "") or source_id.startswith("podcast_") or source_id.startswith("spotify_"):
+        is_spotify = "spotify.com" in (source_url or "")
+        is_pod_id = source_id.startswith("podcast_") or source_id.startswith("spotify_")
+        if is_spotify or is_pod_id:
             source_type = "podcast"
         elif source_url and (source_url.endswith(".xml") or "rss" in source_url) or source_id.startswith("rss_"):
             source_type = "rss"
@@ -1562,7 +1617,8 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
 
     # 0. METADATA DISCOVERY: Try to get duration/missing info before proceeding
     discovery_duration = None
-    if source_url and ("youtube.com" in source_url or "youtu.be" in source_url or "spotify.com" in source_url or "apple.com" in source_url or "vimeo.com" in source_url):
+    platform_check = any(x in source_url for x in ["youtube.com", "youtu.be", "spotify.com", "apple.com", "vimeo.com"])
+    if source_url and platform_check:
         print(f"[{source_id}] Polling metadata via Truth Protocol (Deep Scrape)...")
         # --- TRUTH DISCOVERY: Page Scrape ---
         discovery_duration = discover_true_duration_from_page(source_url)
@@ -1615,9 +1671,16 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
                 result = fetch_youtube_transcript(yt_id, output_dir, max_segments=max_segments)
                 result["source_id"] = source_id
             except Exception as yt_err:
-                print(f"[{source_id}] YouTube API Transcript failed: {yt_err}. Falling back to Whisper Audio extraction...", file=sys.stderr)
+                msg = (f"[{source_id}] YouTube API Transcript failed: {yt_err}. "
+                       "Falling back to Whisper Audio extraction...")
+                print(msg, file=sys.stderr)
                 try:
-                    result = fetch_whisper_transcript(source_id, source_url or f"https://www.youtube.com/watch?v={yt_id}", output_dir, referer=referer)
+                    result = fetch_whisper_transcript(
+                        source_id, 
+                        source_url or f"https://www.youtube.com/watch?v={yt_id}", 
+                        output_dir, 
+                        referer=referer
+                    )
                 except Exception as whisper_err:
                     print(f"[{source_id}] Whisper fallback also failed: {whisper_err}.", file=sys.stderr)
                     # Let the pipeline drop down to the standard rescue logic below
@@ -1637,7 +1700,8 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
                     podcast_name = metadata.get("podcast_name")
                     
                     # IDENTITY STRIKE: If title is generic, try to recover it from content
-                    if not search_title or any(x in search_title.lower() for x in ["podcast episode", "episode", "unknown"]):
+                    gen_terms = ["podcast episode", "episode", "unknown"]
+                    if not search_title or any(x in search_title.lower() for x in gen_terms):
                          print(f"[{source_id}] IDENTITY STRIKE: Generic title detected. Recovering identity from content...")
                          # Try to recover from metadata description or slug
                          search_title = extract_title_from_url_slug(source_url)
@@ -1648,11 +1712,19 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
                     
                     if search_title:
                         creator_name = metadata.get("creator") or metadata.get("channel")
-                        mirror_url = search_youtube_for_mirror(search_title, podcast_name, creator_name)
+                        mirror_url = search_youtube_for_mirror(
+                            search_title, podcast_name, creator_name
+                        )
                         if mirror_url:
                              print(f"[{source_id}] PIVOT: Bounty Hunt successful. Transcribing mirror...")
                              try:
-                                 return fetch_transcript(source_id, source_url=mirror_url, source_type="youtube", max_segments=max_segments, lang=lang)
+                                 return fetch_transcript(
+                                     source_id, 
+                                     source_url=mirror_url, 
+                                     source_type="youtube", 
+                                     max_segments=max_segments, 
+                                     lang=lang
+                                 )
                              except Exception: pass
 
                     # 3. UNIVERSAL SCRAPE PIVOT (Podtail etc)
@@ -1758,7 +1830,17 @@ def fetch_transcript(source_id: str, source_url: str = None, source_type: str = 
         print(f"[{source_id}] FATAL ERROR: {error_str}. Pipeline stalled at hard quality gate.", file=sys.stderr)
         
         # GLOBAL FALLBACK SEGMENT: Provide metadata-based status instead of failing
-        final_msg = f"[Ingestion Incomplete - Quality Gate]\n\n{error_str}\n\n[The source appears to be protected or contains insufficient metadata for a text rescue.]"
+        # ENRICHMENT: Try to find metadata description
+        meta_desc = ""
+        try:
+            meta = load_source_metadata(source_id)
+            if meta and meta.get("description"):
+                meta_desc = f"\n\n[Scraped Description]\n{meta['description']}"
+        except Exception:
+            pass
+
+        final_msg = (f"[Ingestion Incomplete - Quality Gate]\n\n{error_str}{meta_desc}\n\n"
+                     f"[The source appears to be protected or contains insufficient metadata for a text rescue.]")
         result = {
             "source_id": source_id,
             "status": "rescued_text", # Keep status as rescued_text so UI can handle the object, but with is_failure=True
@@ -1798,7 +1880,16 @@ if __name__ == "__main__":
         error_str = str(e)
         
         # Ensure we write the artifact file so the Next.js 'expectedArtifact' check passes
-        final_msg = f"[Incomplete Ingestion - Rescue Initialized]\n\n{error_str}"
+        # ENRICHMENT: Try to find metadata description to provide a high-fidelity rescue
+        meta_desc = ""
+        try:
+            meta = load_source_metadata(args.source_id)
+            if meta and meta.get("description"):
+                meta_desc = f"\n\n[Scraped Description]\n{meta['description']}"
+        except Exception:
+            pass
+
+        final_msg = f"[Incomplete Ingestion - Rescue Initialized]\n\n{error_str}{meta_desc}"
         rescued_segments = [{"text": final_msg, "start": 0, "duration": 0}]
         
         try:

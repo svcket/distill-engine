@@ -3,7 +3,7 @@ import argparse
 import json
 import os
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from typing import List
 from openai import OpenAI
 
 # Schema for a Research DAG Node

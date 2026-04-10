@@ -1,5 +1,5 @@
 import { auth } from "@/auth"
-import { prisma } from "@/lib/prisma"
+import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 import path from 'path'
@@ -26,9 +26,9 @@ export async function POST(request: Request) {
         const packetPath = path.join(executionDir, '.tmp', 'insight_packets', `${transcriptId}_packet.json`)
 
         // SECURITY: Verify ownership before spawning worker (closes ID-guessing vulnerability)
-        const source = await prisma.source.findUnique({
+        const source = await withRetry(() => prisma.source.findUnique({
             where: { id: transcriptId, userId }
-        })
+        }))
 
         if (!source) {
             return NextResponse.json({ error: "Source not found or access denied." }, { status: 404 })
@@ -64,14 +64,14 @@ export async function POST(request: Request) {
                         controller.enqueue(encoder.encode(JSON.stringify({ type: "error", message: `Script exited with code ${code}` }) + "\n"))
                     } else {
                         // Persist stage completion on success
-                        await prisma.source.update({
+                        await withRetry(() => prisma.source.update({
                             where: { id: transcriptId, userId },
                             data: {
                                 completedStages: {
                                     push: 'insights'
                                 }
                             }
-                        })
+                        }))
                     }
                     controller.close()
                 })

@@ -22,7 +22,9 @@ from typing import List, Dict
 from supabase_utils import upload_artifact
 
 class DQMMetrics(BaseModel):
-    source_grounding: int = Field(description="Score 0-100 on how strongly the draft reflects the original source/brief.")
+    source_grounding: int = Field(
+        description="Score 0-100 on how strongly the draft reflects the original source/brief."
+    )
     insight_density: int = Field(description="Score 0-100 on idea density vs generic filler.")
     humanness: int = Field(description="Score 0-100 on sounding human, avoiding AI patterns/cliches.")
     clarity: int = Field(description="Score 0-100 on readability and logical progression.")
@@ -32,7 +34,9 @@ class DQMMetrics(BaseModel):
     strengths: List[str] = Field(description="List of positive editorial signals.")
     risks: List[str] = Field(description="List of editorial weaknesses or hallucination risks.")
     suggestions: List[str] = Field(description="Actionable improvements.")
-    rationale: str = Field(description="A concise summary explaining the scores and the overall publishability decision.")
+    rationale: str = Field(
+        description="A concise summary explaining the scores and the overall publishability decision."
+    )
 
 def calculate_deterministic_metrics(content: str) -> Dict:
     """Basic linguistic metrics without LLM."""

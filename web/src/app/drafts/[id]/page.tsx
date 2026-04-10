@@ -11,6 +11,13 @@ import { useRouter, useParams } from "next/navigation"
 import { PublishDropdown } from "@/components/features/PublishDropdown"
 import { Share2, CheckCircle2 } from "lucide-react"
 
+interface BlueprintSection {
+    heading: string;
+    purpose: string;
+    word_count_target: number;
+    key_points: string[];
+}
+
 export default function DraftStudioPage() {
     const params = useParams()
     const id = params?.id as string
@@ -223,14 +230,16 @@ export default function DraftStudioPage() {
                         </CardHeader>
                         <CardContent>
                             <ul className="space-y-3">
-                                {blueprint.sections?.map((section: { title: string; content: string }, idx: number) => (
-                            <div key={idx} className="space-y-4 pt-6 border-t border-border/50 first:pt-0 first:border-0">
-                                <h3 className="text-xl font-serif font-semibold">{section.title}</h3>
-                                <div className="prose prose-sm prose-zinc dark:prose-invert max-w-none">
-                                    {section.content}
-                                </div>
-                            </div>
-                        ))}</CardContent>
+                                {strategy.working_titles?.map((title: string, i: number) => (
+                                    <li key={i} className="flex gap-4 items-start p-3 rounded-lg border border-border/40 hover:border-brand/30 hover:bg-brand/[0.02] transition-colors group">
+                                        <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground mt-0.5 group-hover:bg-brand/10 group-hover:text-brand">
+                                            {String.fromCharCode(65 + i)}
+                                        </div>
+                                        <span className="text-sm font-medium leading-relaxed">{title}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </CardContent>
                     </Card>
 
                     <Card>
@@ -304,9 +313,7 @@ export default function DraftStudioPage() {
                         <Badge variant="outline" className="font-mono">{blueprint.total_word_count_target} Words Target</Badge>
                     </div>
 
-                    <div className="grid gap-4">
-                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                        {blueprint.sections?.map((section: unknown, idx: number) => (
+                        {blueprint.sections?.map((section: BlueprintSection, idx: number) => (
                             <Card key={idx}>
                                 <CardHeader className="pb-3 flex flex-row items-center justify-between">
                                     <CardTitle className="text-base flex items-center gap-2">
@@ -328,7 +335,7 @@ export default function DraftStudioPage() {
                                 </CardContent>
                             </Card>
                         ))}
-                    </div>
+
 
                     <div className="flex justify-end pt-4">
                         <div className="flex flex-col items-end gap-2">

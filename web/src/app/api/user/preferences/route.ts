@@ -8,21 +8,22 @@ export async function GET() {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const userId = session.user.id
+    const userId = String(session.user.id)
     try {
+        // 1. Fetch preferences scoped to scalar userId
         let preferences = await withRetry(() => prisma.userPreferences.findUnique({
             where: { userId }
         }))
 
-        // SELF-HEALING: Recreate user if lost during migration/reset
+        // SELF-HEALING: Recreate user record if lost during migration/reset (Ensures Referential Integrity)
         let user = await withRetry(() => prisma.user.findUnique({ where: { id: userId } }))
         if (!user) {
             user = await withRetry(() => prisma.user.create({
                 data: {
                     id: userId,
-                    name: session.user!.name,
-                    email: session.user!.email,
-                    image: session.user!.image,
+                    name: session.user.name || 'Pro User',
+                    email: session.user.email || '',
+                    image: session.user.image || '',
                 }
             }))
         }
@@ -47,17 +48,17 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const userId = session.user.id
+    const userId = String(session.user.id)
     try {
-        // SELF-HEALING: Recreate user if lost during migration/reset
+        // SELF-HEALING: Recreate user record if lost during migration/reset
         let user = await withRetry(() => prisma.user.findUnique({ where: { id: userId } }))
         if (!user) {
             user = await withRetry(() => prisma.user.create({
                 data: {
                     id: userId,
-                    name: session.user!.name,
-                    email: session.user!.email,
-                    image: session.user!.image,
+                    name: session.user.name || 'Pro User',
+                    email: session.user.email || '',
+                    image: session.user.image || '',
                 }
             }))
         }

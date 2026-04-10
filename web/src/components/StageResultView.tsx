@@ -66,6 +66,30 @@ function normalizeText(text: string): string {
     return normalized
 }
 
+// STRUCTURAL GUARD: Sanitization filter to hide model field names and JSON leakage from UI
+const FORBIDDEN_STRINGS = [
+    "source_context", "contradictions", "frameworks", "controversies", "implications",
+    "core_argument", "key_claims", "memorable_quotes", "[]", "{}", "join()", "? join"
+];
+
+function shouldFilterInsight(text: string): boolean {
+    if (!text) return true;
+    const lower = text.toLowerCase();
+    
+    // Check for exact model field names or code snippets
+    if (FORBIDDEN_STRINGS.some(forbidden => lower.includes(forbidden.toLowerCase()))) {
+        return true;
+    }
+
+    // Filter out strings that look like raw code or empty array syntax
+    if (lower.trim() === "[]" || lower.trim() === "{}") return true;
+    
+    // Filter out strings that are just punctuation or too short/generic
+    if (text.length < 3 && !text.match(/[a-z]/i)) return true;
+
+    return false;
+}
+
 // ─── Per-Stage Renderers ────────────────────────────────────────
 
 function JudgeResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
@@ -142,7 +166,7 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
 
             {/* Transcript body — each segment is its own row */}
             <div className="space-y-0">
-                {segments.map((seg, i) => {
+                {segments.length > 0 ? segments.map((seg, i) => {
                     const s = seg as Record<string, unknown>
                     const rawText = normalizeText(getStr(s, "text").trim())
                     const start = getNum(s, "start")
@@ -164,7 +188,19 @@ function TranscriptResult({ data, compact }: { data: Record<string, unknown>; co
                             </p>
                         </div>
                     )
-                })}
+                }) : (
+                    <div className="p-8 text-center space-y-3">
+                        <div className="mx-auto w-12 h-12 rounded-full bg-muted/30 flex items-center justify-center">
+                            <AlertCircle className="w-6 h-6 text-muted-foreground/40" />
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-sm font-medium text-foreground">Content Rescue Active</p>
+                            <p className="text-xs text-muted-foreground/60 leading-relaxed max-w-[200px] mx-auto">
+                                The full audio transcript was unavailable. We have rescued metadata and show notes to continue the analysis.
+                            </p>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     )
@@ -293,7 +329,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
                         <Zap className="w-3.5 h-3.5 text-brand" /> Key Claims
                     </div>
                     <ul className="space-y-1.5">
-                        {keyClaims.map((claim, i) => (
+                        {keyClaims.filter(claim => !shouldFilterInsight(String(claim))).map((claim, i) => (
                             <li key={i} className="text-sm text-muted-foreground flex gap-2 items-start">
                                 <span className="text-brand mt-0.5 shrink-0">•</span>
                                 <span>{String(claim)}</span>
@@ -310,7 +346,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
                         <Target className="w-3.5 h-3.5 text-emerald-500" /> Supporting Examples
                     </div>
                     <ul className="space-y-1.5">
-                        {examples.map((ex, i) => (
+                        {examples.filter(ex => !shouldFilterInsight(String(ex))).map((ex, i) => (
                             <li key={i} className="text-sm text-muted-foreground flex gap-2 items-start">
                                 <span className="text-emerald-500 mt-0.5 shrink-0">→</span>
                                 <span>{String(ex)}</span>
@@ -329,10 +365,14 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
                     <div className="grid gap-2">
                         {frameworks.map((fw, i) => {
                             const f = fw as Record<string, unknown>
+                            const title = getStr(f, "title")
+                            const desc = getStr(f, "description")
+                            if (shouldFilterInsight(title)) return null;
+                            
                             return (
                                 <div key={i} className="p-3 rounded-lg bg-muted/40 border border-border/40">
-                                    <p className="text-sm font-medium text-foreground">{getStr(f, "title")}</p>
-                                    <p className="text-xs text-muted-foreground mt-1">{getStr(f, "description")}</p>
+                                    <p className="text-sm font-medium text-foreground">{title}</p>
+                                    <p className="text-xs text-muted-foreground mt-1">{desc}</p>
                                 </div>
                             )
                         })}
@@ -346,7 +386,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
                     <div className="flex items-center gap-2 text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">
                         <MessageSquareQuote className="w-3.5 h-3.5 text-brand" /> Notable Quotes
                     </div>
-                    {quotes.map((q, i) => (
+                    {quotes.filter(q => !shouldFilterInsight(String(q))).map((q, i) => (
                         <blockquote key={i} className="border-l-2 border-brand/30 pl-3 text-sm text-muted-foreground italic">
                             &ldquo;{String(q)}&rdquo;
                         </blockquote>
@@ -359,7 +399,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
                 <div className="space-y-2">
                     <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">Controversies & Tensions</div>
                     <ul className="space-y-1">
-                        {controversies.map((c, i) => (
+                        {controversies.filter(c => !shouldFilterInsight(String(c))).map((c, i) => (
                             <li key={i} className="text-sm text-muted-foreground">? {String(c)}</li>
                         ))}
                     </ul>
@@ -371,8 +411,8 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
                 <div className="space-y-2">
                     <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">Contradictions</div>
                     <ul className="space-y-1">
-                        {contradictions.map((c, i) => (
-                            <li key={i} className="text-sm text-red-500/70">! {String(c)}</li>
+                        {contradictions.filter(c => !shouldFilterInsight(String(c))).map((c, i) => (
+                            <li key={i} className="text-sm text-red-500/70 mb-1">! {String(c)}</li>
                         ))}
                     </ul>
                 </div>
@@ -383,7 +423,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
                 <div className="space-y-2">
                     <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif">Broader Implications</div>
                     <ul className="space-y-1.5">
-                        {implications.map((imp, i) => (
+                        {implications.filter(imp => !shouldFilterInsight(String(imp))).map((imp, i) => (
                             <li key={i} className="text-sm text-foreground/70 flex gap-2 items-start group/imp">
                                 <span className="text-blue-500 mt-0.5 shrink-0 transition-transform group-hover/imp:scale-110">~</span>
                                 <span>{String(imp)}</span>
@@ -398,6 +438,29 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
 
 function AngleResult({ data }: { data: Record<string, unknown> }) {
     const d = (data.payload || data.data || data) as Record<string, unknown>
+    
+    // ERROR GUARD: Handle failed status (e.g., Sparse Context)
+    if (!d || d.status === "failed") {
+        const error = (d?.error as string) || "Editorial Strategy Generation Failed"
+        const isSparse = d?.error_code === "SPARSE_CONTEXT" || error.toLowerCase().includes("sparse")
+        
+        return (
+            <div className="p-6 rounded-xl bg-red-500/5 border border-red-500/20 text-center">
+                <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-3">
+                    <Zap className={cn("w-5 h-5", isSparse ? "text-amber-500" : "text-red-500")} />
+                </div>
+                <h3 className="text-sm font-bold text-foreground mb-1">
+                    {isSparse ? "Insufficient Source Depth" : "Generation Halted"}
+                </h3>
+                <p className="text-xs text-muted-foreground max-w-[280px] mx-auto leading-relaxed">
+                    {isSparse 
+                        ? "The source metadata is too thin for strategic analysis. Try a source with a full transcript or more detailed show notes." 
+                        : error}
+                </p>
+            </div>
+        )
+    }
+
     const format = getStr(d, "recommended_format")
     const secondaryFormats = getArr(d, "secondary_formats")
     const audience = getStr(d, "target_audience")

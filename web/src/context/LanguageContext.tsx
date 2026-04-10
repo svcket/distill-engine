@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 
 export type Language = 'EN' | 'ES' | 'FR' | 'DE' | 'YO'
 
@@ -339,16 +339,41 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
     const [lang, setLang] = useState<Language>('EN')
 
-    const t = (key: string) => {
+    // Hydrate language from localStorage on mount
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('distill_lang') as Language
+            if (saved && ['EN', 'ES', 'FR', 'DE', 'YO'].includes(saved)) {
+                // eslint-disable-next-line react-hooks/set-state-in-effect
+                setLang(saved)
+            }
+        }
+    }, [])
+
+    const handleSetLang = useCallback((newLang: Language) => {
+        setLang(newLang)
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('distill_lang', newLang)
+        }
+    }, [])
+
+    const t = useCallback((key: string) => {
         return translations[lang][key] || key
-    }
+    }, [lang])
+
+    const contextValue = useMemo(() => ({ 
+        lang, 
+        setLang: handleSetLang, 
+        t 
+    }), [lang, handleSetLang, t])
 
     return (
-        <LanguageContext.Provider value={{ lang, setLang, t }}>
+        <LanguageContext.Provider value={contextValue}>
             {children}
         </LanguageContext.Provider>
     )
 }
+
 
 export function useLanguage() {
     const context = useContext(LanguageContext)

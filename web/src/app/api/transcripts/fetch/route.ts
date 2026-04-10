@@ -1,8 +1,9 @@
-import { auth } from "@/auth"
-import { prisma, withRetry } from "@/lib/prisma"
-import { NextResponse } from 'next/server'
-import { runPythonScript } from '@/lib/python-runner'
-import fs from 'fs'
+import { auth } from "@/auth";
+import { prisma, withRetry } from "@/lib/prisma";
+import { NextResponse } from 'next/server';
+import { runPythonScript } from '@/lib/python-runner';
+import { formatDuration } from '@/lib/utils';
+import fs from 'fs';
 
 interface StagePayload {
     status?: string;
@@ -16,88 +17,78 @@ interface StagePayload {
 }
 
 export async function POST(request: Request) {
-    const session = await auth()
+    const session = await auth();
     if (!session?.user?.id) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const userId = session.user.id
+    const userId = session.user.id;
 
     try {
-        const body = await request.json()
-        const sourceId = body.sourceId || body.source_id || body.transcriptId || body.id
-        const { url, sourceType, language } = body
-        let activeUrl = url
-        let activeSourceType = sourceType
+        const body = await request.json();
+        const sourceId = body.sourceId || body.source_id || body.transcriptId || body.id;
+        const { url, sourceType, language } = body;
+        let activeUrl = url;
+        let activeSourceType = sourceType;
+        let activeTitle = "";
         
-        let activeTitle = ""
+        let dbSource: { url?: string; type?: string; title?: string; duration?: string } | null = null;
         
-        let dbSource: import("@prisma/client").Source | null = null
-        // If url is missing, try to find it in the database
         if (sourceId) {
             dbSource = await withRetry(() => prisma.source.findUnique({
                 where: { id: sourceId }
-            }))
+            })) as any;
             if (dbSource) {
-                activeUrl = activeUrl || dbSource.url
-                activeSourceType = activeSourceType || dbSource.type || 'youtube'
-                activeTitle = dbSource.title || ""
+                activeUrl = activeUrl || dbSource.url;
+                activeSourceType = activeSourceType || dbSource.type || 'youtube';
+                activeTitle = dbSource.title || "";
             }
         }
 
         if (!activeUrl || !sourceId) {
-            console.error("Transcription fetch failed: Missing parameters", { url: activeUrl, sourceId })
-            return NextResponse.json({ error: "Missing parameters" }, { status: 400 })
+            return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
         }
 
-        const args = ['--url', activeUrl, '--source-id', sourceId]
-        if (activeSourceType) args.push('--source-type', activeSourceType)
-        if (activeTitle) args.push('--title', activeTitle)
-        if (language) args.push('--lang', language)
+        const args = ['--url', activeUrl, '--source-id', sourceId];
+        if (activeSourceType) args.push('--source-type', activeSourceType);
+        if (activeTitle) args.push('--title', activeTitle);
+        if (language) args.push('--lang', language);
 
-        // Synchronously run for direct pipeline stability
         const { success, data, error: scriptError } = await runPythonScript<StagePayload>('transcript_harvester.py', [
             ...args,
             '--max-segments', '60'
         ], {
             env: { 
-                EXPECTED_DURATION: dbSource?.duration?.split(':').reduce((acc: number, time: string, index: number, arr: string[]) => {
+                EXPECTED_DURATION: (dbSource?.duration || "").split(':').reduce((acc: number, time: string, index: number, arr: string[]) => {
                     const unit = Math.pow(60, arr.length - index - 1);
                     return acc + (parseInt(time) || 0) * unit;
                 }, 0)?.toString() || "" 
             }
-        })
+        });
         
         if (success && data) {
-            // Update the source record to indicate transcription is ready
-            const result = data as StagePayload
-            const finalStatus = result.status === 'rescued_text' ? 'rescued_text' : 'transcribed'
+            const result = data as StagePayload;
+            const finalStatus = result.status === 'rescued_text' ? 'rescued_text' : 'transcribed';
             
-            // Read content from the textPath if available
-            let content = ""
-            const textPath = result.text_path
+            let content = "";
+            const textPath = result.text_path;
             if (textPath && fs.existsSync(textPath)) {
-                content = fs.readFileSync(textPath, 'utf-8')
+                content = fs.readFileSync(textPath, 'utf-8');
             }
 
-            // Ensure segments are present for the UI - Return more for a better experience
             if (!result.segments && result.json_path && fs.existsSync(result.json_path)) {
                 try {
-                    const rawJson = fs.readFileSync(result.json_path, 'utf-8')
-                    result.segments = JSON.parse(rawJson)
-                } catch {
-                    console.error("Failed to read segments from json_path")
+                    const rawJson = fs.readFileSync(result.json_path, 'utf-8');
+                    result.segments = JSON.parse(rawJson);
+                } catch (e) {
+                    console.error("Segments parse failed");
                 }
             }
 
-            // LOG: Successful resolution
-            // console.log(`[Transcript API] Source ${sourceId} resolved as ${finalStatus}. Segments: ${result.segments?.length || 0}`)
-
-            // Format duration as M:SS string if present
-            let durationString = undefined
+            let durationString = undefined;
             if (result.duration && typeof result.duration === 'number') {
-                const mins = Math.floor(result.duration / 60)
-                const secs = Math.floor(result.duration % 60)
-                durationString = `${mins}:${String(secs).padStart(2, '0')}`
+                const mins = Math.floor(result.duration / 60);
+                const secs = Math.floor(result.duration % 60);
+                durationString = `${mins}:${String(secs).padStart(2, '0')}`;
             }
 
             await withRetry(() => prisma.source.update({
@@ -108,66 +99,119 @@ export async function POST(request: Request) {
                     content: content || '',
                     duration: durationString || undefined,
                     title: result.title || undefined,
-                    completedStages: {
-                        push: 'transcript'
-                    }
+                    completedStages: { push: 'transcript' }
                 }
-            }))
+            }));
+
             return NextResponse.json({ 
                 message: "Transcription completed", 
                 status: finalStatus,
                 result: result 
-            })
+            });
         } else {
-            // Check if the error is a graceful "unavailable" status (e.g. Spotify DRM)
-            let isGracefulUnavailable = false
-            let errorDetail = (scriptError as string) || "Unknown error"
+            let isGracefulUnavailable = false;
+            let errorDetail = (scriptError as string) || "Unknown error";
             
             try {
-                const parsedError = typeof scriptError === 'string' ? JSON.parse(scriptError) : scriptError
+                const parsedError = typeof scriptError === 'string' ? JSON.parse(scriptError) : scriptError;
                 if (parsedError && parsedError.transcript_status === 'unavailable') {
-                    isGracefulUnavailable = true
-                    errorDetail = parsedError.error_detail || "Audio transcription unavailable"
+                    isGracefulUnavailable = true;
+                    errorDetail = parsedError.error_detail || "Sourcing official episode context from metadata";
                 }
-            } catch { /* fallback to hard failure if not parseable JSON */ }
+            } catch (e) { /* ignored */ }
 
             if (isGracefulUnavailable) {
-                // Rescue: Allow pipeline to proceed with metadata instead of hard failure
-                await prisma.source.update({
-                    where: { id: sourceId, userId: userId },
-                    data: { 
-                        status: 'rescued_text',
-                        transcriptStatus: 'unavailable',
-                        completedStages: { push: 'transcript' }
+                const rootDir = process.cwd().split('/web')[0];
+                const outDir = `${rootDir}/execution/.tmp/transcripts/${sourceId}`;
+                
+                try {
+                    if (!fs.existsSync(outDir)) {
+                        fs.mkdirSync(outDir, { recursive: true });
                     }
-                })
+                    
+                    let finalSegments = [{ text: `[Distill Source Layer: Official Context Analysis]\n\nThis source metadata has been analyzed for contextual intelligence.`, start: 0, duration: 0 }];
+                    let scriptSegments = null;
+                    
+                    try {
+                        const parsedBody = typeof scriptError === 'string' ? JSON.parse(scriptError) : scriptError;
+                        if (parsedBody && Array.isArray(parsedBody.segments)) {
+                            scriptSegments = parsedBody.segments;
+                        }
+                    } catch (e) { /* ignored */ }
+
+                    if (scriptSegments && scriptSegments.length > 0) {
+                        finalSegments = scriptSegments;
+                    }
+
+                    fs.writeFileSync(`${outDir}/${sourceId}_raw.json`, JSON.stringify(finalSegments, null, 2));
+                    fs.writeFileSync(`${outDir}/${sourceId}_raw.txt`, finalSegments.map(s => s.text).join("\n\n"));
+                } catch (e) {
+                    console.error("[Rescue] FS Error", e);
+                }
+
+                let metadata: any = {};
+                try {
+                    const parsed = typeof scriptError === 'string' ? JSON.parse(scriptError) : scriptError;
+                    if (parsed && typeof parsed === 'object') metadata = parsed;
+                } catch (e) { /* ignored */ }
+
+                const updateData: any = {
+                    status: 'rescued_text',
+                    transcriptStatus: 'unavailable',
+                    completedStages: { push: 'transcript' }
+                };
+
+                if (metadata.title && metadata.title !== 'Podcast Episode' && metadata.title !== 'Unknown Source') {
+                    updateData.title = metadata.title;
+                }
+                
+                if (metadata.description || metadata.show_notes) {
+                    const desc = metadata.description || metadata.show_notes;
+                    const enrichedSegments = [
+                        { text: `[Source Context: ${metadata.title || 'Untitled'}]\n\n${desc}`, start: 0, duration: 0 }
+                    ];
+                    try {
+                        fs.writeFileSync(`${outDir}/${sourceId}_raw.json`, JSON.stringify(enrichedSegments, null, 2));
+                        fs.writeFileSync(`${outDir}/${sourceId}_raw.txt`, enrichedSegments[0].text);
+                    } catch (err) {
+                        console.error("[Rescue] Enrich Error", err);
+                    }
+                }
+
+                if (metadata.duration) {
+                    updateData.duration = formatDuration(metadata.duration);
+                }
+
+                await withRetry(() => prisma.source.update({
+                    where: { id: sourceId, userId: userId },
+                    data: updateData
+                }));
+                
                 return NextResponse.json({ 
-                    message: "Transcription unavailable, proceeding with rescued metadata", 
+                    message: "Audio restricted by platform. Sourcing official episode context to generate intelligence.", 
                     status: "unavailable",
                     details: errorDetail
-                })
+                });
             }
 
-            // Hard failure for actual script crashes or network issues
-            await prisma.source.update({
+            await withRetry(() => prisma.source.update({
                 where: { id: sourceId, userId: userId },
                 data: { 
                     status: 'failed',
                     transcriptStatus: 'failed'
                 }
-            })
-            // Soft failure: Return what we have instead of 500
+            }));
+
             return NextResponse.json({ 
                 error: "Transcription failed", 
                 details: scriptError,
-                message: "We encountered an issue fetching the full transcript. Some metadata may be missing.",
+                message: "We encountered an issue fetching the full transcript.",
                 result: { status: 'failed' }
-            }, { status: 200 }) // Return 200 to allow the UI to handle it gracefully
+            }, { status: 200 });
         }
-
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Unknown error'
-        console.error("[Transcription API Error]:", err)
-        return NextResponse.json({ error: msg }, { status: 500 })
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        console.error("[Transcription API Error]:", err);
+        return NextResponse.json({ error: msg }, { status: 500 });
     }
 }

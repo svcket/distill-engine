@@ -14,7 +14,7 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma
  * Shared retry logic for Prisma operations to handle transient connection drops
  * especially during high concurrency or cold starts.
  */
-export async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 500): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>, retries = 5, delay = 1000): Promise<T> {
   try {
     return await fn()
   } catch (err: unknown) {
@@ -22,14 +22,16 @@ export async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 50
     const isConnError = 
       error.message?.includes("connection") || 
       error.message?.includes("closed") ||
+      error.message?.includes("Can't reach database server") || // Specific Supabase error
+      error.message?.includes("6543") || // Pooling port
       error.code === 'P1001' || // Can't reach database server
       error.code === 'P1002' || // Database server timeout
       error.code === 'P2024';   // Connection pool timeout
       
     if (retries > 0 && isConnError) {
-      console.warn(`Prisma connection issue, retrying in ${delay}ms... (${retries} left)`);
+      console.warn(`Prisma connection issue (code: ${error.code}), retrying in ${delay}ms... (${retries} left)`);
       await new Promise(resolve => setTimeout(resolve, delay));
-      return withRetry(fn, retries - 1, delay * 2);
+      return withRetry(fn, retries - 1, delay * 1.5); // Exponentially back off
     }
     throw err
   }

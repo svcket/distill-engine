@@ -125,6 +125,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             return process.env.NODE_ENV === "development"
           }
 
+          /* 
+          // BETA LOCK: Currently disabled to allow public preview testing.
           const whitelisted = await withRetry(() => prisma.betaWhitelist.findUnique({
             where: { email: user.email! }
           }))
@@ -133,7 +135,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             console.warn(`SignIn: Denied. ${user.email} not in betaWhitelist table.`)
             return false 
           }
-          // console.log(`SignIn: Success for whitelisted user ${user.email}`)
+          */
+
+          // OPEN PREVIEW: Allow all sign-ins during public research phase
+          console.log(`SignIn: Success for user ${user.email} (Open Preview Mode)`)
         }
         return true
       } catch (error) {
@@ -144,15 +149,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       try {
         if (user) {
-          // console.log(`JWT: Hydrating token for user ${user.id}`)
           token.id = user.id
           token.role = (user as { role?: string }).role || "USER"
           
-          // Fetch plan safely
           if (user.id) {
+            // RETRY: Usage lookups can fail during high-concurrency ingestion
             const usage = await withRetry(() => prisma.usage.findUnique({
               where: { userId: user.id }
-            }))
+            })).catch(() => null)
             token.plan = usage?.currentPlan || "free"
           } else {
             token.plan = "free"
@@ -160,7 +164,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
         return token
       } catch (error) {
-        console.error("JWT Callback Error:", error)
+        console.error("JWT Callback Error (Silently falling back to free):", error)
+        token.plan = "free"
         return token
       }
     },

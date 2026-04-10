@@ -1,6 +1,7 @@
 import re
 import hashlib
 import json
+import urllib.request
 from typing import Optional
 try:
     from newspaper import Article
@@ -63,7 +64,6 @@ class RssAdapter(BaseAdapter):
                 content_text = article.text
             else:
                 # 2. Legacy/Fallback: fetch raw HTML/XML
-                import urllib.request
                 headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
                 req = urllib.request.Request(url, headers=headers)
                 with urllib.request.urlopen(req, timeout=5) as resp:

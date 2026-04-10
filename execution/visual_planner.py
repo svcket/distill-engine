@@ -17,10 +17,14 @@ from openai import OpenAI
 
 
 class VisualSuggestion(BaseModel):
-    type: str = Field(description="The type of visual (cover_image, atmospheric_divider, technical_diagram, quote_card).")
+    type: str = Field(
+        description="The type of visual (cover_image, atmospheric_divider, technical_diagram, quote_card)."
+    )
     description: str = Field(description="A brief description for the user.")
     prompt: str = Field(description="The highly detailed prompt for the generation engine.")
-    engine: str = Field(description="The chosen engine: 'dalle-3' for atmospheric/artistic, 'nano-banana' for technical/diagrammatic/structured.")
+    engine: str = Field(
+        description="The chosen engine: 'dalle-3' for atmospheric, 'nano-banana' for technical/structured."
+    )
     reasoning: str = Field(description="Why this engine was chosen for this hook.")
     image_url: str = Field(default=None, description="The local URL of the generated image.")
 
@@ -59,8 +63,8 @@ def plan_visuals(source_id: str, draft_path: str = None, execute: bool = False, 
 Your goal is to identify high-impact visual hooks in a text draft.
 
 ASSIGNMENT RULES:
-1. **DALL-E 3**: Use for 'cover_image', 'atmospheric_divider', and 'creative_hero'. These should be artistic, cinematic, and evocative.
-2. **Nano Banana**: Use for 'technical_diagram', 'logical_flow', 'ui_mockup', or 'structured_infographic'. These require precision, specific labels, and logical relationships.
+1. **DALL-E 3**: Use for covers and atmospheric dividers. Artistic and evocative.
+2. **Nano Banana**: Use for technical diagrams and logical flows. Precise and structured.
 
  Identify 4-6 compelling hooks:
 - One core 'cover_image' (Description: "Suggested AI Prompt for Hero Image").
@@ -68,8 +72,8 @@ ASSIGNMENT RULES:
 - 1 'technical_diagram' (Description: "Suggested AI Prompt for Technical Diagram").
 - 1 'quote_card' (Description: "Suggested AI Prompt for Quote Graphic").
 
-The 'description' field MUST explicitly inform the user that these are suggested prompts for image generation.
-The 'prompt' field should be a highly detailed, self-contained description suitable for direct input into DALL-E 3 or Nano Banana.
+The 'prompt' field should be a highly detailed, self-contained description 
+suitable for direct input into DALL-E 3 or Nano Banana.
 
 Output strictly in the required JSON format.
 CRITICAL: You MUST write your response entirely in the '{safe_lang}' language."""
@@ -102,7 +106,10 @@ CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.""
         
         # Simple heuristic: If section title contains "tech", "system", "how", "process" -> nano-banana
         def get_engine(text: str):
-            tech_keywords = ["how", "process", "system", "architecture", "structure", "data", "technical", "logic", "reasoning", "steps"]
+            tech_keywords = [
+                "how", "process", "system", "architecture", "structure", 
+                "data", "technical", "logic", "reasoning", "steps"
+            ]
             if any(k in text.lower() for k in tech_keywords):
                 return "nano-banana"
             return "dalle-3"
@@ -111,7 +118,8 @@ CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.""
             {
                 "type": "cover_image",
                 "description": f"Suggested AI Prompt for {title} Hero Image",
-                "prompt": f"A cinematic, premium editorial cover image representing {title}. High resolution, minimalist aesthetic, professional photography style.",
+                "prompt": (f"A cinematic, premium editorial cover image representing {title}. "
+                           "High resolution, minimalist aesthetic, professional photography style."),
                 "engine": "dalle-3",
                 "reasoning": "Standard hero imagery is best handled by DALL-E."
             }
@@ -123,7 +131,8 @@ CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.""
                 visual_suggestions.append({
                     "type": "section_divider",
                     "description": f"Suggested AI Prompt for {s} Visual",
-                    "prompt": f"A sophisticated {engine} visualization of '{s}'. Focus on professional clarity, minimalist design, and editorial aesthetic.",
+                    "prompt": (f"A sophisticated {engine} visualization of '{s}'. "
+                               "Focus on professional clarity, minimalist design, and editorial aesthetic."),
                     "engine": engine,
                     "reasoning": f"Heuristic selection based on '{s}' content."
                 })
@@ -133,7 +142,8 @@ CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.""
         "status": "planned" if not execute else "generated",
         "visual_suggestions": visual_suggestions,
         "automation_status": "ready" if not execute else "completed",
-        "note": "Visual hooks extracted and mapped to prioritized engines (DALL-E vs Nano Banana)." if not execute else "Visual assets generated and stored locally.",
+        "note": ("Visual hooks extracted and mapped to prioritized engines."
+                 if not execute else "Visual assets generated and stored locally."),
     }
 
     # EXECUTION LOGIC
@@ -147,7 +157,8 @@ CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.""
         for i, suggestion in enumerate(visual_suggestions):
             if suggestion.get("engine") == "dalle-3" and suggestion.get("prompt"):
                 try:
-                    print(f"Generating image {i+1}/{len(visual_suggestions)}: {suggestion['type']}...", file=sys.stderr)
+                    msg = f"Generating image {i+1}/{len(visual_suggestions)}: {suggestion['type']}..."
+                    print(msg, file=sys.stderr)
                     response = client.images.generate(
                         model="dall-e-3",
                         prompt=suggestion["prompt"],
@@ -177,6 +188,14 @@ CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.""
 
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(visual_plan, f, indent=2)
+
+    # Cloud Bridge: Mirror visual plan to Supabase Storage
+    try:
+        from supabase_utils import upload_artifact
+        upload_artifact("visual_plans", source_id, out_path)
+    except Exception as e:
+        print(f"[{source_id}] Visual plan cloud sync skipped: {e}", file=sys.stderr)
+
 
     print(json.dumps({
         "status": "success",

@@ -1,7 +1,6 @@
 import os
 import json
 import datetime
-import sys
 
 # Helper to log harvester rescue attempts for analytics and reliability tracking
 MONITOR_DIR = os.path.join(os.path.dirname(__file__), '.tmp', 'monitoring')

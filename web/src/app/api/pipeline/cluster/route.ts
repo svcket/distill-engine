@@ -2,6 +2,7 @@ import { auth } from "@/auth"
 import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
+import { formatDuration } from '@/lib/utils'
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -35,7 +36,8 @@ export async function POST(request: Request) {
             const result = data as unknown as Record<string, unknown>
 
             // ── Content Quality Gate response ────────────────────────────────
-            if (result.status === 'thin_content' || result.error_type === 'THIN_CONTENT') {
+            // RELAXED: Allow processing of rescued metadata (rescued_text) even if thin
+            if (source.status !== 'rescued_text' && (result.status === 'thin_content' || result.error_type === 'THIN_CONTENT')) {
                 console.warn(`[Cluster API] Thin content gate triggered for ${sourceId}:`, result.error_detail)
                 return NextResponse.json({
                     error: result.error_detail || "Insufficient content to analyse. Please provide a source with accessible audio or a richer description.",
@@ -61,11 +63,7 @@ export async function POST(request: Request) {
                 updates.title = metadata.title as string
             }
             if (metadata.duration) {
-                const duration = metadata.duration as string | number
-                updates.duration = typeof duration === 'number' ? duration.toString() : duration
-            }
-            if (metadata.channel) {
-                updates.channel = metadata.channel as string
+                updates.duration = formatDuration(metadata.duration)
             }
 
             // Update the source record with completed stages and metadata

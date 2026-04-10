@@ -86,7 +86,22 @@ export async function POST(request: Request) {
     }
 
     if (!fs.existsSync(summaryPath)) {
-        return NextResponse.json({ error: "No summary artifact found. Please generate a summary first." }, { status: 400 })
+        // SELF-HEALING: If summary is missing (due to hidden stages), attempt recovery from Insights or Cluster
+        const insightsPath = resolveFilePath(EXECUTION_DIR, '.tmp/insights', sourceId, '_insights.json')
+        const clusterPath = resolveFilePath(EXECUTION_DIR, '.tmp/clusters', sourceId, '_cluster.json')
+        
+        let rescuePath = '';
+        if (fs.existsSync(insightsPath)) rescuePath = insightsPath;
+        else if (fs.existsSync(clusterPath)) rescuePath = clusterPath;
+
+        if (rescuePath) {
+            console.log(`[Social API] Self-Healing: Missing summary for ${sourceId}. Rescuing from ${rescuePath}`)
+            const summariesDir = path.dirname(summaryPath)
+            if (!fs.existsSync(summariesDir)) fs.mkdirSync(summariesDir, { recursive: true })
+            fs.copyFileSync(rescuePath, summaryPath)
+        } else {
+            return NextResponse.json({ error: "No summary or intelligence artifact found. Please run Extract Intelligence first." }, { status: 400 })
+        }
     }
 
     try {

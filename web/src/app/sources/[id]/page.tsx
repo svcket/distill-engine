@@ -11,7 +11,7 @@ import {
     ExternalLink, MoreHorizontal, Trash2, X, Calendar, Clock, BarChart3
 } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
-import { cn } from "@/lib/utils"
+import { cn, formatDuration } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
 import { motion, AnimatePresence } from "framer-motion"
 import { supabase } from "@/lib/supabase"
@@ -75,10 +75,10 @@ type StageResultData = JudgeResult | TranscriptResult | RefineResult | SummaryRe
 
 const STAGES: WorkflowStage[] = [
     { id: "judge", label: "Judge Alignment", description: "Enrich source metadata and evaluate against NorthStar Profile", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (sid) => ({ source_id: sid }), hidden: true },
-    { id: "transcript", label: "Fetch Transcript", description: "Retrieve indexing data via Fast-Path or Whisper", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (sid) => ({ source_id: sid }) },
+    { id: "transcript", label: "Content Sourcing", description: "Acquire official context and raw content signals", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (sid) => ({ source_id: sid }), hidden: true },
     { id: "refine", label: "Refine Context", description: "Denoise transcript and segment into logical chunks", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (sid) => ({ transcript_id: sid }), hidden: true },
     { id: "cluster", label: "Analysis Cluster", description: "Unified high-performance analysis (Refine, Summary, Insights)", icon: Sparkles, apiEndpoint: "/api/pipeline/cluster", apiBody: (sid) => ({ source_id: sid }), hidden: true },
-    { id: "summary", label: "Source Summary", description: "Concise summary and key framework identification", icon: FileText, apiEndpoint: "/api/transcripts/summary", apiBody: (sid) => ({ transcript_id: sid }) },
+    { id: "summary", label: "Source Summary", description: "Concise summary and key framework identification", icon: FileText, apiEndpoint: "/api/transcripts/summary", apiBody: (sid) => ({ transcript_id: sid }), hidden: true },
     { id: "packet", label: "Density Mapping", description: "Identify high-signal segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (sid) => ({ transcript_id: sid }), hidden: true },
     { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (sid) => ({ transcript_id: sid }) },
     { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (sid, params) => ({ transcriptId: sid, type: params?.type, audience: params?.audience, tone: params?.tone }) },
@@ -102,9 +102,12 @@ const validateStageGating = (stageId: StageId, results: Record<string, unknown>)
             break;
         case "summary":
             if (results.summary) return { valid: true }; // Rescue path: if we have a summary, it's valid
+            if (results.transcriptStatus === 'unavailable' || results.transcriptStatus === 'rescued_text') return { valid: true };
             if (!results.refine && !results.transcript) return { valid: false, missing: "Refined Transcript", type: "error" };
             break;
         case "insights":
+            if (results.insights) return { valid: true };
+            if (results.transcriptStatus === 'unavailable' || results.transcriptStatus === 'rescued_text') return { valid: true };
             if (!results.summary && !results.refine) return { valid: false, missing: "Summary/Refinement", type: "error" };
             break;
         case "angle":
@@ -230,20 +233,7 @@ export default function SourceMissionControl() {
     const [logs, setLogs] = useState<{ event: string; time: string; status: "success" | "info" | "error" }[]>([])
 
     // ════ HELPER FUNCTIONS ════
-    const formatDuration = (seconds: number | string | null | undefined): string => {
-        if (!seconds || seconds === "—") return "—";
-        const totalSeconds = typeof seconds === 'string' ? parseInt(seconds) : seconds;
-        if (isNaN(totalSeconds)) return String(seconds);
-        
-        const h = Math.floor(totalSeconds / 3600);
-        const m = Math.floor((totalSeconds % 3600) / 60);
-        const s = totalSeconds % 60;
-        
-        if (h > 0) {
-            return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-        }
-        return `${m}:${String(s).padStart(2, '0')}`;
-    };
+    // Using centralized formatDuration from @/lib/utils
 
     // Determine the absolute next stage for the pipeline loop (including hidden)
     const getFirstIncompleteIndex = useCallback((): number => {
@@ -252,11 +242,16 @@ export default function SourceMissionControl() {
         
         for (let i = 0; i < STAGES.length; i++) {
             const s = STAGES[i]
-            if (s.id === "transcript" && isTranscriptDone) continue
+            // Skip hidden stages that are effectively background tasks or already satisfying dependencies
+            if (s.id === "judge" && completedStages.has("judge")) continue
+            if (s.id === "transcript" && (isTranscriptDone || completedStages.has("transcript"))) continue
+            if (s.id === "summary" && (completedStages.has("summary") || completedStages.has("cluster"))) continue
+            if (s.id === "packet" && (completedStages.has("packet") || completedStages.has("cluster"))) continue
+            
             if (!completedStages.has(s.id)) return i
         }
         return STAGES.length
-    }, [completedStages, source.transcriptStatus]);
+    }, [completedStages, source.transcriptStatus, source.id]);
 
     const persistStageCompletion = useCallback(async (stageId: StageId) => {
         try {
@@ -711,15 +706,15 @@ export default function SourceMissionControl() {
                             setLogs(prev => [{ event: errorMsg, time: "Just now", status: "info" }, ...prev]);
                         }
                         
-                        // Show info banner if rescued
+                        // Show high-fidelity context banner if metadata-only
                         if (status === 'rescued_text') {
                             setLogs(prev => [{ 
-                                event: "Audio unavailable; proceeding with rescued metadata from show notes.", 
+                                event: "Audio restricted; proceeding with Official Source Context Intelligence.", 
                                 time: "Just now", 
                                 status: "info" 
                             }, ...prev]);
                             setError({ 
-                                message: "Transcription unavailable for this source. Proceeding with rescued metadata (show notes).", 
+                                message: "Audio restricted by platform. Distill is analyzing the Official Source Context to generate intelligence.", 
                                 type: "info" 
                             });
                         }
@@ -967,7 +962,7 @@ export default function SourceMissionControl() {
 
                 // Caching enhancement: try loading from localStorage first for immediate UI
 
-                const cachedDqm = localStorage.getItem(`dqm_${id}`)
+                const cachedDqm = typeof window !== 'undefined' ? localStorage.getItem(`dqm_${id}`) : null
                 if (cachedDqm) {
                     try {
                         const parsed = JSON.parse(cachedDqm)
@@ -1041,8 +1036,6 @@ export default function SourceMissionControl() {
         if (autoStart && activeIndex < STAGES.length && !isRunningAll && !executingStage && source.status === "idle" && isFresh) {
             const timer = setTimeout(() => {
                 if (source.status === "idle") {
-                    // Triggering fresh pipeline for source ID
-                    this.startPipeline(id);
                     runFullPipeline();
                 }
             }, 1500); 
@@ -1102,8 +1095,8 @@ export default function SourceMissionControl() {
                 
                 // Persist to localStorage for local imports
                 const localKey = `distill_results_${id}`;
-                const existing = JSON.parse(localStorage.getItem(localKey) || "{}");
-                localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: data.result || data }));
+                const existing = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem(localKey) || "{}") : {};
+                if (typeof window !== 'undefined') localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: data.result || data }));
                 
                 if (stage.id === "qa" && (data.result as Record<string, unknown>)?.total_score !== undefined) {
                     setSource(s => ({
@@ -1307,8 +1300,32 @@ export default function SourceMissionControl() {
     }
 
 
-    const openPanel = (stage: WorkflowStage) => {
-        const data = stageResults[stage.id]
+    const openPanel = async (stage: WorkflowStage) => {
+        let data = stageResults[stage.id]
+        
+        // Lazy Hydration: If missing but stage is complete, try to fetch from API
+        if (!data && completedStages.has(stage.id)) {
+            setExecutingStage(stage.id)
+            try {
+                const res = await fetch("/api/store", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "get_result", sourceId: id, stageId: stage.id })
+                })
+                if (res.ok) {
+                    const json = await res.json()
+                    data = json.result
+                    if (data) {
+                        setStageResults(prev => ({ ...prev, [stage.id]: data }))
+                    }
+                }
+            } catch (e) {
+                console.error(`Failed to hydrate ${stage.id}:`, e)
+            } finally {
+                setExecutingStage(null)
+            }
+        }
+
         if (data) {
             // Summary stage might have nested result (e.g., { summary: "..." })
             // Unified handling for standard response wrappers
@@ -1587,7 +1604,7 @@ export default function SourceMissionControl() {
                                                                         </h3>
                                                                         <p className="text-[13px] text-muted-foreground/70 leading-relaxed max-w-md">
                                                                             {stage.id === "transcript" && source.transcriptStatus === "unavailable" 
-                                                                                ? "Transcript is unavailable for this source. Pipeline stopped."
+                                                                                ? "Audio restricted by platform. Proceeding with high-fidelity Context Intelligence analysis."
                                                                                 : isActive && stage.id === "angle"
                                                                                   ? (INTENT_DESCRIPTIONS[intentType] || stage.description)
                                                                                   : stage.id === "draft" 

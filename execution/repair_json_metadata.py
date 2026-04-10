@@ -32,7 +32,11 @@ def get_itunes_title(url):
 def recover_title_via_llm(content):
     client = OpenAI()
     prefix = content[:3000]
-    prompt = f"Identify the podcast episode title and show name from this transcript snippet. Return ONLY a JSON object with 'title' and 'show_name'.\n\nSnippet:\n{prefix}"
+    prompt = (
+        "Identify the podcast episode title and show name from this transcript "
+        "snippet. Return ONLY a JSON object with 'title' and 'show_name'.\n\n"
+        f"Snippet:\n{prefix}"
+    )
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",

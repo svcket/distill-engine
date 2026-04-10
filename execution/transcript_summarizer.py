@@ -20,8 +20,27 @@ def summarize_transcript(source_id: str, lang: str = "en") -> Dict[str, Any]:
     return generate_summary(transcript_path, output_path, lang)
 
 def generate_summary(transcript_path: str, output_path: str, lang: str = "en") -> Dict[str, Any]:
+    # --- TOPOLOGICAL RESOLUTION ---
+    # If the provided path doesn't exist, we try to auto-resolve from raw transcripts
     if not os.path.exists(transcript_path):
-        raise FileNotFoundError(f"Input path not found: {transcript_path}")
+        # Extract source_id from the parent directory name 
+        source_id = os.path.basename(os.path.dirname(transcript_path))
+        # Base is execution/ (the parent of .tmp)
+        # Assuming path like .../execution/.tmp/refined_transcripts/id/id_refined.json
+        # We need the path to .../execution/
+        parts = transcript_path.split(os.sep)
+        try:
+            tmp_idx = parts.index(".tmp")
+            base = os.sep.join(parts[:tmp_idx])
+        except ValueError:
+            # Fallback to current script dir if .tmp not in path
+            base = os.path.dirname(os.path.abspath(__file__))
+            
+        fallback = os.path.join(base, ".tmp", "transcripts", source_id, f"{source_id}_raw.json")
+        if os.path.exists(fallback):
+            transcript_path = fallback
+        else:
+            raise FileNotFoundError(f"Input path not found: {transcript_path}")
         
     try:
         with open(transcript_path, 'r', encoding='utf-8') as f:
@@ -55,12 +74,14 @@ def generate_summary(transcript_path: str, output_path: str, lang: str = "en") -
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": f"You are a professional editorial assistant at Distill. Your goal is to "
-                                             f"provide a concise, readable, and faithful summary of a transcript. "
-                                             f"Focus on high-level themes, major arguments, and structural overview. "
-                                             f"Use Markdown formatting with clear sections.\n"
+                {"role": "system", "content": f"You are a professional editorial strategist at Distill. Your goal is to "
+                                             f"provide a high-fidelity intelligence report from a raw transcript or "
+                                             f"official source context. If audio was restricted, use the available "
+                                             f"metadata to synthesize the core strategic intent.\n"
+                                             f"Focus on high-level themes, major arguments, and analytical overview. "
+                                             f"Frame the output as an 'Official Source Intelligence' report.\n"
                                              f"CRITICAL: You MUST write your response entirely in the '{lang}' language."},
-                {"role": "user", "content": f"Please summarize the following transcript:\n\n{capped_text}"}
+                {"role": "user", "content": f"Please provide an intelligence summary for the following source context:\n\n{capped_text}"}
             ],
             temperature=0.3
         )

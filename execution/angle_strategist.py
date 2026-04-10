@@ -23,7 +23,13 @@ def load_json(filepath: str):
             return None
     return None
 
-def extract_angle(insights_path: str, target_type: Optional[str] = None, target_audience: Optional[str] = None, target_tone: Optional[str] = None, lang: str = "en"):
+def extract_angle(
+    insights_path: str, 
+    target_type: Optional[str] = None, 
+    target_audience: Optional[str] = None, 
+    target_tone: Optional[str] = None, 
+    lang: str = "en"
+):
     if not os.path.exists(insights_path):
         print(json.dumps({"status": "failed", "error": f"Insights not found: {insights_path}"}), file=sys.stderr)
         sys.exit(1)
@@ -45,6 +51,23 @@ def extract_angle(insights_path: str, target_type: Optional[str] = None, target_
         else:
             # Last resort: use the title
             input_text = f"SOURCE TITLE (Minimal context):\n{insights_bundle.get('title', 'Unknown Source')}"
+
+    # SPARSE CONTEXT GUARD: If input text is less than 500 characters, analysis is meaningless
+    if len(input_text.strip()) < 500:
+        msg = "Insufficient source context for strategic analysis. (Metadata and notes combined < 500 chars)"
+        print(json.dumps({
+            "status": "failed", 
+            "error": msg,
+            "error_code": "SPARSE_CONTEXT",
+            "source_id": source_id
+        }), file=sys.stderr)
+        # Still write a failure artifact so the UI can catch it
+        out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "angles")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f"{source_id}_angle.json")
+        with open(out_path, 'w', encoding='utf-8') as f:
+            json.dump({"status": "failed", "error": msg, "error_code": "SPARSE_CONTEXT", "source_id": source_id}, f, indent=2)
+        sys.exit(1)
     
     if "OPENAI_API_KEY" not in os.environ or not os.environ["OPENAI_API_KEY"]:
         mock_result = {
@@ -87,7 +110,9 @@ def extract_angle(insights_path: str, target_type: Optional[str] = None, target_
     
     Choose a specific, opinionated framing angle based on the insights provided.
     
-    IMPORTANT: If USER INTENT SETTINGS provide a specific 'Format/Type', you MUST output that exactly as the 'recommended_format'. Do NOT use 'Long-form Essay' if the user requested 'blog_article' or 'technical_explainer'.
+    IMPORTANT: If USER INTENT SETTINGS provide a specific 'Format/Type', you MUST 
+    output that exactly as the 'recommended_format'. Do NOT use 'Long-form Essay' 
+    if the user requested 'blog_article' or 'technical_explainer'.
     
     Target the audience specified, or default to technical builders, engineers, and designers.
     CRITICAL: You MUST write your response entirely in the '{lang}' language.
