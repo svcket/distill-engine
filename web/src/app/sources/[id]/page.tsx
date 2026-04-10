@@ -282,7 +282,7 @@ export default function SourceMissionControl() {
                     table: 'Source',
                     filter: `id=eq.${id}`,
                 },
-                (payload) => {
+                (payload: any) => {
                     const updatedSource = payload.new as SourceCandidate;
                     
                     // Sync Metadata
