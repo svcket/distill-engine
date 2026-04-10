@@ -10,3 +10,6 @@ psycopg2-binary
 pydantic
 tiktoken
 supabase
+fastapi
+uvicorn
+python-json-logger

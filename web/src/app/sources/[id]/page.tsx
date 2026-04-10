@@ -194,17 +194,20 @@ export default function SourceMissionControl() {
     }
 
     // Track which stages are completed
-    const [completedStages, setCompletedStages] = useState<Set<StageId>>(() => {
+    const [completedStages, setCompletedStages] = useState<Set<StageId>>(new Set())
+
+    // Hydration fix for completedStages
+    useEffect(() => {
         const initial = new Set<StageId>()
         if ((source.score ?? 0) > 0) {
             initial.add("judge")
-            initial.add("qa") // Historically done if score exists
+            initial.add("qa")
         }
         if (source.transcriptStatus === "transcribed" || source.transcriptStatus === "rescued_text") {
             initial.add("transcript")
         }
-        return initial
-    })
+        setCompletedStages(initial)
+    }, [source.score, source.transcriptStatus])
 
 
 
@@ -536,9 +539,11 @@ export default function SourceMissionControl() {
                 setCompletedStages(prev => new Set([...prev, stage.id]))
                 currentCompleted.add(stage.id)
                 
-                const localKey = `distill_results_${id}`;
-                const existing = JSON.parse(localStorage.getItem(localKey) || "{}");
-                localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: resValue }));
+                if (typeof window !== 'undefined') {
+                    const localKey = `distill_results_${id}`;
+                    const existing = JSON.parse(localStorage.getItem(localKey) || "{}");
+                    localStorage.setItem(localKey, JSON.stringify({ ...existing, [stage.id]: resValue }));
+                }
                 
                 if (stage.id === "qa") {
                     const resObj = (data as StagePayload).result || data;
@@ -764,7 +769,9 @@ export default function SourceMissionControl() {
                             score: scoreValue,
                             status: scoreValue >= 80 ? "done" : "failed",
                         }))
-                        localStorage.setItem(`dqm_${id}`, JSON.stringify(dqmPayload))
+                        if (typeof window !== 'undefined') {
+                            localStorage.setItem(`dqm_${id}`, JSON.stringify(dqmPayload))
+                        }
                     }
                 }
                 
