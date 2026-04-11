@@ -1,9 +1,8 @@
 import { auth } from "@/auth"
-import { prisma } from "@/lib/prisma"
+import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import { adaptRefinerResponse } from '@/lib/adapters'
-import path from 'path'
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -22,39 +21,35 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
         }
 
-        const executionDir = path.resolve(process.cwd(), '../execution')
-        const inputPath = path.join(executionDir, '.tmp', 'transcripts', transcriptId, `${transcriptId}_raw.json`)
-        const outputJson = path.join(executionDir, '.tmp', 'refined_transcripts', transcriptId, `${transcriptId}_refined.json`)
-
-        const args = ["--input", inputPath, "--output", outputJson]
+        // TRUTH CHECK: Passed to Railway for remote execution. 
+        // We pass the ID and the script finds the input/output in its own .tmp folder.
+        const args = ["--transcript_id", transcriptId]
         if (language) args.push('--lang', language)
 
-        const { success, error, rawOutput } = await runPythonScript("refine_transcript.py", args, {
-            expectedArtifact: `.tmp/refined_transcripts/${transcriptId}/${transcriptId}_refined.json`
-        })
+        const { success, error, rawOutput } = await runPythonScript("refine_transcript.py", args)
 
         if (!success) {
+            console.error(`[Refine API] Failed for ${transcriptId}:`, error)
             return NextResponse.json({ error: "Failed to execute refiner script", details: error }, { status: 500 })
         }
 
         const result = adaptRefinerResponse(rawOutput || "")
 
-        // Persist stage completion
-        await prisma.source.update({
+        // Persist stage completion in Supabase
+        await withRetry(() => prisma.source.update({
             where: { id: transcriptId, userId },
             data: {
                 completedStages: {
                     push: 'refine'
                 }
             }
-        }).catch(() => {
-            // Fallback for string-based completedStages if push fails
-            return prisma.source.update({
+        })).catch(() => {
+            return withRetry(() => prisma.source.update({
                 where: { id: transcriptId, userId },
                 data: {
-                    completedStages: ['refine'] // Array-based fallback
+                    completedStages: ['refine']
                 }
-            })
+            }))
         })
 
         return NextResponse.json({ result, message: `Refined transcript: ${transcriptId}` })

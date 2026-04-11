@@ -3,8 +3,6 @@ import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
 import { adaptInsightResponse } from '@/lib/adapters'
-import path from 'path'
-import fs from 'fs'
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -21,35 +19,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
         }
 
-        const executionDir = path.resolve(process.cwd(), '../execution')
-
-        function resolveFilePath(baseDir: string, dir: string, sourceId: string, suffix: string): string {
-            const strictPath = path.join(baseDir, dir, `${sourceId}${suffix}`);
-            if (fs.existsSync(strictPath)) return strictPath;
-        
-            const strippedId = sourceId.replace(/^spotify_/, '');
-            const strippedPath = path.join(baseDir, dir, `${strippedId}${suffix}`);
-            if (fs.existsSync(strippedPath)) return strippedPath;
-        
-            if (!sourceId.startsWith('spotify_')) {
-                const prefixedPath = path.join(baseDir, dir, `spotify_${sourceId}${suffix}`);
-                if (fs.existsSync(prefixedPath)) return prefixedPath;
-            }
-    
-            const altDir = path.join(baseDir, dir, sourceId);
-            const altStrictPath = path.join(altDir, `${sourceId}${suffix}`);
-            if (fs.existsSync(altStrictPath)) return altStrictPath;
-    
-            const altStrippedPath = path.join(baseDir, dir, strippedId, `${strippedId}${suffix}`);
-            if (fs.existsSync(altStrippedPath)) return altStrippedPath;
-    
-            const altPrefixedPath = !sourceId.startsWith('spotify_') ? path.join(baseDir, dir, `spotify_${sourceId}`, `spotify_${sourceId}${suffix}`) : '';
-            if (altPrefixedPath && fs.existsSync(altPrefixedPath)) return altPrefixedPath;
-            
-            return strictPath; // Default fallback if none found
-        }
-    
-        const insightsPath = resolveFilePath(executionDir, '.tmp/insights', transcriptId, '_insights.json')
+        const insightsPath = `.tmp/insights/${transcriptId}_insights.json`
 
         const args = ["--input", insightsPath]
         if (type) args.push("--type", type)

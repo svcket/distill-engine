@@ -1,12 +1,8 @@
 import { auth } from "@/auth"
 import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
-import path from 'path'
-import fs from 'fs'
 import { runPythonScript } from '@/lib/python-runner'
 import { sendPushNotification } from '@/lib/one-signal'
-
-const EXECUTION_DIR = path.resolve(process.cwd(), '../execution')
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -23,7 +19,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
     }
 
-    // 1. Verify source ownership with retry
+    // 1. Verify source ownership (Cloud Truth)
     const source = await withRetry(() => prisma.source.findUnique({
         where: { id: sourceId, userId: session.user?.id as string }
     }))
@@ -32,79 +28,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Source not found or access denied" }, { status: 404 })
     }
 
-    // Find the latest draft for this source to ensure we have content to socialise
-    const draft = await prisma.draft.findFirst({
-        where: { userId: session.user.id, id: sourceId }, // Using id as sourceId is the draft's parent in this simplified schema
-        orderBy: { createdAt: 'desc' }
-    })
-
-    function resolveFilePath(baseDir: string, dir: string, sourceId: string, suffix: string): string {
-        const strictPath = path.join(baseDir, dir, `${sourceId}${suffix}`);
-        if (fs.existsSync(strictPath)) return strictPath;
-    
-        const strippedId = sourceId.replace(/^spotify_/, '');
-        const strippedPath = path.join(baseDir, dir, `${strippedId}${suffix}`);
-        if (fs.existsSync(strippedPath)) return strippedPath;
-    
-        if (!sourceId.startsWith('spotify_')) {
-            const prefixedPath = path.join(baseDir, dir, `spotify_${sourceId}${suffix}`);
-            if (fs.existsSync(prefixedPath)) return prefixedPath;
-        }
-
-        const altDir = path.join(baseDir, dir, sourceId);
-        const altStrictPath = path.join(altDir, `${sourceId}${suffix}`);
-        if (fs.existsSync(altStrictPath)) return altStrictPath;
-
-        const altStrippedPath = path.join(baseDir, dir, strippedId, `${strippedId}${suffix}`);
-        if (fs.existsSync(altStrippedPath)) return altStrippedPath;
-
-        const altPrefixedPath = !sourceId.startsWith('spotify_') ? path.join(baseDir, dir, `spotify_${sourceId}`, `spotify_${sourceId}${suffix}`) : '';
-        if (altPrefixedPath && fs.existsSync(altPrefixedPath)) return altPrefixedPath;
-        
-        return strictPath; // Default fallback if none found
-    }
-
-    const draftPath = resolveFilePath(EXECUTION_DIR, '.tmp/drafts', sourceId, '_draft.json')
-    const summaryPath = resolveFilePath(EXECUTION_DIR, '.tmp/summaries', sourceId, '_summary.json')
-    const outputDir = path.join(EXECUTION_DIR, '.tmp', 'socialise')
-    const outputPath = path.join(outputDir, `${sourceId}_thread.json`)
-
-    if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true })
-    }
-
-    // Pre-flight check: ensure the required files exist for the Python script
-    if (!fs.existsSync(draftPath)) {
-        // If draft artifact is missing but we have it in DB, write it back to disk to satisfy the script
-        if (draft?.content) {
-            const draftsDir = path.join(EXECUTION_DIR, '.tmp', 'drafts')
-            if (!fs.existsSync(draftsDir)) fs.mkdirSync(draftsDir, { recursive: true })
-            fs.writeFileSync(draftPath, JSON.stringify({ content: draft.content, sourceId }))
-        } else {
-            return NextResponse.json({ error: "No draft artifact found. Please generate a draft first." }, { status: 400 })
-        }
-    }
-
-    if (!fs.existsSync(summaryPath)) {
-        // SELF-HEALING: If summary is missing (due to hidden stages), attempt recovery from Insights or Cluster
-        const insightsPath = resolveFilePath(EXECUTION_DIR, '.tmp/insights', sourceId, '_insights.json')
-        const clusterPath = resolveFilePath(EXECUTION_DIR, '.tmp/clusters', sourceId, '_cluster.json')
-        
-        let rescuePath = '';
-        if (fs.existsSync(insightsPath)) rescuePath = insightsPath;
-        else if (fs.existsSync(clusterPath)) rescuePath = clusterPath;
-
-        if (rescuePath) {
-            console.log(`[Social API] Self-Healing: Missing summary for ${sourceId}. Rescuing from ${rescuePath}`)
-            const summariesDir = path.dirname(summaryPath)
-            if (!fs.existsSync(summariesDir)) fs.mkdirSync(summariesDir, { recursive: true })
-            fs.copyFileSync(rescuePath, summaryPath)
-        } else {
-            return NextResponse.json({ error: "No summary or intelligence artifact found. Please run Extract Intelligence first." }, { status: 400 })
-        }
-    }
-
     try {
+        // TRUTH CHECK: In Split Architecture, we pass relative paths. 
+        // Railway will resolve these within its own .tmp directory.
+        const draftPath = `.tmp/drafts/${sourceId}_draft.json`
+        const summaryPath = `.tmp/summaries/${sourceId}_summary.json`
+        const outputPath = `.tmp/socialise/${sourceId}_thread.json`
+
         const args = [
             '--draft', draftPath,
             '--transcript', summaryPath,
@@ -117,19 +47,18 @@ export async function POST(request: Request) {
             hook: string;
             thread: string[];
             cta: string;
-        }>('thread_architect.py', args, {
-            expectedArtifact: `.tmp/socialise/${sourceId}_thread.json`
-        })
+        }>('thread_architect.py', args)
 
         if (!success) {
             console.error(`[Social API] Thread generation failed for ${sourceId}:`, error)
             return NextResponse.json({ 
                 error: "Thread generation failed", 
                 details: error,
-                rawOutput: data // Include whatever we managed to capture
+                status: "failed"
             }, { status: 500 })
         }
 
+        // Updating source status in Supabase
         await withRetry(() => prisma.source.update({
             where: { id: sourceId, userId: session.user?.id },
             data: { 
@@ -140,13 +69,13 @@ export async function POST(request: Request) {
             }
         }));
 
-        // 4. Dispatch Push Notification
+        // Dispatch Push Notification
         if (session.user?.id) {
             await sendPushNotification(
                 session.user.id, 
                 "Distillation Complete", 
                 `Your analysis for "${source.title}" is ready.`,
-                `${process.env.NEXT_PUBLIC_APP_URL}/sources?id=${sourceId}`
+                `${process.env.NEXT_PUBLIC_APP_URL}/directory?id=${sourceId}`
             );
         }
 

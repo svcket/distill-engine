@@ -31,11 +31,8 @@ export async function POST(request: Request) {
 
         const result = JSON.parse(rawOutput || '{}')
         
-        // TRUTH CHECK: Verify artifact existence manually since ID was dynamic
-        const artifactPath = path.resolve(executionDir, `.tmp/sources/${result.source_id}.json`)
-        if (!fs.existsSync(artifactPath)) {
-            return NextResponse.json({ error: 'Pipeline Truth Error: Ingest reported success but artifact is missing.', id: result.source_id }, { status: 500 })
-        }
+        // TRUTH CHECK: In Split Architecture, we trust the Railway backend success report.
+        // Artifacts are stored on the remote engine and proxied via /api/sources/[id]/results
         
         const userId = String(session.user.id)
         // SELF-HEALING: Recreate user record if deleted during migration but session persists

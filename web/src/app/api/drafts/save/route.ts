@@ -1,45 +1,45 @@
 import { NextResponse } from 'next/server'
-import fs from 'fs'
-import path from 'path'
-
-const EXECUTION_DIR = path.resolve(process.cwd(), '../execution')
-const DRAFTS_DIR = path.join(EXECUTION_DIR, '.tmp', 'drafts')
+import { auth } from '@/auth'
+import { prisma, withRetry } from '@/lib/prisma'
 
 export async function POST(request: Request) {
     try {
-        const { id, content } = await request.json()
-
-        if (!id || !content) {
-            return NextResponse.json({ error: "Missing 'id' or 'content' parameter." }, { status: 400 })
+        const session = await auth()
+        if (!session?.user?.id) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Ensure directory exists
-        if (!fs.existsSync(DRAFTS_DIR)) {
-            fs.mkdirSync(DRAFTS_DIR, { recursive: true })
+        const { id, content, title } = await request.json()
+
+        if (!content) {
+            return NextResponse.json({ error: "Missing 'content' parameter." }, { status: 400 })
         }
 
-        const draftPath = path.join(DRAFTS_DIR, `${id}_draft.json`)
-        
-        // In a real scenario, we might want to preserve the metadata
-        // For now, we update the data.content field in the JSON file
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let existingData: Record<string, unknown> = {}
-        if (fs.existsSync(draftPath)) {
-            existingData = JSON.parse(fs.readFileSync(draftPath, 'utf8'))
-        }
+        const userId = session.user.id
 
-        const updatedData = {
-            ...existingData,
-            data: {
-                ...(existingData.data || {}),
-                content,
+        // TRUTH CHECK: We use the prisma.draft.upsert to either update an existing draft (by ID) 
+        // or create a new one. Since the incoming 'id' might be a CUID or a temporary frontend ID,
+        // we handle both cases.
+        const draft = await withRetry(() => prisma.draft.upsert({
+            where: { 
+                id: id?.includes('draft_') ? 'new' : id || 'new' 
             },
-            updatedAt: new Date().toISOString()
-        }
+            update: {
+                content,
+                title: title || "Untitled Draft",
+            },
+            create: {
+                userId,
+                content,
+                title: title || "Untitled Draft",
+            }
+        }))
 
-        fs.writeFileSync(draftPath, JSON.stringify(updatedData, null, 2))
-
-        return NextResponse.json({ success: true, message: "Draft saved successfully" })
+        return NextResponse.json({ 
+            success: true, 
+            message: "Draft saved successfully",
+            id: draft.id 
+        })
     } catch (error: unknown) {
         console.error('[API Drafts Save Error]', error)
         const msg = error instanceof Error ? error.message : "Unknown error";

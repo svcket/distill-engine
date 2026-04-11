@@ -2,8 +2,6 @@ import { auth } from "@/auth"
 import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
-import path from 'path'
-import fs from 'fs'
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -22,55 +20,29 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing 'transcriptId' parameter." }, { status: 400 })
         }
 
-        const executionDir = path.resolve(process.cwd(), '../execution')
-        
-        // DYNAMIC PATH RESOLUTION: Prefer refined, fallback to raw for rescued sources
-        let inputPath = path.join(executionDir, '.tmp', 'refined_transcripts', transcriptId, `${transcriptId}_refined.json`)
-        
-        if (!fs.existsSync(inputPath)) {
-            const rawPath = path.join(executionDir, '.tmp', 'transcripts', transcriptId, `${transcriptId}_raw.json`)
-            if (fs.existsSync(rawPath)) {
-                inputPath = rawPath
-            }
-        }
-        
-        const outputMdDir = path.join(executionDir, '.tmp', 'summaries', transcriptId)
-        if (!fs.existsSync(outputMdDir)) {
-            fs.mkdirSync(outputMdDir, { recursive: true })
-        }
-        
-        const outputMd = path.join(outputMdDir, `${transcriptId}_summary.md`)
-
-        const args = ["--input", inputPath, "--output", outputMd]
+        // TRUTH CHECK: Passed to Railway for remote execution. 
+        // Railway script is responsible for finding input/output relative to execution root.
+        const args = ["--transcript_id", transcriptId]
         if (language) args.push('--lang', language)
 
-        const { success, error, rawOutput } = await runPythonScript("transcript_summarizer.py", args, {
-            expectedArtifact: `.tmp/summaries/${transcriptId}/${transcriptId}_summary.json`
-        })
+        const { success, error, rawOutput } = await runPythonScript("transcript_summarizer.py", args)
 
         if (!success) {
+            console.error(`[Summary API] Failed to generate summary for ${transcriptId}:`, error)
             return NextResponse.json({ error: "Failed to execute summarizer script", details: error }, { status: 500 })
         }
 
-        // Parse result from Python output
+        // Parse result from Python output (standardized in Python scripts)
         let result: { summary?: string } = { summary: "" }
         try {
-            const lastLine = rawOutput?.trim().split('\n').pop() || "{}"
-            const parsedOutput = JSON.parse(lastLine)
-            result = { ...parsedOutput }
-            
-            // Hydration: Read the actual summary content from the JSON file
-            const summaryJsonPath = path.join(executionDir, '.tmp', 'summaries', transcriptId, `${transcriptId}_summary.json`)
-            if (fs.existsSync(summaryJsonPath)) {
-                const rawData = fs.readFileSync(summaryJsonPath, 'utf-8')
-                const parsed = JSON.parse(rawData)
-                result = { ...result, summary: parsed.summary }
-            }
+            const lines = (rawOutput || "").trim().split('\n')
+            const lastLine = lines.reverse().find(l => l.trim().startsWith('{')) || "{}"
+            result = JSON.parse(lastLine)
         } catch {
-            result = { summary: "" }
+            console.warn(`[Summary API] Could not parse JSON output for ${transcriptId}`)
         }
 
-        // Persist stage completion
+        // Persist stage completion in Supabase
         await withRetry(() => prisma.source.update({
             where: { id: transcriptId, userId },
             data: {
@@ -79,7 +51,7 @@ export async function POST(request: Request) {
                 }
             }
         })).catch(() => {
-            // Fallback for string-based completedStages if push fails
+            // Fallback for string-based completedStages
             return withRetry(() => prisma.source.update({
                 where: { id: transcriptId, userId },
                 data: {
