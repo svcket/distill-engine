@@ -521,7 +521,7 @@ export default function SourceMissionControl() {
                 const isAudio = id.toLowerCase().includes("mp3") || id.toLowerCase().includes("wav") || id.toLowerCase().includes("m4a") || id.toLowerCase().includes("audio");
                 
                 let mockData: Record<string, unknown> = { status: "success" }
-                if (stage.id === "judge") mockData = { result: { title: source.title, channel: isAudio ? "Local Audio" : "Local Video", url: "file://local", score: 8 } }
+                if (stage.id === "judge") mockData = { result: { title: source?.title || "Local Import", channel: isAudio ? "Local Audio" : "Local Video", url: "file://local", score: 8 } }
                 if (stage.id === "transcript") mockData = { result: { segments: [{ start: 0, text: isAudio ? "Mock transcript for audio meeting..." : "Transcript for local media..." }] } }
                 if (stage.id === "refine") mockData = { result: { segments: [{ text: "Refined local transcript..." }] } }
                 if (stage.id === "insights") mockData = { result: { core_argument: "Local data insights.", key_claims: ["Analysis ready"], memorable_quotes: ["Direct from source."] } }
@@ -812,7 +812,7 @@ export default function SourceMissionControl() {
                         const d = data as StagePayload;
                         const duration = d.duration || (d.result as TranscriptResult)?.duration;
                         if (duration) {
-                            setSource(s => ({ ...s!, duration: formatDuration(duration) }));
+                            setSource(s => s ? ({ ...s, duration: formatDuration(duration) }) : s);
                         }
                     }
                 }
@@ -851,7 +851,7 @@ export default function SourceMissionControl() {
                 const data = await res.json()
                 const refreshed = (data.sources || []).find((s: Record<string, unknown>) => s.id === id)
                 if (refreshed) {
-                    setSource(s => s ? { ...s, ...refreshed } : refreshed)
+                    setSource(s => (s && refreshed) ? { ...s, ...refreshed } : (s || refreshed))
                     
                     if (refreshed?.completedStages?.includes("socialise")) {
                         const resApi = await fetch(`/api/sources/${id}/results`);
@@ -1093,7 +1093,7 @@ export default function SourceMissionControl() {
                 
                 let mockData: Record<string, unknown> = { status: "success", message: `${stage.label} completed for local file` }
                 
-                if (stage.id === "judge") mockData = { result: { title: source.title, channel: "Local File", url: "file://local", score: 8 } }
+                if (stage.id === "judge") mockData = { result: { title: source?.title || "Local File", channel: "Local File", url: "file://local", score: 8 } }
                 if (stage.id === "transcript") mockData = { result: { segments: [{ start: 0, text: "This is a mock transcript for your local file import. It contains the key arguments and discussions from the meeting." }] } }
                 if (stage.id === "refine") mockData = { result: { segments: [{ text: "Refined and structured transcript data for the local file." }] } }
                 if (stage.id === "insights") mockData = { result: { core_argument: "Local data is critical for strategic decision making.", key_claims: ["High security", "Fast processing"], memorable_quotes: ["Data is the new oil."] } }
@@ -1218,11 +1218,11 @@ export default function SourceMissionControl() {
                 const resObj = ((data as StagePayload).result || data) as Record<string, unknown>;
                 if (resObj && (resObj.score !== undefined || resObj.total_score !== undefined)) {
                     const score = (resObj.total_score ?? resObj.score) as number;
-                    setSource(s => ({
+                    setSource(s => s ? ({
                         ...s,
                         score: score,
                         status: score >= 6 ? "done" : s.status,
-                    }))
+                    }) : s)
                     localStorage.setItem(`dqm_${id}`, JSON.stringify(resObj))
                 }
             }
@@ -1355,6 +1355,17 @@ export default function SourceMissionControl() {
     const visibleStages = STAGES.filter(s => !s.hidden);
 
 
+    if (!source || !source.id) {
+        return (
+            <div className="flex h-full items-center justify-center bg-background">
+                <div className="flex flex-col items-center gap-4">
+                    <RefreshCw className="w-8 h-8 text-brand animate-spin" />
+                    <p className="text-sm text-muted-foreground font-medium animate-pulse">Initializing Distill Intelligence System...</p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="flex h-full">
             {/* Main Content Area */}
@@ -1480,7 +1491,7 @@ export default function SourceMissionControl() {
                                         document: "Document",
                                         upload: "Upload",
                                         recording: "Recording",
-                                    }[source.source_type ?? ""] || source.source_type || "Source"}
+                                    }[source?.source_type ?? ""] || source?.source_type || "Source"}
                                 </Badge>
                                 {source.status === "done" && (
                                     <Badge variant="success" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 uppercase tracking-widest text-[10px] h-5 px-2 font-bold">
@@ -1523,13 +1534,14 @@ export default function SourceMissionControl() {
                             <BarChart3 className="w-3.5 h-3.5 text-muted-foreground/70" />
                             <span className="text-muted-foreground">{t("qualScore")}</span>
                             {(() => {
-                                const normalizedScore = source.score > 10 ? source.score : source.score * 10;
+                                const score = source?.score || 0;
+                                const normalizedScore = score > 10 ? score : score * 10;
                                 return (
                                     <>
-                                        <span className={cn("font-semibold tabular-nums", source.score > 0 ? (normalizedScore >= 80 ? "text-emerald-600" : normalizedScore >= 60 ? "text-amber-600" : "text-red-500") : "text-muted-foreground")}>
-                                            {source.score > 0 ? (source.score > 10 ? `${source.score}/100` : `${source.score}/10`) : (stageResults.qa ? <span className="text-muted-foreground opacity-50">Calculating...</span> : <span className="opacity-70 font-normal italic">{t("pending")}...</span>)}
+                                        <span className={cn("font-semibold tabular-nums", score > 0 ? (normalizedScore >= 80 ? "text-emerald-600" : normalizedScore >= 60 ? "text-amber-600" : "text-red-500") : "text-muted-foreground")}>
+                                            {score > 0 ? (score > 10 ? `${score}/100` : `${score}/10`) : (stageResults.qa ? <span className="text-muted-foreground opacity-50">Calculating...</span> : <span className="opacity-70 font-normal italic">{t("pending")}...</span>)}
                                         </span>
-                                        {source.score > 0 && (
+                                        {score > 0 && (
                                             <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", normalizedScore >= 80 ? "bg-emerald-50 text-emerald-700" : normalizedScore >= 60 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-600")}>
                                                 {normalizedScore >= 80 ? "Exceptional" : normalizedScore >= 60 ? "Solid" : "Low score"}
                                             </span>
@@ -1615,7 +1627,7 @@ export default function SourceMissionControl() {
                                                                             {stage.label}
                                                                         </h3>
                                                                         <p className="text-[13px] text-muted-foreground/70 leading-relaxed max-w-md">
-                                                                            {stage.id === "transcript" && source.transcriptStatus === "unavailable" 
+                                                                            {stage.id === "transcript" && source?.transcriptStatus === "unavailable" 
                                                                                 ? "Audio restricted by platform. Proceeding with high-fidelity Context Intelligence analysis."
                                                                                 : isActive && stage.id === "angle"
                                                                                   ? (INTENT_DESCRIPTIONS[intentType] || stage.description)

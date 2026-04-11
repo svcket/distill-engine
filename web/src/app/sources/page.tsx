@@ -23,11 +23,10 @@ import Image from "next/image"
 type Tab = "processed" | "processing" | "unprocessed"
 type ViewMode = "grid" | "list"
 
-function getTab(source: SourceCandidate): Tab {
-    if (!source) return "unprocessed"
-    const completedArr = source.completedStages || []
-    if (source.status === "done" || completedArr.includes("qa") || completedArr.includes("export")) return "processed"
-    if (source.status === "processing" || (completedArr.length > 0 && !completedArr.includes("qa"))) return "processing"
+const getDisplayStatus = (source: SourceCandidate): "unprocessed" | "processing" | "processed" => {
+    const completedArr = source?.completedStages || []
+    if (source?.status === "done" || completedArr.includes("qa") || completedArr.includes("export")) return "processed"
+    if (source?.status === "processing" || (completedArr.length > 0 && !completedArr.includes("qa"))) return "processing"
     return "unprocessed"
 }
 
@@ -123,8 +122,8 @@ export default function SourcesPage() {
     }, [router])
 
     const filteredSources = (sources || []).filter(s => {
-        if (!s) return false
-        const matchTab = getTab(s) === activeTab
+        if (!s) return false;
+        const matchTab = getDisplayStatus(s) === activeTab
         const sType = (s.source_type || s.type || "Unknown").toLowerCase()
         
         let matchPlatform = platformFilter === "All"
@@ -373,7 +372,7 @@ export default function SourcesPage() {
                                         
                                         <div className="mt-auto flex items-center justify-between pt-4 border-t border-white/5">
                                             <div className="text-[12px] font-black uppercase tracking-widest tabular-nums text-foreground">
-                                                DQM: {source.score || source.dqmScore || "0"}/100
+                                                DQM: {source?.score || source?.dqmScore || "0"}/100
                                             </div>
                                             <div className="text-[9px] text-muted-foreground/40 font-bold uppercase tracking-tighter whitespace-nowrap">
                                                 {formatDisplayDate(source.createdAt)}
@@ -399,7 +398,7 @@ export default function SourcesPage() {
                             </thead>
                             <tbody className="divide-y divide-border/50">
                                 {filteredSources.map(source => {
-                                    const score = source.dqmScore || source.score || 0
+                                    const score = source?.dqmScore || source?.score || 0
                                     return (
                                         <tr key={source.id} onClick={() => router.push(`/sources/${source.id}`)} className="group hover:bg-muted/5 transition-colors cursor-pointer">
                                             <td className="px-4 py-4">
@@ -407,9 +406,9 @@ export default function SourcesPage() {
                                                     <div className="w-14 h-9 rounded-lg bg-muted overflow-hidden shrink-0 relative border border-border/30">
                                                         <Image 
                                                             src={source.thumbnail || (
-                                                                (source.source_type || "").includes("youtube") ? "/thumbnail/thumbnail_youtube.png" :
-                                                                (source.source_type || "").includes("spotify") ? "/thumbnail/thumbnail_spotify_podcast.png" :
-                                                                (source.source_type || "").includes("apple") || (source.source_type || "").includes("podcast") ? "/thumbnail/thumbnail_apple_podcast.png" :
+                                                                (source?.source_type || "").includes("youtube") ? "/thumbnail/thumbnail_youtube.png" :
+                                                                (source?.source_type || "").includes("spotify") ? "/thumbnail/thumbnail_spotify_podcast.png" :
+                                                                (source?.source_type || "").includes("apple") || (source?.source_type || "").includes("podcast") ? "/thumbnail/thumbnail_apple_podcast.png" :
                                                                 "/thumbnail/thumbnail_rss.png"
                                                             )} 
                                                             alt="" 
@@ -420,7 +419,7 @@ export default function SourcesPage() {
                                                     </div>
                                                     <div className="min-w-0 flex flex-col py-1">
                                                         <Link href={`/sources/${source.id}`} className="text-[17px] font-semibold text-foreground whitespace-normal break-words line-clamp-2 leading-tight group-hover:text-brand transition-colors">
-                                                            {source.title}
+                                                            {source?.title}
                                                         </Link>
                                                         <span className="text-[10px] text-muted-foreground uppercase font-medium tracking-tight">
                                                             {formatDisplayDate(source.createdAt)}
