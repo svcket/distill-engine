@@ -146,7 +146,7 @@ function SourceMissionControlContent() {
     const params = useParams()
     const router = useRouter()
     const searchParams = useSearchParams()
-    const autoRunSignal = searchParams.get("run") === "true"
+    const autoRunSignal = searchParams?.get("run") === "true"
     const id = params?.id as string
 
     const [source, setSource] = useState<SourceCandidate>({
@@ -1227,49 +1227,54 @@ function SourceMissionControlContent() {
             }
             // ───────────────────────────
 
-            // ─── METADATA FIXATION (Prisma Sync) ───
-            if (data && typeof data === 'object') {
-                const resObj = ((data as StagePayload).result || data) as Record<string, unknown>;
-                const updates: Record<string, any> = {};
+                // ─── METADATA FIXATION (Prisma Sync) ───
+                if (data && typeof data === 'object') {
+                    const resObj = ((data as StagePayload).result || data) as Record<string, unknown>;
+                    const updates: Partial<SourceCandidate> = {};
 
-                // 1. Sync Score (DQM)
-                if (resObj && (resObj.score !== undefined || resObj.total_score !== undefined)) {
-                    const score = (resObj.total_score ?? resObj.score) as number;
-                    setSource(s => s ? ({ ...s, score, status: score >= 6 ? "done" : s.status }) : s);
-                    updates.score = score;
-                    if (score >= 6) updates.status = "done";
-                }
+                    // 1. Sync Score (DQM)
+                    if (resObj && (resObj.score !== undefined || resObj.total_score !== undefined)) {
+                        const score = (resObj.total_score ?? (resObj.score as number)) as number;
+                        setSource(s => s ? ({ ...s, score, status: score >= 6 ? "done" : s.status }) : s);
+                        updates.score = score;
+                        if (score >= 6) updates.status = "done";
+                    }
 
-                // 2. Sync Duration (Transcript)
-                if (stage.id === "transcript" && resObj?.duration) {
-                    const formattedDur = formatDuration(resObj.duration as number | string);
-                    setSource(s => s ? ({ ...s, duration: formattedDur }) : s);
-                    updates.duration = formattedDur;
-                }
+                    // 2. Sync Duration (Transcript)
+                    if (stage.id === "transcript" && resObj?.duration) {
+                        const formattedDur = formatDuration(resObj.duration as number | string);
+                        setSource(s => s ? ({ ...s, duration: formattedDur }) : s);
+                        updates.duration = formattedDur;
+                    }
 
-                // 3. Sync Identity (Judge)
-                if (stage.id === "judge") {
-                    const judgeRes = resObj as unknown as JudgeResult;
-                    updates.title = judgeRes.title || source?.title;
-                    updates.channel = judgeRes.channel || source?.channel;
-                    updates.url = judgeRes.url || source?.url;
-                    setSource(s => s ? ({ ...s, ...updates }) : s);
-                }
+                    // 3. Sync Identity (Judge)
+                    if (stage.id === "judge") {
+                        const judgeRes = resObj as unknown as JudgeResult;
+                        const title = judgeRes.title || source?.title;
+                        const channel = judgeRes.channel || source?.channel;
+                        const url = judgeRes.url || source?.url;
+                        
+                        updates.title = title;
+                        updates.channel = channel;
+                        updates.url = url;
+                        
+                        setSource(s => s ? ({ ...s, ...updates }) : s);
+                    }
 
-                // Persist all gathered updates to Prisma in a single atomic call
-                if (Object.keys(updates).length > 0) {
-                    try {
-                        await fetch("/api/store", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ 
-                                action: "upsert", 
-                                source: { id, ...updates } 
-                            })
-                        });
-                    } catch (e) { console.error("Prisma fixation failed:", e); }
+                    // Persist all gathered updates to Prisma in a single atomic call
+                    if (Object.keys(updates).length > 0) {
+                        try {
+                            await fetch("/api/store", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ 
+                                    action: "upsert", 
+                                    source: { id, ...updates } 
+                                })
+                            });
+                        } catch (e) { console.error("Prisma fixation failed:", e); }
+                    }
                 }
-            }
 
             // Add log
             setLogs(prev => [{ event: `${stage.label} completed`, time: "Just now", status: "success" }, ...prev])
