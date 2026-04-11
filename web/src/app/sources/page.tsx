@@ -319,7 +319,7 @@ export default function SourcesPage() {
                             )}
                         >
                             {tab.label} <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
-                                {sources.filter(s => getTab(s) === tab.key).length}
+                                {sources.filter(s => getDisplayStatus(s) === tab.key).length}
                             </span>
                             {activeTab === tab.key && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand rounded-full" />}
                         </button>
