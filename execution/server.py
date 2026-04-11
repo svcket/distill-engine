@@ -5,6 +5,7 @@ import logging
 from typing import List, Optional
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # --- LOGGING CONFIG ---
@@ -12,6 +13,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("distill-backend")
 
 app = FastAPI(title="Distill Engine Backend API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- MODELS ---
 class RunRequest(BaseModel):
@@ -46,9 +55,10 @@ async def run_script(run_req: RunRequest, request: Request, x_api_key: str = Hea
     script_name = run_req.script
     args = run_req.args
     
-    # SECURITY: Prevent path traversal
-    if ".." in script_name or "/" in script_name:
-        raise HTTPException(status_code=400, detail="Invalid script name")
+    # SECURITY: Prevent path traversal (allow subdirectories like adapters/)
+    if ".." in script_name or script_name.startswith("/"):
+        logger.warning(f"Blocked invalid script path attempt: {script_name}")
+        raise HTTPException(status_code=400, detail="Invalid script path (traversal blocked)")
 
     execution_dir = os.path.dirname(os.path.abspath(__file__))
     script_path = os.path.join(execution_dir, script_name)
