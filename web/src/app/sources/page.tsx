@@ -127,51 +127,50 @@ export default function SourcesPage() {
 
     const filteredSources = (sources || []).filter(s => {
         if (!s) return false;
-        const matchTab = getDisplayStatus(s) === activeTab
-        const sType = (s.source_type || s.type || "Unknown").toLowerCase()
+        const matchTab = getDisplayStatus(s) === activeTab;
+        const sType = (s.source_type || s.type || "Unknown").toLowerCase();
         
-        let matchPlatform = platformFilter === "All"
+        let matchPlatform = platformFilter === "All";
         if (!matchPlatform) {
-            const filter = platformFilter.toLowerCase()
-            if (filter === "web articles") matchPlatform = (sType === "rss" || sType === "article" || sType === "web")
-            else if (filter === "documents") matchPlatform = (sType === "document" || sType === "pdf" || (sType === "upload" && s.url?.endsWith(".pdf")))
-            else matchPlatform = sType.includes(filter)
+            const filter = platformFilter.toLowerCase();
+            if (filter === "web articles") matchPlatform = (sType === "rss" || sType === "article" || sType === "web");
+            else if (filter === "documents") matchPlatform = (sType === "document" || sType === "pdf" || !!(sType === "upload" && s.url?.endsWith(".pdf")));
+            else matchPlatform = sType.includes(filter);
         }
         
-        return matchTab && matchPlatform
-    })
+        return !!(matchTab && matchPlatform);
+    });
 
     const activeFiltersCount = [
         platformFilter !== "All"
-    ].filter(Boolean).length
-
-
+    ].filter(Boolean).length;
 
     const handleDelete = async (id: string) => {
         if (confirm("Delete this source?")) {
-            const ok = await deleteSource(id)
-            if (ok) setSources(prev => prev.filter(s => s.id !== id))
+            const ok = await deleteSource(id);
+            if (ok) setSources(prev => prev.filter(s => s.id !== id));
         }
-    }
+    };
 
     const handleIngest = async (input: string) => {
-        if (!input || !input.trim()) return
-        setIsIngesting(true)
-        setIngestStatus(null)
-        const isURL = /^https?:\/\//i.test(input.trim()) || (input.includes('.') && !input.includes(' '))
+        if (!input || !input.trim()) return;
+        setIsIngesting(true);
+        setIngestStatus(null);
+        const isURL = /^https?:\/\//i.test(input.trim()) || (input.includes('.') && !input.includes(' '));
         try {
             if (isURL) {
                 const res = await fetch("/api/sources/ingest", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ url: input })
-                })
-                const data = await res.json()
-                if (res.ok && data.result?.id) router.push(`/sources/${data.result.id}?run=true`)
-                else setIngestStatus({ type: 'error', message: data.error || "Failed to ingest source." })
+                });
+                const data = await res.json();
+                if (res.ok && data.result?.id) {
+                    void router.push(`/sources/${data.result.id}?run=true`);
+                } else {
+                    setIngestStatus({ type: 'error', message: data.error || "Failed to ingest source." });
+                }
             } else {
-                // GUARD: Topic discovery should only trigger on concise keywords. 
-                // Long strings (likely failed URL pastes) should be rejected or trimmed.
                 if (input.length > 150) {
                     setIngestStatus({ type: 'error', message: "Search term too long. Please provide a brief topic or a valid URL." });
                     return;
@@ -180,20 +179,22 @@ export default function SourcesPage() {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ query: input })
-                })
+                });
                 if (res.ok) {
-                    const data = await res.json()
-                    setSources(prev => [...(data.sources || []), ...prev])
-                    setIngestStatus({ type: 'success', message: `Discovered items for topic: ${input}` })
-                } else setIngestStatus({ type: 'error', message: "Topic search failed." })
+                    const data = await res.json();
+                    setSources(prev => [...(data.sources || []), ...prev]);
+                    setIngestStatus({ type: 'success', message: `Discovered items for topic: ${input}` });
+                } else {
+                    setIngestStatus({ type: 'error', message: "Topic search failed." });
+                }
             }
         } catch {
-            setIngestStatus({ type: 'error', message: "Operation failed." })
+            setIngestStatus({ type: 'error', message: "Operation failed." });
         } finally {
-            setIsIngesting(false)
-            setTimeout(() => setIngestStatus(null), 5000)
+            setIsIngesting(false);
+            setTimeout(() => setIngestStatus(null), 5000);
         }
-    }
+    };
 
     const handleFileSelect = async (file: File) => {
         setIsIngesting(true);
@@ -212,14 +213,16 @@ export default function SourcesPage() {
             });
             const ingestData = await ingestRes.json();
             if (!ingestRes.ok) throw new Error(ingestData.error || "Ingest failed");
-            if (ingestData.result?.id) router.push(`/sources/${ingestData.result.id}?run=true`);
+            if (ingestData.result?.id) {
+                void router.push(`/sources/${ingestData.result.id}?run=true`);
+            }
         } catch {
             setIngestStatus({ type: 'error', message: "Failed to import local file." });
         } finally {
             setIsIngesting(false);
             setTimeout(() => setIngestStatus(null), 5000);
         }
-    }
+    };
 
     return (
         <div className="p-4 lg:p-8 lg:px-12 max-w-[1500px] mx-auto space-y-6 lg:space-y-8 min-h-full">
@@ -340,7 +343,7 @@ export default function SourcesPage() {
                     <div className="py-12 lg:py-20 text-center">
                         <div className="w-16 h-16 bg-muted/50 rounded-2xl flex items-center justify-center mx-auto mb-4"><Search className="w-8 h-8 text-muted-foreground/30" /></div>
                         <h3 className="text-lg font-medium text-foreground">{t("noSourcesFound")}</h3>
-                        <Button variant="outline" className="mt-6 gap-2 font-serif font-medium" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleFileSelect(f) }; i.click(); }}><Plus className="w-4 h-4" /> {t("importFromDevice")}</Button>
+                        <Button variant="outline" className="mt-6 gap-2 font-serif font-medium" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { void handleFileSelect(f); } }; i.click(); }}><Plus className="w-4 h-4" /> {t("importFromDevice")}</Button>
                     </div>
                 ) : viewMode === "grid" ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-3">
@@ -388,7 +391,7 @@ export default function SourcesPage() {
                                         </div>
                                     </div>
                                 </Link>
-                                <button title="Delete Source" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(source.id); }} className="absolute top-4 right-4 p-2 rounded-full bg-black/40 backdrop-blur-md text-white/20 hover:text-red-500 hover:bg-red-500/20 border border-white/5 transition-all z-10 opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
+                                <button title="Delete Source" onClick={(e) => { e.preventDefault(); e.stopPropagation(); void handleDelete(source.id); }} className="absolute top-4 right-4 p-2 rounded-full bg-black/40 backdrop-blur-md text-white/20 hover:text-red-500 hover:bg-red-500/20 border border-white/5 transition-all z-10 opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
                             </Card>
                         ))}
                     </div>
@@ -408,7 +411,7 @@ export default function SourcesPage() {
                                 {filteredSources.map(source => {
                                     const score = source?.dqmScore || source?.score || 0
                                     return (
-                                        <tr key={source.id} onClick={() => router.push(`/sources/${source.id}`)} className="group hover:bg-muted/5 transition-colors cursor-pointer">
+                                        <tr key={source.id} onClick={() => { void router.push(`/sources/${source.id}`); }} className="group hover:bg-muted/5 transition-colors cursor-pointer">
                                             <td className="px-4 py-4">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-14 h-9 rounded-lg bg-muted overflow-hidden shrink-0 relative border border-border/30">
@@ -419,7 +422,7 @@ export default function SourcesPage() {
                                                                 (source?.source_type || "").includes("apple") || (source?.source_type || "").includes("podcast") ? "/thumbnail/thumbnail_apple_podcast.png" :
                                                                 "/thumbnail/thumbnail_rss.png"
                                                             )} 
-                                                            alt="" 
+                                                            alt={source.title || ""} 
                                                             fill 
                                                             className="object-cover opacity-80" 
                                                         />
@@ -451,7 +454,7 @@ export default function SourcesPage() {
                                             <td className="px-4 py-3 text-right sticky right-0 w-14 min-w-[56px]">
                                                 <button 
                                                     title="Delete Source"
-                                                    onClick={(e) => { e.stopPropagation(); handleDelete(source.id); }} 
+                                                    onClick={(e) => { e.stopPropagation(); void handleDelete(source.id); }} 
                                                     className="h-8 w-8 rounded-lg inline-flex items-center justify-center text-muted-foreground/60 hover:bg-red-500/10 hover:text-red-500 transition-all opacity-100"
                                                 >
                                                     <Trash2 className="w-4 h-4" />

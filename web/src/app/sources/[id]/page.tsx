@@ -292,27 +292,22 @@ function SourceMissionControlContent() {
                     table: 'Source',
                     filter: `id=eq.${id}`,
                 },
-                (payload: any) => {
-                    const updatedSource = payload.new as SourceCandidate;
-                    
                     // Sync Metadata
                     setSource(prev => {
                         if (!prev || !payload.new) return prev;
-                        const updatedSource = payload.new as SourceCandidate;
-                        const next = { ...prev, ...updatedSource };
+                        const next = { ...prev, ...payload.new };
                         // Ensure numeric duration is formatted
-                        if (typeof updatedSource.duration === 'number') {
-                            next.duration = formatDuration(updatedSource.duration);
+                        if (typeof payload.new.duration === 'number') {
+                            next.duration = formatDuration(payload.new.duration);
                         }
                         return next;
                     });
 
                     // Sync Completed Stages & Clearing Execution State
-                    if (updatedSource.completedStages && Array.isArray(updatedSource.completedStages)) {
-                        const newCompleted = new Set(updatedSource.completedStages as StageId[]);
+                    const stagesFromPayload = payload.new.completedStages;
+                    if (stagesFromPayload && Array.isArray(stagesFromPayload)) {
+                        const newCompleted = new Set(stagesFromPayload as StageId[]);
                         
-                        // STABILITY FIX: During an active local run, MERGE instead of overwrite
-                        // to prevent "disappearing" stages if the DB update has a slight delay.
                         setCompletedStages(prev => {
                             if (isRunningAll) {
                                 return new Set([...Array.from(prev), ...Array.from(newCompleted)]);
@@ -320,14 +315,13 @@ function SourceMissionControlContent() {
                             return newCompleted;
                         });
                         
-                        // Clear the active spinner if this stage just finished remotely
                         if (executingStageRef.current && newCompleted.has(executingStageRef.current)) {
                              setExecutingStage(null);
                         }
                     }
 
                     // Handle Finish Signal
-                    if (updatedSource.status === 'done') {
+                    if (payload.new.status === 'done') {
                         setIsRunningAll(false);
                         setExecutingStage(null);
                         setLogs(prev => {
@@ -336,7 +330,6 @@ function SourceMissionControlContent() {
                         });
                         setShowCelebration(true);
                     }
-                }
             )
             .subscribe();
 
