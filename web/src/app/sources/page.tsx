@@ -24,14 +24,12 @@ type Tab = "processed" | "processing" | "unprocessed"
 type ViewMode = "grid" | "list"
 
 function getTab(source: SourceCandidate): Tab {
+    if (!source) return "unprocessed"
     const completedArr = source.completedStages || []
     if (source.status === "done" || completedArr.includes("qa") || completedArr.includes("export")) return "processed"
     if (source.status === "processing" || (completedArr.length > 0 && !completedArr.includes("qa"))) return "processing"
     return "unprocessed"
 }
-
-
-
 
 function getPlatformBadge(platform: string) {
     const p = (platform || "").toLowerCase()
@@ -124,9 +122,10 @@ export default function SourcesPage() {
         load()
     }, [router])
 
-    const filteredSources = sources.filter(s => {
+    const filteredSources = (sources || []).filter(s => {
+        if (!s) return false
         const matchTab = getTab(s) === activeTab
-        const sType = (s.source_type || "Unknown").toLowerCase()
+        const sType = (s.source_type || s.type || "Unknown").toLowerCase()
         
         let matchPlatform = platformFilter === "All"
         if (!matchPlatform) {
@@ -343,34 +342,34 @@ export default function SourcesPage() {
                                 <Link href={`/sources/${source.id}`} className="flex-1 flex flex-col">
                                     <div className="aspect-video relative overflow-hidden bg-transparent">
                                         <Image 
-                                            src={source.thumbnail || (
-                                                (source.source_type || "").includes("youtube") ? "/thumbnail/thumbnail_youtube.png" :
-                                                (source.source_type || "").includes("spotify") ? "/thumbnail/thumbnail_spotify_podcast.png" :
-                                                (source.source_type || "").includes("apple") || (source.source_type || "").includes("podcast") ? "/thumbnail/thumbnail_apple_podcast.png" :
+                                            src={source?.thumbnail || (
+                                                (source?.source_type || "").includes("youtube") ? "/thumbnail/thumbnail_youtube.png" :
+                                                (source?.source_type || "").includes("spotify") ? "/thumbnail/thumbnail_spotify_podcast.png" :
+                                                (source?.source_type || "").includes("apple") || (source?.source_type || "").includes("podcast") ? "/thumbnail/thumbnail_apple_podcast.png" :
                                                 "/thumbnail/thumbnail_rss.png"
                                             )} 
-                                            alt={source.title} 
+                                            alt={source?.title || "Source"} 
                                             fill 
                                             className="object-cover transition-transform duration-700 group-hover:scale-110 opacity-70 group-hover:opacity-90" 
                                         />
                                         {/* Premium Glassmorphic Overlay to reduce distraction and increase contrast */}
                                         <div className="absolute inset-0 bg-black/20 backdrop-blur-[0px] group-hover:bg-black/10 transition-all duration-500" />
                                         
-                                        {source.duration && (
+                                        {source?.duration && (
                                             <div className="absolute bottom-3 right-3 px-2 py-0.5 rounded-full bg-black/80 text-[10px] font-black text-white backdrop-blur-md border border-white/10 tracking-widest tabular-nums z-10">
-                                                {source.duration}
+                                                {source?.duration}
                                             </div>
                                         )}
                                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-transparent opacity-60 group-hover:opacity-40 transition-opacity duration-500" />
                                     </div>
                                     <div className="p-5 flex-1 flex flex-col">
-                                        <div className="flex items-center gap-2 mb-3">
-                                            <div className="w-4 h-4 rounded-full bg-white/5 flex items-center justify-center overflow-hidden border border-white/10">
-                                                <Image src={`https://www.google.com/s2/favicons?domain=${(source.source_type || "web").toLowerCase()}.com&sz=32`} alt="" width={10} height={10} className="w-2.5 h-2.5 opacity-50 group-hover:opacity-100 transition-opacity" />
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <div className="w-4 h-4 rounded-full bg-white/5 flex items-center justify-center overflow-hidden border border-white/10">
+                                                    <Image src={`https://www.google.com/s2/favicons?domain=${(source?.source_type || source?.type || "web").toLowerCase()}.com&sz=32`} alt="" width={10} height={10} className="w-2.5 h-2.5 opacity-50 group-hover:opacity-100 transition-opacity" />
+                                                </div>
+                                                <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{source?.channel || (source?.source_type || source?.type || "Source")}</span>
                                             </div>
-                                            <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{source.channel || (source.source_type || "Source")}</span>
-                                        </div>
-                                        <h3 className="font-serif font-semibold text-[18px] leading-snug line-clamp-2 mb-4 text-foreground/90 group-hover:text-white transition-colors">{source.title}</h3>
+                                            <h3 className="font-serif font-semibold text-[18px] leading-snug line-clamp-2 mb-4 text-foreground/90 group-hover:text-white transition-colors">{source?.title || "Unknown Source"}</h3>
                                         
                                         <div className="mt-auto flex items-center justify-between pt-4 border-t border-white/5">
                                             <div className="text-[12px] font-black uppercase tracking-widest tabular-nums text-foreground">
@@ -430,12 +429,12 @@ export default function SourcesPage() {
                                                 </div>
                                             </td>
                                             <td className="hidden lg:table-cell px-4 py-3 text-center">
-                                                <Badge variant="outline" className={cn("text-[11px] uppercase font-bold px-3 py-1 border-none", getPlatformBadge(source.source_type || ""))}>
-                                                    {source.source_type || "unknown"}
+                                                <Badge variant="outline" className={cn("text-[11px] uppercase font-bold px-3 py-1 border-none", getPlatformBadge(source?.source_type || source?.type || ""))}>
+                                                    {source?.source_type || source?.type || "unknown"}
                                                 </Badge>
                                             </td>
                                             <td className="px-4 py-3 text-center text-[14px] font-serif text-muted-foreground tabular-nums">
-                                                {source.duration || "--:--"}
+                                                {source?.duration || "--:--"}
                                             </td>
                                             <td className="hidden sm:table-cell px-4 py-3 text-center">
                                                 <div className="text-[13px] font-bold uppercase tabular-nums text-foreground">

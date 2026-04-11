@@ -14,6 +14,7 @@ export function adaptScoutResponse(rawOutput: string): SourceCandidate[] {
         if (!Array.isArray(data)) return [];
 
         return data.map((item: Record<string, string | undefined>) => {
+            if (!item) return null;
             // Parse ISO 8601 duration (e.g., PT1H2M10S or PT5M33S) roughly for UI
             let formattedDuration = item.duration;
             if (typeof formattedDuration === 'string' && formattedDuration.startsWith('PT')) {
@@ -39,7 +40,7 @@ export function adaptScoutResponse(rawOutput: string): SourceCandidate[] {
             return {
                 id: item.source_id,
                 title: item.title,
-                channel: item.creator || item.channel,
+                channel: item.creator || item.channel || "Unknown",
                 url: item.url,
                 published: published,
                 duration: formattedDuration || "Unknown",
@@ -47,7 +48,7 @@ export function adaptScoutResponse(rawOutput: string): SourceCandidate[] {
                 score: 0,
                 source_type: item.source_type || (item.url?.includes('youtube.com') ? 'YouTube' : item.url?.includes('vimeo.com') ? 'Vimeo' : 'Platform')
             } as SourceCandidate;
-        });
+        }).filter(Boolean) as SourceCandidate[];
     } catch (e) {
         console.warn("adaptScoutResponse failed to parse output", e);
         return [];
@@ -110,7 +111,10 @@ export function adaptRefinerResponse(rawOutput: string): { segments: { text: str
             const rawData = JSON.parse(fs.readFileSync(outPath, 'utf8'));
             const segments = Array.isArray(rawData) ? rawData : (rawData.segments || []);
             return {
-                segments: segments.map((s: { text?: string } | string) => ({ text: typeof s === 'string' ? s : s.text || "" })),
+                segments: segments.map((s: { text?: string } | string) => {
+                    if (!s) return null;
+                    return { text: typeof s === 'string' ? s : s.text || "" };
+                }).filter(Boolean) as { text: string }[],
                 segment_count: segments.length,
                 status: "done"
             };

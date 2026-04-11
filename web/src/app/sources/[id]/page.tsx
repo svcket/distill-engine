@@ -287,6 +287,8 @@ export default function SourceMissionControl() {
                     
                     // Sync Metadata
                     setSource(prev => {
+                        if (!prev || !payload.new) return prev;
+                        const updatedSource = payload.new as SourceCandidate;
                         const next = { ...prev, ...updatedSource };
                         // Ensure numeric duration is formatted
                         if (typeof updatedSource.duration === 'number') {
@@ -376,15 +378,18 @@ export default function SourceMissionControl() {
                     const results = clusterData.result; 
                     
                     // Sync Metadata (Title, Duration) immediately to header
-                    const meta = clusterData.metadata;
+                    const meta = clusterData?.metadata;
                     if (meta) {
-                        setSource(prev => ({
-                            ...prev,
-                            title: meta.title && meta.title !== 'Podcast Episode' ? meta.title : prev.title,
-                            duration: formatDuration(meta.duration) || prev.duration,
-                            channel: meta.channel || prev.channel,
-                            transcriptStatus: "transcribed"
-                        }));
+                        setSource(prev => {
+                            if (!prev) return prev;
+                            return {
+                                ...prev,
+                                title: meta.title && meta.title !== 'Podcast Episode' ? meta.title : prev.title,
+                                duration: formatDuration(meta.duration) || prev.duration,
+                                channel: meta.channel || prev.channel,
+                                transcriptStatus: "transcribed"
+                            };
+                        });
                     }
 
                     const updateObj: Record<string, StageResultData> = { ...currentResults };
@@ -846,9 +851,9 @@ export default function SourceMissionControl() {
                 const data = await res.json()
                 const refreshed = (data.sources || []).find((s: Record<string, unknown>) => s.id === id)
                 if (refreshed) {
-                    setSource(s => ({ ...s, ...refreshed }))
+                    setSource(s => s ? { ...s, ...refreshed } : refreshed)
                     
-                    if (refreshed.completedStages?.includes("socialise")) {
+                    if (refreshed?.completedStages?.includes("socialise")) {
                         const resApi = await fetch(`/api/sources/${id}/results`);
                         const resultData = await resApi.json();
                         if (resultData?.results) {
@@ -1505,13 +1510,13 @@ export default function SourceMissionControl() {
                         <div className="flex items-center gap-2 text-sm">
                             <Calendar className="w-3.5 h-3.5 text-muted-foreground/70" />
                             <span className="text-muted-foreground">{t("dateAdded")}</span>
-                            <span className="font-medium">{source.published}</span>
+                            <span className="font-medium">{source?.published || "Recently"}</span>
                         </div>
                         <div className="w-px h-4 bg-border/60 hidden sm:block" />
                         <div className="flex items-center gap-2 text-sm">
                             <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
                             <span className="text-muted-foreground">{t("duration")}</span>
-                            <span className="font-medium">{source.duration}</span>
+                            <span className="font-medium">{source?.duration || "—"}</span>
                         </div>
                         <div className="w-px h-4 bg-border/60 hidden sm:block" />
                         <div className="flex items-center gap-2 text-sm">
