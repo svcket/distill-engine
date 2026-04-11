@@ -117,4 +117,6 @@ async def run_script(run_req: RunRequest, request: Request, x_api_key: str = Hea
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    logger.info(f"Starting server on port {port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)
