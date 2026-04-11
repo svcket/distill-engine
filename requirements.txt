@@ -1,5 +1,5 @@
-yt-dlp
-openai
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 openai-whisper
 imageio-ffmpeg
 requests
@@ -12,4 +12,6 @@ tiktoken
 supabase
 fastapi
 uvicorn
+yt-dlp
+openai
 python-json-logger
