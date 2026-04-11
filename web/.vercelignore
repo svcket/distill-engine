@@ -1,0 +1,11 @@
+.next
+node_modules
+.tmp_fix
+e2e
+test-results
+*.tsbuildinfo
+.DS_Store
+*.pem
+.env.local
+.env.production
+.env.development
