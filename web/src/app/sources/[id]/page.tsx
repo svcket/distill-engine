@@ -280,7 +280,7 @@ function SourceMissionControlContent() {
 
     // ════ REAL-TIME SYNC ════
     useEffect(() => {
-        if (!id) return;
+        if (!id || !supabase || typeof supabase.channel !== 'function') return;
 
         const channel = supabase
             .channel(`source_changes_${id}`)
