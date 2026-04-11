@@ -1,8 +1,6 @@
 import { auth } from "@/auth"
 import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
-import path from 'path'
-import fs from 'fs'
 
 export async function GET(
     request: Request,
@@ -20,7 +18,7 @@ export async function GET(
         return NextResponse.json({ error: 'Missing sourceId' }, { status: 400 })
     }
 
-    // SECURITY: Ensure the user owns this source before returning disk artifacts
+    // SECURITY: Ensure the user owns this source
     const source = await withRetry(() => prisma.source.findUnique({
         where: { id: sourceId, userId }
     }))
@@ -59,6 +57,4 @@ export async function GET(
         console.error("[Results API] Proxy Error:", e);
         return NextResponse.json({ error: "Connection to engine failed" }, { status: 502 });
     }
-
-    return NextResponse.json({ results })
 }
