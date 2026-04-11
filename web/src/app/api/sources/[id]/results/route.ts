@@ -40,8 +40,8 @@ export async function GET(
             headers: {
                 "x-api-key": apiKey
             },
-            // Cache results for 1 minute to avoid hammering Railway
-            next: { revalidate: 60 }
+            // Zero-Lag: Disable caching to ensure real-time engine results
+            cache: 'no-store'
         });
 
         if (!response.ok) {

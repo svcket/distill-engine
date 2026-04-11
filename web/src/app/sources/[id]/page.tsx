@@ -1015,7 +1015,7 @@ function SourceMissionControlContent() {
 
     const getStageStatus = (index: number): StageStatus => {
         const stage = STAGES[index]
-        const tStatus = source.transcriptStatus
+        const tStatus = source?.transcriptStatus
         
         if (completedStages.has(stage.id)) {
             // Visual Gate: Only show completed if dependencies are met
@@ -1045,6 +1045,7 @@ function SourceMissionControlContent() {
 
     // Auto-start Harvesting Automation
     useEffect(() => {
+        if (!source) return;
         // GATING: Only trigger auto-start for sources created in the last 15 minutes to avoid re-running legacy data
         const createdAt = source.createdAt ? new Date(source.createdAt).getTime() : 0;
         const isFresh = createdAt > 0 && (Date.now() - createdAt < 15 * 60 * 1000);
