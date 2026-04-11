@@ -1,7 +1,12 @@
 import path from 'path'
 import fs from 'fs'
 
-const STORE_PATH = path.resolve(process.cwd(), '../execution/.tmp/sources_db.json')
+import os from 'os'
+
+const IS_VERCEL = process.env.VERCEL === '1' || !!process.env.NEXT_PUBLIC_VERCEL_URL
+const STORE_PATH = IS_VERCEL 
+    ? path.join(os.tmpdir(), 'sources_db.json')
+    : path.resolve(process.cwd(), '../execution/.tmp/sources_db.json')
 
 export interface StoredSource {
     id: string
