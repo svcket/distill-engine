@@ -2,6 +2,7 @@ import { auth } from "@/auth"
 import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
 import { runPythonScript } from '@/lib/python-runner'
+import { getSafeTmpDir, getSafeTmpPath } from '@/lib/fs-utils'
 import path from 'path'
 import fs from 'fs'
 
@@ -25,9 +26,7 @@ export async function POST(request: Request) {
             }, { status: 400 })
         }
 
-        const executionDir = path.resolve(process.cwd(), '../execution')
-        const sourceDir = path.join(executionDir, '.tmp', 'sources')
-        fs.mkdirSync(sourceDir, { recursive: true })
+        const sourceDir = getSafeTmpDir('sources')
 
         // 1. Authenticate and find the source scoped to the user
         let source = await withRetry(() => prisma.source.findUnique({
@@ -62,7 +61,7 @@ export async function POST(request: Request) {
         }
 
         // 2. Ensure the .json stub exists for the Python judge
-        const directFile = path.join(sourceDir, `${sourceId}.json`)
+        const directFile = getSafeTmpPath(`${sourceId}.json`, 'sources')
         if (!fs.existsSync(directFile)) {
              const stub = [{
                 source_id: sourceId,

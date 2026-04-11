@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { runPythonScript } from '@/lib/python-runner';
 import { formatDuration } from '@/lib/utils';
 import fs from 'fs';
+import { getSafeTmpDir, getSafeTmpPath } from '@/lib/fs-utils';
 
 interface StagePayload {
     status?: string;
@@ -121,8 +122,7 @@ export async function POST(request: Request) {
             } catch (e) { /* ignored */ }
 
             if (isGracefulUnavailable) {
-                const rootDir = process.cwd().split('/web')[0];
-                const outDir = `${rootDir}/execution/.tmp/transcripts/${sourceId}`;
+                const outDir = getSafeTmpDir(`transcripts/${sourceId}`);
                 
                 try {
                     if (!fs.existsSync(outDir)) {
@@ -143,8 +143,8 @@ export async function POST(request: Request) {
                         finalSegments = scriptSegments;
                     }
 
-                    fs.writeFileSync(`${outDir}/${sourceId}_raw.json`, JSON.stringify(finalSegments, null, 2));
-                    fs.writeFileSync(`${outDir}/${sourceId}_raw.txt`, finalSegments.map(s => s.text).join("\n\n"));
+                    fs.writeFileSync(getSafeTmpPath(`${sourceId}_raw.json`, `transcripts/${sourceId}`), JSON.stringify(finalSegments, null, 2));
+                    fs.writeFileSync(getSafeTmpPath(`${sourceId}_raw.txt`, `transcripts/${sourceId}`), finalSegments.map(s => s.text).join("\n\n"));
                 } catch (e) {
                     console.error("[Rescue] FS Error", e);
                 }
@@ -171,8 +171,8 @@ export async function POST(request: Request) {
                         { text: `[Source Context: ${metadata.title || 'Untitled'}]\n\n${desc}`, start: 0, duration: 0 }
                     ];
                     try {
-                        fs.writeFileSync(`${outDir}/${sourceId}_raw.json`, JSON.stringify(enrichedSegments, null, 2));
-                        fs.writeFileSync(`${outDir}/${sourceId}_raw.txt`, enrichedSegments[0].text);
+                        fs.writeFileSync(getSafeTmpPath(`${sourceId}_raw.json`, `transcripts/${sourceId}`), JSON.stringify(enrichedSegments, null, 2));
+                        fs.writeFileSync(getSafeTmpPath(`${sourceId}_raw.txt`, `transcripts/${sourceId}`), enrichedSegments[0].text);
                     } catch (err) {
                         console.error("[Rescue] Enrich Error", err);
                     }

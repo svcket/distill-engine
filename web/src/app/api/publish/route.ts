@@ -4,8 +4,9 @@ import { NextResponse } from 'next/server'
 import path from 'path'
 import fs from 'fs'
 import { runPythonScript } from '@/lib/python-runner'
+import { getSafeTmpDir, getSafeTmpPath } from '@/lib/fs-utils'
 
-const EXECUTION_DIR = path.resolve(process.cwd(), '../execution')
+
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -47,12 +48,9 @@ export async function POST(request: Request) {
     }
 
     // 2. Prepare content on disk for the Python publisher
-    const publishDir = path.join(EXECUTION_DIR, '.tmp', 'publish')
-    if (!fs.existsSync(publishDir)) {
-        fs.mkdirSync(publishDir, { recursive: true })
-    }
+    const publishDir = getSafeTmpDir('publish')
     
-    const contentPath = path.join(publishDir, `${source.id}_${platform}_payload.json`)
+    const contentPath = getSafeTmpPath(`${source.id}_${platform}_payload.json`, 'publish')
     fs.writeFileSync(contentPath, JSON.stringify({
         title: source.title,
         content: content,
