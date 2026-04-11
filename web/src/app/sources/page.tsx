@@ -133,8 +133,8 @@ export default function SourcesPage() {
         let matchPlatform = platformFilter === "All"
         if (!matchPlatform) {
             const filter = platformFilter.toLowerCase()
-            if (filter === "web articles") matchPlatform = sType === "rss" || sType === "article" || sType === "web"
-            else if (filter === "documents") matchPlatform = sType === "document" || sType === "pdf" || sType === "upload" && s.url?.endsWith(".pdf")
+            if (filter === "web articles") matchPlatform = (sType === "rss" || sType === "article" || sType === "web")
+            else if (filter === "documents") matchPlatform = (sType === "document" || sType === "pdf" || (sType === "upload" && s.url?.endsWith(".pdf")))
             else matchPlatform = sType.includes(filter)
         }
         
@@ -150,7 +150,7 @@ export default function SourcesPage() {
     const handleDelete = async (id: string) => {
         if (confirm("Delete this source?")) {
             const ok = await deleteSource(id)
-            if (ok) setSources(sources.filter(s => s.id !== id))
+            if (ok) setSources(prev => prev.filter(s => s.id !== id))
         }
     }
 

@@ -147,8 +147,7 @@ function SourceMissionControlContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const autoRunSignal = searchParams?.get("run") === "true"
-    const id = params?.id as string
-
+    const id = (params?.id as string) || "unknown"
     const [source, setSource] = useState<SourceCandidate>({
         id: id,
         title: "...",
