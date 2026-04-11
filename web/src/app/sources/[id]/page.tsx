@@ -292,6 +292,7 @@ function SourceMissionControlContent() {
                     table: 'Source',
                     filter: `id=eq.${id}`,
                 },
+                (payload: { new: SourceCandidate }) => {
                     // Sync Metadata
                     setSource(prev => {
                         if (!prev || !payload.new) return prev;
