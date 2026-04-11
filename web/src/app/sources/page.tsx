@@ -12,6 +12,7 @@ import {
     Paperclip, Mic
 } from "lucide-react"
 import { UnifiedSourceInput, type UnifiedSourceInputHandle } from "@/components/workspace/UnifiedSourceInput"
+import { SourceCardSkeleton } from "@/components/ui/Skeletons"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
 import { format as formatDate, parseISO } from "date-fns"
@@ -75,6 +76,7 @@ export default function SourcesPage() {
     const [platformFilter, setPlatformFilter] = useState("All")
     const [showFilters, setShowFilters] = useState(false)
     const [isIngesting, setIsIngesting] = useState(false)
+    const [isLoading, setIsLoading] = useState(true)
     const [ingestStatus, setIngestStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null)
     const filterRef = useRef<HTMLDivElement>(null)
     const sourceInputRef = useRef<UnifiedSourceInputHandle>(null)
@@ -116,7 +118,9 @@ export default function SourcesPage() {
                 } else if (res.status === 401) {
                     router.push("/login")
                 }
-            } catch { /* fail silently */ }
+            } catch { /* fail silently */ } finally {
+                setIsLoading(false)
+            }
         }
         load()
     }, [router])
@@ -163,7 +167,7 @@ export default function SourcesPage() {
                     body: JSON.stringify({ url: input })
                 })
                 const data = await res.json()
-                if (res.ok && data.result?.id) router.push(`/sources/${data.result.id}`)
+                if (res.ok && data.result?.id) router.push(`/sources/${data.result.id}?run=true`)
                 else setIngestStatus({ type: 'error', message: data.error || "Failed to ingest source." })
             } else {
                 // GUARD: Topic discovery should only trigger on concise keywords. 
@@ -208,7 +212,7 @@ export default function SourcesPage() {
             });
             const ingestData = await ingestRes.json();
             if (!ingestRes.ok) throw new Error(ingestData.error || "Ingest failed");
-            if (ingestData.result?.id) router.push(`/sources/${ingestData.result.id}`);
+            if (ingestData.result?.id) router.push(`/sources/${ingestData.result.id}?run=true`);
         } catch {
             setIngestStatus({ type: 'error', message: "Failed to import local file." });
         } finally {
@@ -328,7 +332,11 @@ export default function SourcesPage() {
                     </div>
                 </div>
 
-                {filteredSources.length === 0 ? (
+                {isLoading ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-3">
+                        {[1, 2, 3, 4, 5].map(i => <SourceCardSkeleton key={i} />)}
+                    </div>
+                ) : filteredSources.length === 0 ? (
                     <div className="py-12 lg:py-20 text-center">
                         <div className="w-16 h-16 bg-muted/50 rounded-2xl flex items-center justify-center mx-auto mb-4"><Search className="w-8 h-8 text-muted-foreground/30" /></div>
                         <h3 className="text-lg font-medium text-foreground">{t("noSourcesFound")}</h3>

@@ -1,16 +1,17 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, Suspense } from "react"
 import { Badge } from "@/components/ui/Badge"
 import { Button } from "@/components/ui/Button"
 import { StageResultPanel } from "@/components/StageResultView"
+import { MissionControlSkeleton, PanelSkeleton } from "@/components/ui/Skeletons"
 import { SourceCandidate } from "@/lib/mockData"
 import { 
     ArrowLeft, FileText, Bot, Sparkles, Target, Edit3, 
     ShieldCheck, Check, ChevronDown, RefreshCw, Play, Share2, 
     ExternalLink, MoreHorizontal, Trash2, X, Calendar, Clock, BarChart3
 } from "lucide-react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { cn, formatDuration } from "@/lib/utils"
 import { useLanguage } from "@/context/LanguageContext"
 import { motion, AnimatePresence } from "framer-motion"
@@ -132,10 +133,20 @@ const validateStageGating = (stageId: StageId, results: Record<string, unknown>)
     return { valid: true };
 };
 
-export default function SourceMissionControl() {
+export default function SourceMissionControlWrapper() {
+    return (
+        <Suspense fallback={<MissionControlSkeleton />}>
+            <SourceMissionControlContent />
+        </Suspense>
+    )
+}
+
+function SourceMissionControlContent() {
     const { t, lang } = useLanguage()
     const params = useParams()
     const router = useRouter()
+    const searchParams = useSearchParams()
+    const autoRunSignal = searchParams.get("run") === "true"
     const id = params?.id as string
 
     const [source, setSource] = useState<SourceCandidate>({
@@ -1040,20 +1051,23 @@ export default function SourceMissionControl() {
 
     // Auto-start Harvesting Automation
     useEffect(() => {
-        // Trigger only if autoStart is on, the pipeline is idle, and not already running
         // GATING: Only trigger auto-start for sources created in the last 15 minutes to avoid re-running legacy data
         const createdAt = source.createdAt ? new Date(source.createdAt).getTime() : 0;
         const isFresh = createdAt > 0 && (Date.now() - createdAt < 15 * 60 * 1000);
 
-        if (autoStart && activeIndex < STAGES.length && !isRunningAll && !executingStage && source.status === "idle" && isFresh) {
+        // autoRunSignal takes precedence over user preference autoStart
+        const shouldRun = autoRunSignal || (autoStart && isFresh);
+        
+        if (shouldRun && activeIndex < STAGES.length && !isRunningAll && !executingStage && source.status === "idle") {
             const timer = setTimeout(() => {
                 if (source.status === "idle") {
+                    console.log("[Pipeline] Auto-starting via signal:", autoRunSignal ? "URL" : "Preference");
                     runFullPipeline();
                 }
-            }, 1500); 
+            }, 1000); 
             return () => clearTimeout(timer);
         }
-    }, [autoStart, activeIndex, isRunningAll, executingStage, source.status, source.createdAt, id, runFullPipeline]);
+    }, [autoStart, autoRunSignal, activeIndex, isRunningAll, executingStage, source.status, source.createdAt, id, runFullPipeline]);
 
     const runStage = async (stageId: StageId) => {
         const stage = STAGES.find(s => s.id === stageId)
@@ -1213,51 +1227,47 @@ export default function SourceMissionControl() {
             }
             // ───────────────────────────
 
-            // Sync score if available
+            // ─── METADATA FIXATION (Prisma Sync) ───
             if (data && typeof data === 'object') {
                 const resObj = ((data as StagePayload).result || data) as Record<string, unknown>;
+                const updates: Record<string, any> = {};
+
+                // 1. Sync Score (DQM)
                 if (resObj && (resObj.score !== undefined || resObj.total_score !== undefined)) {
                     const score = (resObj.total_score ?? resObj.score) as number;
-                    setSource(s => s ? ({
-                        ...s,
-                        score: score,
-                        status: score >= 6 ? "done" : s.status,
-                    }) : s)
-                    localStorage.setItem(`dqm_${id}`, JSON.stringify(resObj))
-                }
-            }
-            if (data && typeof data === 'object') {
-                if (stage.id === "transcript") {
-                    const tsData = ((data as StagePayload).result || data) as Record<string, unknown>;
-                    if (tsData && tsData.duration) {
-                        setSource(s => ({ ...s, duration: formatDuration(tsData.duration as number | string) }));
-                    }
+                    setSource(s => s ? ({ ...s, score, status: score >= 6 ? "done" : s.status }) : s);
+                    updates.score = score;
+                    if (score >= 6) updates.status = "done";
                 }
 
+                // 2. Sync Duration (Transcript)
+                if (stage.id === "transcript" && resObj?.duration) {
+                    const formattedDur = formatDuration(resObj.duration as number | string);
+                    setSource(s => s ? ({ ...s, duration: formattedDur }) : s);
+                    updates.duration = formattedDur;
+                }
+
+                // 3. Sync Identity (Judge)
                 if (stage.id === "judge") {
-                    const judgeData = (data as StagePayload).result || data;
-                    // If judge updates title/channel/url
-                    const updatedSource = {
-                        title: (judgeData as JudgeResult)?.title || source?.title,
-                        channel: (judgeData as JudgeResult)?.channel || source?.channel,
-                        url: (judgeData as JudgeResult)?.url || source?.url,
-                    }
-                    setSource(s => ({
-                        ...s,
-                        ...updatedSource
-                    }))
+                    const judgeRes = resObj as unknown as JudgeResult;
+                    updates.title = judgeRes.title || source?.title;
+                    updates.channel = judgeRes.channel || source?.channel;
+                    updates.url = judgeRes.url || source?.url;
+                    setSource(s => s ? ({ ...s, ...updates }) : s);
+                }
 
-                    // Persist new metadata to store
+                // Persist all gathered updates to Prisma in a single atomic call
+                if (Object.keys(updates).length > 0) {
                     try {
                         await fetch("/api/store", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ 
                                 action: "upsert", 
-                                source: { id, ...updatedSource } 
+                                source: { id, ...updates } 
                             })
-                        })
-                    } catch { /* silently fail */ }
+                        });
+                    } catch (e) { console.error("Prisma fixation failed:", e); }
                 }
             }
 
@@ -1355,15 +1365,8 @@ export default function SourceMissionControl() {
     const visibleStages = STAGES.filter(s => !s.hidden);
 
 
-    if (!source || !source.id) {
-        return (
-            <div className="flex h-full items-center justify-center bg-background">
-                <div className="flex flex-col items-center gap-4">
-                    <RefreshCw className="w-8 h-8 text-brand animate-spin" />
-                    <p className="text-sm text-muted-foreground font-medium animate-pulse">Initializing Distill Intelligence System...</p>
-                </div>
-            </div>
-        );
+    if (!source || !source.id || (source.title === "..." && source.channel === "...")) {
+        return <MissionControlSkeleton />;
     }
 
     return (
