@@ -51,10 +51,12 @@ export async function GET(
         }
 
         const data = await response.json();
-        return NextResponse.json(data);
+        // STABILITY: Wrap the raw backend results in the 'results' key expected by the frontend
+        return NextResponse.json({ results: data || {} });
 
     } catch (e) {
         console.error("[Results API] Proxy Error:", e);
-        return NextResponse.json({ error: "Connection to engine failed" }, { status: 502 });
+        // Fallback to empty results to prevent frontend crashes
+        return NextResponse.json({ results: {}, error: "Connection to engine failed" }, { status: 502 });
     }
 }

@@ -779,9 +779,9 @@ export default function SourceMissionControl() {
                     if (stage.id === "judge") {
                         const judgeData = (data as StagePayload).result as JudgeResult || data;
                         const updatedSource = {
-                            title: judgeData.title || source.title,
-                            channel: judgeData.channel || source.channel,
-                            url: judgeData.url || source.url,
+                            title: judgeData?.title || source?.title,
+                            channel: judgeData?.channel || source?.channel,
+                            url: judgeData?.url || source?.url,
                         }
                         setSource(s => ({
                             ...s,
@@ -860,7 +860,7 @@ export default function SourceMissionControl() {
         } catch (e) {
             console.error("Failed final metadata refresh:", e)
         }
-    }, [completedStages, getFirstIncompleteIndex, id, intentAudience, intentTone, intentType, panelContent, source.channel, source.title, source.url, stageResults, persistStageCompletion, lang]);
+    }, [completedStages, getFirstIncompleteIndex, id, intentAudience, intentTone, intentType, panelContent, source?.channel, source?.title, source?.url, stageResults, persistStageCompletion, lang]);
 
     // Load persisted state on mount
     useEffect(() => {
@@ -1233,9 +1233,9 @@ export default function SourceMissionControl() {
                     const judgeData = (data as StagePayload).result || data;
                     // If judge updates title/channel/url
                     const updatedSource = {
-                        title: (judgeData as JudgeResult).title || source.title,
-                        channel: (judgeData as JudgeResult).channel || source.channel,
-                        url: (judgeData as JudgeResult).url || source.url,
+                        title: (judgeData as JudgeResult)?.title || source?.title,
+                        channel: (judgeData as JudgeResult)?.channel || source?.channel,
+                        url: (judgeData as JudgeResult)?.url || source?.url,
                     }
                     setSource(s => ({
                         ...s,
@@ -1493,7 +1493,7 @@ export default function SourceMissionControl() {
                                 })()}
                             </div>
                             <h1 className="text-4xl font-bold tracking-tight text-foreground font-serif leading-tight max-w-4xl">
-                                {source.title}
+                                {source?.title}
                             </h1>
                         </div>
 

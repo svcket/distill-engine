@@ -18,9 +18,10 @@ interface StageResultViewProps {
 
 // Helper to safely access nested data
 function get(obj: Record<string, unknown>, key: string, fallback: unknown = ""): unknown {
+    if (!obj) return fallback
     if (obj[key] !== undefined) return obj[key]
     // Check nested "payload" (common in our adapters)
-    const payload = obj.payload as Record<string, unknown> | undefined
+    const payload = obj?.payload as Record<string, unknown> | undefined
     if (payload && payload[key] !== undefined) return payload[key]
     // Check nested "data" field (common in API responses)
     const data = obj.data as Record<string, unknown> | undefined
@@ -93,6 +94,7 @@ function shouldFilterInsight(text: string): boolean {
 // ─── Per-Stage Renderers ────────────────────────────────────────
 
 function JudgeResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
+    if (!data) return <div className="p-4 text-xs text-muted-foreground italic">Judging in progress...</div>
     const score = getNum(data, "score")
     const normalizedScore = score > 10 ? score : score * 10
     const status = getStr(data, "status")
@@ -889,7 +891,8 @@ function SocialiseResult({ data, sourceId }: { data: Record<string, unknown>; so
 }
 
 function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
-    const dqmData = ((data.result || data.payload || data.data || data) as unknown) as (DQMData & { total_score?: number; score?: number; dqmScore?: number; publishability?: number })
+    const dqmData = ((data?.result || data?.payload || data?.data || data) as unknown) as (DQMData & { total_score?: number; score?: number; dqmScore?: number; publishability?: number })
+    if (!dqmData) return <div className="p-4 text-xs text-muted-foreground italic">Matrix analysis pending...</div>
     const pubScore = dqmData?.scores?.publishability ?? dqmData?.scores?.total_score ?? dqmData?.total_score ?? dqmData?.publishability ?? dqmData?.score ?? dqmData?.dqmScore ?? 0
     const normalizedScore = pubScore > 10 ? pubScore : pubScore * 10
     
@@ -956,7 +959,7 @@ export function StageResultView({ stageId, data, sourceId, compact = false }: St
 // Export for use in Inspect panel with full detail
 export function StageResultPanel({ stageId, data, sourceId }: { stageId: StageId; data: Record<string, unknown>; sourceId?: string }) {
     const d = data?.result || data?.payload || data?.data || data;
-    const wordCount = stageId === "draft" 
+    const wordCount = stageId === "draft" && d
         ? (getNum(d as Record<string, unknown>, "word_count") || 
            getStr(d as Record<string, unknown>, "content", "").trim().split(/\s+/).filter(Boolean).length) 
         : null;
