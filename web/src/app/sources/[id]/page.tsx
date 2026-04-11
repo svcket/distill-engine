@@ -331,6 +331,7 @@ function SourceMissionControlContent() {
                         });
                         setShowCelebration(true);
                     }
+                }
             )
             .subscribe();
 
