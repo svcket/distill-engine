@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "if [ \"$VERCEL_GIT_COMMIT_REF\" = \"main\" ]; then prisma generate && next build; else echo 'Skipping build for non-main branch'; exit 0; fi",
     "start": "next start",
     "lint": "eslint",
     "test:unit": "cd .. && python3 -m pytest tests/test_pipeline.py -v",
