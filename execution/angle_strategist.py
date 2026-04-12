@@ -10,9 +10,8 @@ import sys
 import argparse
 import json
 import os
-from pydantic import BaseModel, Field
-from typing import List, Optional
-from openai import OpenAI
+
+# Heavy dependencies are lazy-loaded to ensure zero-crash deployment
 
 class AngleStrategy(BaseModel):
     recommended_format: str = Field(description="Primary format (e.g., 'Long-form Essay', 'X Thread')")
@@ -38,6 +37,18 @@ def extract_angle(
     target_tone: Optional[str] = None, 
     lang: str = "en"
 ):
+    from pydantic import BaseModel, Field
+    from openai import OpenAI
+    from typing import List, Optional
+
+    class AngleStrategy(BaseModel):
+        recommended_format: str = Field(description="Primary format (e.g., 'Long-form Essay', 'X Thread')")
+        secondary_formats: List[str] = Field(description="Alternative formats that fit well.")
+        target_audience: str = Field(description="Who is this for?")
+        framing_angle: str = Field(description="The central hook or narrative angle.")
+        working_titles: List[str] = Field(description="3-5 punchy title ideas.")
+        rationale: str = Field(description="Why this angle?")
+
     if not os.path.exists(insights_path):
         print(f"[{insights_path}] Angle Strategist: Local context missing. Attempting cloud recovery...", file=sys.stderr)
         try:

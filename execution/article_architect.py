@@ -10,9 +10,8 @@ import sys
 import argparse
 import json
 import os
-from pydantic import BaseModel, Field
-from typing import List
-from openai import OpenAI
+
+# Pydantic and OpenAI are lazy-loaded in generate_blueprint
 
 class SectionBlueprint(BaseModel):
     heading: str = Field(description="The section heading.")
@@ -27,6 +26,8 @@ class ArticleArchitecture(BaseModel):
     sections: List[SectionBlueprint] = Field(description="The structural blueprint.")
 
 def generate_blueprint(angle_path: str, insights_path: str, lang: str = "en"):
+    from pydantic import BaseModel, Field
+    from openai import OpenAI
     from supabase_utils import download_artifact
     
     # Extract source_id from path naming convention
