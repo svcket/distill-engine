@@ -1,7 +1,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
-import { runPythonScript } from '@/lib/python-runner'
+import { runPythonScript, runPythonScriptStream } from '@/lib/python-runner'
 import { adaptInsightResponse } from '@/lib/adapters'
 
 export async function POST(request: Request) {

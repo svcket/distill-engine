@@ -2,7 +2,7 @@
 import { auth } from "@/auth"
 import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
-import { runPythonScript } from '@/lib/python-runner'
+import { runPythonScript, runPythonScriptStream } from '@/lib/python-runner'
 
 export async function POST(request: Request) {
     const session = await auth()
