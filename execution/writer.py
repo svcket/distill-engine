@@ -45,9 +45,43 @@ def generate_draft(
     brief_path: Optional[str] = None, feedback: Optional[str] = None, 
     stream: bool = False, lang: str = "en"
 ):
-    if not os.path.exists(outline_path) or not os.path.exists(insights_path) or not os.path.exists(packet_path):
-        print(json.dumps({"status": "failed", "error": "Missing input payloads."}), file=sys.stderr)
-        sys.exit(1)
+    from supabase_utils import download_artifact
+    
+    # Extract source_id from path naming convention
+    # Path: .tmp/outlines/{source_id}_outline.json
+    source_id = os.path.basename(outline_path).replace("_outline.json", "")
+
+    # SELF-HEALING: Recover Outline
+    if not os.path.exists(outline_path):
+        print(f"[{outline_path}] Writer: Local outline missing. Attempting cloud recovery...", file=sys.stderr)
+        recovered = download_artifact("outlines", source_id, f"{source_id}_outline.json", outline_path)
+        if not recovered:
+             print(json.dumps({"status": "failed", "error": f"Outline missing: {outline_path}"}), file=sys.stderr)
+             sys.exit(1)
+
+    # SELF-HEALING: Recover Insights
+    if not os.path.exists(insights_path):
+        print(f"[{insights_path}] Writer: Local insights missing. Attempting cloud recovery...", file=sys.stderr)
+        recovered = download_artifact("insights", source_id, f"{source_id}_insights.json", insights_path)
+        if not recovered:
+             print(json.dumps({"status": "failed", "error": f"Insights missing: {insights_path}"}), file=sys.stderr)
+             sys.exit(1)
+
+    # SELF-HEALING: Recover Insight Packet
+    if not os.path.exists(packet_path):
+        print(f"[{packet_path}] Writer: Local packet missing. Attempting cloud recovery...", file=sys.stderr)
+        recovered = download_artifact("insight_packets", source_id, f"{source_id}_packet.json", packet_path)
+        if not recovered:
+             print(json.dumps({"status": "failed", "error": f"Packet missing: {packet_path}"}), file=sys.stderr)
+             sys.exit(1)
+
+    # SELF-HEALING: Recover Brief
+    if brief_path and not os.path.exists(brief_path):
+        print(f"[{brief_path}] Writer: Local brief missing. Attempting cloud recovery...", file=sys.stderr)
+        recovered = download_artifact("briefs", source_id, f"{source_id}_brief.json", brief_path)
+        if not recovered:
+             # Brief is optional or auto-recoverable, but we try to fetch it for fidelity
+             print(f"[{source_id}] Writer Warning: Brief recovery failed. Proceeding with defaults.", file=sys.stderr)
 
     with open(outline_path, "r", encoding="utf-8") as f:
         outline_bundle = json.load(f)

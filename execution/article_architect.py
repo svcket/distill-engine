@@ -27,9 +27,27 @@ class ArticleArchitecture(BaseModel):
     sections: List[SectionBlueprint] = Field(description="The structural blueprint.")
 
 def generate_blueprint(angle_path: str, insights_path: str, lang: str = "en"):
-    if not os.path.exists(angle_path) or not os.path.exists(insights_path):
-        print(json.dumps({"status": "failed", "error": "Missing input payloads."}), file=sys.stderr)
-        sys.exit(1)
+    from supabase_utils import download_artifact
+    
+    # Extract source_id from path naming convention
+    # Path: .tmp/angles/{source_id}_angle.json
+    source_id = os.path.basename(angle_path).replace("_angle.json", "")
+
+    # SELF-HEALING: Recover Angle Strategy
+    if not os.path.exists(angle_path):
+        print(f"[{angle_path}] Architect: Local angle missing. Attempting cloud recovery...", file=sys.stderr)
+        recovered = download_artifact("angles", source_id, f"{source_id}_angle.json", angle_path)
+        if not recovered:
+             print(json.dumps({"status": "failed", "error": f"Angle strategy missing: {angle_path}"}), file=sys.stderr)
+             sys.exit(1)
+
+    # SELF-HEALING: Recover Insights
+    if not os.path.exists(insights_path):
+        print(f"[{insights_path}] Architect: Local insights missing. Attempting cloud recovery...", file=sys.stderr)
+        recovered = download_artifact("insights", source_id, f"{source_id}_insights.json", insights_path)
+        if not recovered:
+             print(json.dumps({"status": "failed", "error": f"Insights missing: {insights_path}"}), file=sys.stderr)
+             sys.exit(1)
         
     with open(angle_path, 'r', encoding='utf-8') as fa:
         angle_bundle = json.load(fa)

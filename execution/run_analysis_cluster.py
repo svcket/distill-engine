@@ -135,7 +135,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             if upload_artifact:
                 refined_path = get_safe_tmp_path(f"{source_id}_refined.json", f"refined_transcripts/{source_id}")
                 if os.path.exists(refined_path):
-                    upload_artifact("transcripts", f"{source_id}_refined", refined_path)
+                    upload_artifact("refined_transcripts", source_id, refined_path)
         except Exception as e:
             print(f"[{source_id}] Refine stage failed: {e}", file=sys.stderr)
             results["refine"] = {"status": "skipped", "error": str(e)}
@@ -187,7 +187,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             if upload_artifact:
                 packet_path = get_safe_tmp_path(f"{source_id}_packet.json", "insight_packets")
                 if os.path.exists(packet_path):
-                    upload_artifact("packets", source_id, packet_path)
+                    upload_artifact("insight_packets", source_id, packet_path)
         except Exception as e:
             print(f"[{source_id}] Packet stage error: {str(e)}", file=sys.stderr)
             results["packet"] = {"status": "rescued", "error": str(e)}

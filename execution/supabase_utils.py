@@ -53,3 +53,40 @@ def upload_artifact(category: str, source_id: str, local_path: str, filename: Op
     except Exception as e:
         print(f"[Supabase] Error: Upload failed for {remote_path}: {e}", file=sys.stderr)
         return False
+def ensure_local_path(local_path: str):
+    """
+    Ensure the directory for a local .tmp path exists.
+    """
+    directory = os.path.dirname(local_path)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+
+def download_artifact(category: str, source_id: str, filename: str, local_path: str):
+    """
+    Download an artifact from Supabase Storage to a local path.
+    Returns True if successful, False otherwise.
+    """
+    client = get_supabase_client()
+    if not client:
+        return False
+
+    # Remote path: [source_id]/[filename]
+    remote_path = f"{source_id}/{filename}"
+    
+    try:
+        ensure_local_path(local_path)
+        
+        # Download the file
+        res = client.storage.from_(category).download(remote_path)
+        if res:
+            with open(local_path, 'wb') as f:
+                f.write(res)
+            return True
+        return False
+    except Exception as e:
+        # Check if it's just a 404 (file doesn't exist in storage)
+        if "The object was not found" in str(e) or "404" in str(e):
+            return False
+            
+        print(f"[Supabase] Error: Download failed for {remote_path}: {e}", file=sys.stderr)
+        return False

@@ -39,8 +39,18 @@ def extract_angle(
     lang: str = "en"
 ):
     if not os.path.exists(insights_path):
-        print(json.dumps({"status": "failed", "error": f"Insights not found: {insights_path}"}), file=sys.stderr)
-        sys.exit(1)
+        print(f"[{insights_path}] Angle Strategist: Local context missing. Attempting cloud recovery...", file=sys.stderr)
+        try:
+            from supabase_utils import download_artifact
+            source_id = os.path.basename(insights_path).replace("_insights.json", "")
+            recovered = download_artifact("insights", source_id, f"{source_id}_insights.json", insights_path)
+            if not recovered:
+                print(json.dumps({"status": "failed", "error": f"Insights not found locally or in cloud: {insights_path}"}), file=sys.stderr)
+                sys.exit(1)
+            print(f"[{source_id}] Angle Strategist: Cloud recovery SUCCESS.", file=sys.stderr)
+        except Exception as e:
+            print(json.dumps({"status": "failed", "error": f"Cloud recovery failed: {e}"}), file=sys.stderr)
+            sys.exit(1)
         
     with open(insights_path, 'r', encoding='utf-8') as f:
         insights_bundle = json.load(f)
