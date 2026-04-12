@@ -206,18 +206,27 @@ function SourceMissionControlContent() {
     // Track which stages are completed
     const [completedStages, setCompletedStages] = useState<Set<StageId>>(new Set())
 
-    // Hydration fix for completedStages
+    // Hydration fix for completedStages — Listen to the Source-of-Truth from Prisma
     useEffect(() => {
+        if (!source || !source.completedStages) return
+        
         const initial = new Set<StageId>()
-        if ((source.score ?? 0) > 0) {
-            initial.add("judge")
-            initial.add("qa")
+        
+        // Sync from the database record
+        if (Array.isArray(source.completedStages)) {
+            source.completedStages.forEach(s => {
+                initial.add(s as StageId)
+            })
         }
+
+        // Maintain logic for inferred internal status (Judge/Transcript)
+        if ((source.score ?? 0) > 0) initial.add("judge")
         if (source.transcriptStatus === "transcribed" || source.transcriptStatus === "rescued_text") {
             initial.add("transcript")
         }
+        
         setCompletedStages(initial)
-    }, [source.score, source.transcriptStatus])
+    }, [source.completedStages, source.score, source.transcriptStatus])
 
 
 
@@ -1214,9 +1223,26 @@ function SourceMissionControlContent() {
                 data = responseData as StagePayload
             }
 
-            // Store result
+            // Store result (with Cluster-Aware unwrapping to populate constituent panels)
             const resValue = (data?.result || data) as StageResultData
-            setStageResults(prev => ({ ...prev, [stage.id]: resValue }))
+            setStageResults(prev => {
+                const next = { ...prev, [stage.id]: resValue };
+                
+                // If this was a cluster, we hydrate the individual stages it represents
+                if (stage.id === 'cluster') {
+                    const cluster = resValue as any;
+                    if (cluster.results) {
+                        if (cluster.results.refine) next.refine = cluster.results.refine;
+                        if (cluster.results.summary) next.summary = cluster.results.summary;
+                        if (cluster.results.insights) next.insights = cluster.results.insights;
+                    } else {
+                        // Support flat fallback
+                        next.insights = resValue;
+                        next.summary = resValue;
+                    }
+                }
+                return next;
+            })
 
             // Mark completed
             setCompletedStages(prev => new Set([...prev, stage.id]))

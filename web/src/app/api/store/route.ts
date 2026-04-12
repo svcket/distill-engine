@@ -119,10 +119,10 @@ export async function POST(request: Request) {
                 let bucket = 'transcripts'
                 let filename = `${sourceId}/${sourceId}_raw.json`
 
-                if (stageId === 'summary') {
-                    filename = `${sourceId}/summary.json`
-                } else if (stageId === 'insights') {
-                    filename = `${sourceId}/insights.json`
+                if (stageId === 'summary' || stageId === 'insights' || stageId === 'cluster') {
+                    // Optimized: All core intelligence is now in the 'clusters' bucket
+                    bucket = 'clusters'
+                    filename = `${sourceId}_cluster.json`
                 } else if (stageId === 'refine') {
                     filename = `${sourceId}/refined.json`
                 } else if (stageId === 'draft') {
