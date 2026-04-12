@@ -118,7 +118,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             "is_rescue": True
         }
         print(json.dumps(final_payload))
-        sys.exit(0)  # Clean exit so the UI handles it gracefully
+        sys.exit(1)  # HARD FAIL so the UI turns red on insufficient data
 
     start_time = time.time()
     results = {}

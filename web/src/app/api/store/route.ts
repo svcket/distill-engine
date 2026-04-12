@@ -77,8 +77,27 @@ export async function POST(request: Request) {
                 }
 
                 const stages = [...(Array.isArray(source.completedStages) ? source.completedStages : [])]
-                if (!stages.includes(stageId)) {
-                    stages.push(stageId)
+                
+                // HYDRATION MAPPING: Some stages are "Clusters" that represent multiple UI stages
+                const stageMappings: Record<string, string[]> = {
+                    'cluster': ['transcript', 'summary', 'insights'],
+                    'qa': ['qa'],
+                    'evaluate': ['qa'],
+                    'socialise': ['socialise'],
+                    'social': ['socialise']
+                };
+
+                const stagesToAdd = stageMappings[stageId] || [stageId];
+                let changed = false;
+
+                for (const s of stagesToAdd) {
+                    if (!stages.includes(s)) {
+                        stages.push(s);
+                        changed = true;
+                    }
+                }
+
+                if (changed) {
                     await prisma.source.update({
                         where: { id: targetId },
                         data: { completedStages: stages }
