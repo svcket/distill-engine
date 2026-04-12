@@ -1,8 +1,13 @@
-from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import os
+import sys
+import logging
+
+# Ensure we can import local modules regardless of how the script is called
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import subprocess
 import json
-import logging
 from typing import List, Optional
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse

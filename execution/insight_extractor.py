@@ -1,7 +1,11 @@
 import sys
+import os
+
+# Ensure local imports work by adding directory to path immediately
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import argparse
 import json
-import os
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 from openai import OpenAI
