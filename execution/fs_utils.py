@@ -1,4 +1,3 @@
-from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import os
 import tempfile
 import sys
@@ -15,8 +14,8 @@ def get_safe_tmp_dir(subdir: str = None) -> str:
         if os.path.exists('/tmp'):
             base_dir = '/tmp'
         else:
-            # Local fallback for extreme cases
-            base_dir = get_safe_tmp_dir()
+            # Local fallback for extreme cases using standard library
+            base_dir = tempfile.gettempdir()
 
     if subdir:
         target = os.path.join(base_dir, subdir)
