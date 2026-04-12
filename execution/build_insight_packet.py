@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Ensure local imports work by adding directory to path immediately
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 
 """
@@ -8,10 +14,8 @@ Key change: limits transcript segments to the most information-dense
 5–8 chunks to reduce LLM token usage and latency.
 """
 
-import sys
 import argparse
 import json
-import os
 import glob
 from typing import Dict, Any
 

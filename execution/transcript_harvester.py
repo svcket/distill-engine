@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Ensure local imports work by adding directory to path immediately
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 """
 Transcript Harvester — multi-source transcript fetcher.
@@ -8,9 +14,7 @@ Supports: YouTube (youtube_transcript_api), Vimeo (manual), Podcast/Upload (Whis
 
 import json
 import re
-import os
 import argparse
-import sys
 import glob
 
 import subprocess
