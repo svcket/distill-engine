@@ -1755,6 +1755,12 @@ def fetch_transcript(
                     raise Exception(msg)
 
                 print(f"[{source_id}] RESCUE: Audio failed, falling back to discovered text.", file=sys.stderr)
+                
+                # LOW-SIGNAL PROTECTION: Prepend warning if content is thin
+                if len(rescued) < 400:
+                    rescued = f"[RESCUE WARNING: Low-Signal Context. This metadata is likely insufficient for deep analysis. DO NOT hallucinate based on title.]\n\n{rescued}"
+                    print(f"[{source_id}] RESCUE WARNING: Content is thin ({len(rescued)} chars). Prepending hallucination shield...", file=sys.stderr)
+
                 # Create a single segment with the rescued text
                 result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)
                 result["status"] = "rescued_text"

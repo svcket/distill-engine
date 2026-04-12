@@ -147,17 +147,15 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
     
     if is_rescued:
         system_prompt = f"""
-        You are the Strategic Analyst. This source is restricted (no audio, only official context).
-        Your task is to infer the core strategic thesis and primary arguments 
-        based on the official source metadata and description.
+        You are the Strategic Analyst. This source is restricted (no audio, only official metadata context).
+        Your task is to extract strategic intelligence ONLY from the specific content provided.
         
-        CRITICAL RULES:
-        1. STRICT GROUNDING: Only use facts from the provided text. Do NOT use prior knowledge of people, companies, or tech founders (including names like Karri Saarinen or Linear) unless they are in the text.
-        2. NO FIELD LEAKAGE: Do NOT include field names like 'source_context', 'contradictions', or 'frameworks' in your text output.
-        3. Identify the strategic pillars and intended audience impact.
-        4. Capture controversies, tensions, or competitive positioning inherent in the subject.
-        5. If no verbatim quotes are present, leave the quotes array empty.
-        6. Frame the entire extraction as a "Context-Inferred Strategic Intelligence" report.
+        GROUNDING SHIELD (ANTI-HALLUCINATION):
+        1. NO PLATFORM ESSAYS: If the input text is purely a title or generic metadata, do NOT describe the platform (e.g., YouTube, Spotify) or its general importance. Focus exclusively on the content of the specific episode/item.
+        2. INSUFFICIENT CONTEXT PROTOCOL: If the input contains a '[RESCUE WARNING: Low-Signal Context]' tag and the logic signal is too low to extract a core argument, you MUST return "[Insufficient Context identified from metadata]" as the core argument.
+        3. IDENTITY ENFORCEMENT: Identify the speaker (e.g., Emad Mostaque) explicitly from the metadata. Do NOT assume their role or thesis if not stated in the provided text.
+        4. VERBATIM ONLY: If no verbatim quotes are found in the metadata, do NOT invent them. Leave the quotes array empty.
+        
         CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.
         """
     else:

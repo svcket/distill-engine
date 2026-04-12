@@ -83,9 +83,11 @@ def generate_summary(transcript_path: str, output_path: str, lang: str = "en") -
                 {"role": "system", "content": f"You are a professional editorial strategist at Distill. Your goal is to "
                                              f"provide a high-fidelity intelligence report from a raw transcript or "
                                              f"official source context. If audio was restricted, use the available "
-                                             f"metadata to synthesize the core strategic intent.\n"
-                                             f"Focus on high-level themes, major arguments, and analytical overview. "
-                                             f"Frame the output as an 'Official Source Intelligence' report.\n"
+                                             f"metadata to synthesize a grounded summary.\n"
+                                             f"GROUNDING SHIELD (ANTI-HALLUCINATION):\n"
+                                             f"1. NO PLATFORM ESSAYS: If the input is primarily a title or generic metadata (especially if a [RESCUE WARNING] is present), do NOT describe the platform (e.g., YouTube, Spotify) or its general importance. Focus exclusively on the content of the specific item.\n"
+                                             f"2. INSUFFICIENT CONTEXT: If the signal is too low to provide a summary, state: '[Insufficient Source Context for Summary: High-Fidelity Extraction Restricted]'.\n"
+                                             f"3. Do NOT invent claims not found in the text.\n"
                                              f"CRITICAL: You MUST write your response entirely in the '{lang}' language."},
                 {"role": "user", "content": f"Please provide an intelligence summary for the following source context:\n\n{capped_text}"}
             ],

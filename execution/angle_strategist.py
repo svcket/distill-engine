@@ -111,16 +111,13 @@ def extract_angle(
     Given these extracted insights from a source, determine the smartest editorial angle, formats, and titles.
     {intent_context}
     
-    CRITICAL RULE:
-    The article must revolve around exactly ONE strong, non-generic central thesis.
-    Example of a weak thesis: "AI is transforming industries."
-    Example of a strong thesis: "AI gives small teams an asymmetric advantage over large corporations by collapsing the cost of specialized labor."
-    
-    Choose a specific, opinionated framing angle based on the insights provided.
+    GROUNDING SHIELD (ANTI-HALLUCINATION):
+    1. RESCUE MODE AWARENESS: If the input contains a '[RESCUE WARNING: Low-Signal Context]' tag, you MUST pivot to 'Safeguarded Thematic Framing'. This means avoiding deep tactical inferences and instead focusing on broad themes, historical importance, or overall platform/industry context explicitly stated in the metadata.
+    2. NO PLATFORM ESSAYS: Do NOT describe the platform (YouTube, Spotify) itself. Focus on the content mentioned in the title/desc.
+    3. ONE STRONG THESIS: The article must revolve around exactly ONE strong, non-generic central thesis. Filter out generic boilerplate.
     
     IMPORTANT: If USER INTENT SETTINGS provide a specific 'Format/Type', you MUST 
-    output that exactly as the 'recommended_format'. Do NOT use 'Long-form Essay' 
-    if the user requested 'blog_article' or 'technical_explainer'.
+    output that exactly as the 'recommended_format'.
     
     Target the audience specified, or default to technical builders, engineers, and designers.
     CRITICAL: You MUST write your response entirely in the '{lang}' language.
