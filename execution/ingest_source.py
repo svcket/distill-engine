@@ -120,16 +120,21 @@ def ingest_source(source_id: str, url: str = None):
         lang_name = _LANG_NAMES.get(detected_lang, detected_lang.upper())
         language_warning = f"Content in {lang_name}. Distill is optimised for English."
 
+    # DQM Check (Preliminary)
+    from audit_engine import dqm_score_content
+    dqm_result = dqm_score_content(probe_text, {})
+    
     result = {
         "source_id": source_id,
         "source_type": metadata.get("source_type", "youtube"),
-        "status": "success",
+        "status": "success" if dqm_result["status"] == "PASS" else "low_quality",
         "title": metadata.get("title"),
         "channel": metadata.get("channel") or metadata.get("creator"),
         "duration_seconds": metadata.get("duration_seconds", 0),
         "detected_language": detected_lang,
         "language_warning": language_warning,
-        "score": 10 # Default pass
+        "score": dqm_result["overall_score"] / 10, # Normalize to 0-10 scale
+        "status_reason": dqm_result.get("status_reason")
     }
 
     out_dir = get_safe_tmp_dir("judgments")

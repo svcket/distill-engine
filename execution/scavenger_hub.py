@@ -43,11 +43,14 @@ class ScavengerHub:
         """
         Recovers a YouTube transcript using apify/youtube-scraper.
         """
+        # Optimized YouTube Scraper payload specifically for HIGH FIDELITY transcripts
         actor_input = {
+            "downloadSubtitles": True,
+            "saveSubsAsTranscript": True,
             "startUrls": [{"url": video_url}],
             "maxResults": 1,
+            "subtitlesFormat": "srt",
             "subtitlesLanguage": "en",
-            "downloadSubtitles": True,
             "proxyConfiguration": {"useApifyProxy": True}
         }
         

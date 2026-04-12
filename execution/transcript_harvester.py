@@ -1866,18 +1866,26 @@ def fetch_transcript(
                     if rescued:
                         print(f"[{source_id}] SCAVENGER SUCCESS: Cloud rescue recovered podcast content.", file=sys.stderr)
                 
+                # 2. HARD QUALITY GATE: Minimum Intelligence Threshold
+                # We no longer settle for "Rescued" metadata show notes if they are too thin.
+                MIN_TRANSCRIPT_LENGTH = 1200
+                
+                if rescued:
+                    clean_len = len(rescued.replace("[RESCUED]", "").strip())
+                    if clean_len < MIN_TRANSCRIPT_LENGTH:
+                        title = metadata.get("title", "this source")
+                        msg = f"Hard Quality Gate Failed: Content recovered for '{title}' is too thin ({clean_len} chars). Minimum {MIN_TRANSCRIPT_LENGTH} required for Editorial Strategy."
+                        print(f"[{source_id}] ERROR: {msg}", file=sys.stderr)
+                        raise Exception(msg)
+                
                 if not rescued:
-                    # HARD GATE: If we have no transcript and no significant description, we STOP.
+                    # HARD GATE: Final Stop
                     title = metadata.get("title", "this source")
-                    msg = f"Pipeline stopped: No transcript or detailed content available for '{title}'."
-                    print(f"[{source_id}] {msg}", file=sys.stderr)
+                    msg = f"Pipeline stopped: No transcript available for '{title}' (restricted/blocked)."
+                    print(f"[{source_id}] ERROR: {msg}", file=sys.stderr)
                     raise Exception(msg)
 
-                print(f"[{source_id}] RESCUE: Audio failed, falling back to discovered text.", file=sys.stderr)
-                
-                # LOW-SIGNAL PROTECTION: Prepend warning if content is thin
-                if len(rescued) < 400:
-                    rescued = f"[RESCUE WARNING: Low-Signal Context. This metadata is likely insufficient for deep analysis. DO NOT hallucinate based on title.]\n\n{rescued}"
+                print(f"[{source_id}] SUCCESS: High-fidelity intelligence recovered.", file=sys.stderr)
                     print(f"[{source_id}] RESCUE WARNING: Content is thin ({len(rescued)} chars). Prepending hallucination shield...", file=sys.stderr)
 
                 # Create a single segment with the rescued text
