@@ -1778,7 +1778,7 @@ def fetch_transcript(
                     rescue_res = trigger_scavenger_rescue("youtube", source_url or f"https://www.youtube.com/watch?v={yt_id}")
                     
                     if rescue_res:
-                        print(f"[{source_id}] SCAVENGER SUCCESS: Cloud rescue recovered {len(rescue_res)} segments.", file=sys.stderr)
+                        print(f"[{source_id}] SCAVENGER SUCCESS: Cloud rescue recovered {len(rescue_res)} characters of intelligence.", file=sys.stderr)
                         # Transform to our internal format and save
                         json_path = os.path.join(output_dir, f"{source_id}_raw.json")
                         txt_path = os.path.join(output_dir, f"{source_id}_raw.txt")
@@ -1862,9 +1862,8 @@ def fetch_transcript(
                     # FINAL DEFENSE: Apify Podcast/Universal Scavenger Rescue
                     print(f"[{source_id}] SCAVENGER: Local podcast/web extraction failed. Launching cloud-scrapper rescue...", file=sys.stderr)
                     # For podcasts, we use the universal website scraper to find show notes or content
-                    rescued = trigger_scavenger_rescue(source_type, source_url)
                     if rescued:
-                        print(f"[{source_id}] SCAVENGER SUCCESS: Cloud rescue recovered podcast content.", file=sys.stderr)
+                        print(f"[{source_id}] SCAVENGER SUCCESS: Cloud rescue recovered {len(rescued)} characters of podcast content.", file=sys.stderr)
                 
                 # 2. HARD QUALITY GATE: Minimum Intelligence Threshold
                 # We no longer settle for "Rescued" metadata show notes if they are too thin.

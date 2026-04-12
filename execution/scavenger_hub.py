@@ -63,10 +63,14 @@ class ScavengerHub:
             # Apify youtube-scraper often returns subtitles in a specific format
             subtitles = video_data.get("subtitles", [])
             if subtitles:
-                # Transform to our internal segment format: { start, text }
-                # This depends on the specific Actor's output schema.
-                print(f"[ScavengerHub] Recovered {len(subtitles)} subtitle entries.", file=sys.stderr)
-                return subtitles
+                # Transform to a single flattened string for high-fidelity ingestion
+                # Each subtitle entry usually has a 'text' field.
+                flat_text = " ".join([s.get("text", "") for s in subtitles]).strip()
+                
+                if flat_text:
+                    print(f"[ScavengerHub] Recovered {len(subtitles)} subtitle entries ({len(flat_text)} chars).", file=sys.stderr)
+                    # Hallucination Shield: Prepend origin tag
+                    return f"[CLOUD RESCUE] {flat_text}"
         return None
 
     def scavenge_website_content(self, url: str) -> Optional[str]:
