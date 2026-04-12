@@ -50,6 +50,7 @@ except ImportError:
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from monitoring import log_rescue_attempt
 from supabase_utils import upload_artifact
+from scavenger_hub import trigger_scavenger_rescue
 from adapters.podcast_adapter import is_generic_title
 
 def clean_title_for_search(title: str) -> str:
@@ -1767,8 +1768,31 @@ def fetch_transcript(
                                 )
                             except Exception: pass
                     
-                    # If scavenger fails, fall through to rescued text logic
-                    raise whisper_err
+                    # FINAL DEFENSE: Apify Universal Scavenger Rescue
+                    print(f"[{source_id}] SCAVENGER: All local methods failed. Launching cloud-scrapper rescue...", file=sys.stderr)
+                    rescue_res = trigger_scavenger_rescue("youtube", source_url or f"https://www.youtube.com/watch?v={yt_id}")
+                    
+                    if rescue_res:
+                        print(f"[{source_id}] SCAVENGER SUCCESS: Cloud rescue recovered {len(rescue_res)} segments.", file=sys.stderr)
+                        # Transform to our internal format and save
+                        json_path = os.path.join(output_dir, f"{source_id}_raw.json")
+                        txt_path = os.path.join(output_dir, f"{source_id}_raw.txt")
+                        
+                        with open(json_path, "w", encoding="utf-8") as f:
+                            json.dump(rescue_res, f, indent=2)
+                        with open(txt_path, "w", encoding="utf-8") as f:
+                            f.write("\n\n".join(str(c.get("text", "")) for c in rescue_res))
+                            
+                        result = {
+                            "source_id": source_id,
+                            "status": "success",
+                            "json_path": json_path,
+                            "text_path": txt_path,
+                            "segment_count": len(rescue_res)
+                        }
+                    else:
+                        print(f"[{source_id}] SCAVENGER FAILED: Cloud rescue yielded no results. Final failure.", file=sys.stderr)
+                        raise whisper_err
 
         elif source_type in ("podcast", "upload", "vimeo", "recording", "apple_podcast", "spotify_podcast", "spotify"):
             try:
@@ -1830,6 +1854,14 @@ def fetch_transcript(
                         print(f"[{source_id}] PODCAST RESCUE: Using detailed episode description.")
 
                 if not rescued:
+                    # FINAL DEFENSE: Apify Podcast/Universal Scavenger Rescue
+                    print(f"[{source_id}] SCAVENGER: Local podcast/web extraction failed. Launching cloud-scrapper rescue...", file=sys.stderr)
+                    # For podcasts, we use the universal website scraper to find show notes or content
+                    rescued = trigger_scavenger_rescue(source_type, source_url)
+                    if rescued:
+                        print(f"[{source_id}] SCAVENGER SUCCESS: Cloud rescue recovered podcast content.", file=sys.stderr)
+                
+                if not rescued:
                     # HARD GATE: If we have no transcript and no significant description, we STOP.
                     title = metadata.get("title", "this source")
                     msg = f"Pipeline stopped: No transcript or detailed content available for '{title}'."
@@ -1851,6 +1883,13 @@ def fetch_transcript(
             rescued = metadata.get("raw_metadata", {}).get("rescued_article_text") or \
                       metadata.get("description") or \
                       scrape_url_as_last_resort(source_url, source_id)
+            
+            if not rescued:
+                # FINAL DEFENSE: Apify Website Crawler Rescue
+                print(f"[{source_id}] SCAVENGER: Local web extraction failed. Launching Website Crawler rescue...", file=sys.stderr)
+                rescued = trigger_scavenger_rescue(source_type, source_url)
+                if rescued:
+                    print(f"[{source_id}] SCAVENGER SUCCESS: Website Crawler recovered article content.", file=sys.stderr)
             
             if rescued:
                 result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)

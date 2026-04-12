@@ -15,6 +15,7 @@ import re
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
+from scavenger_hub import trigger_scavenger_rescue
 
 
 # ─── Language Detection ─────────────────────────────────────────────────────
@@ -100,7 +101,15 @@ def ingest_source(source_id: str, url: str = None):
                 metadata.update(enriched.to_legacy_dict())
                 adapter.save(enriched, get_safe_tmp_dir())
         except Exception as e:
-            print(f"[ingest] Enrichment failed: {e}", file=sys.stderr)
+            print(f"[ingest] Enrichment failed: {e}. Attempting Scavenger Rescue...", file=sys.stderr)
+            # FINAL DEFENSE: Metadata Scavenger Rescue
+            s_type = metadata.get("source_type", "youtube")
+            s_url = metadata.get("url")
+            if s_url:
+                rescue = trigger_scavenger_rescue(s_type, s_url, mode="metadata")
+                if rescue:
+                    print(f"[ingest] Scavenger Success: Recovered metadata for {s_url}", file=sys.stderr)
+                    metadata.update(rescue)
 
     # Language Detection
     probe_text = f"{metadata.get('title', '')} {metadata.get('description', '')[:300]}"
