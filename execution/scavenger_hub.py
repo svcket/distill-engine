@@ -141,3 +141,5 @@ if __name__ == "__main__":
     if len(sys.argv) > 2:
         res = trigger_scavenger_rescue(sys.argv[1], sys.argv[2])
         print(json.dumps(res))
+
+# Build cache buster: Sun Apr 12 11:58:12 WAT 2026
