@@ -102,7 +102,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
     if not is_sufficient:
         msg = f"Analysis Cluster Failed: Insufficient source data for '{source_id}' ({quality_reason}). Pipeline halted at hard quality gate."
         print(f"[{source_id}] ERROR: {msg}", file=sys.stderr)
-        raise Exception(msg)
+        
         final_payload = {
             "status": "thin_content",
             "source_id": source_id,
