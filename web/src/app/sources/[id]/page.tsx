@@ -1643,15 +1643,24 @@ function SourceMissionControlContent() {
                                                                 {/* Primary Action Button Cluster */}
                                                                 <div className="flex items-center gap-4">
                                                                     {/* View Button (Primary for completed stages) */}
-                                                                     {isCompleted && (
+                                                                     {(isCompleted || !!stageResults[stage.id]) && (
                                                                          <Button
                                                                              variant="outline"
                                                                              size="sm"
                                                                              onClick={(e) => { e.stopPropagation(); openPanel(stage) }}
-                                                                             title="View stage results"
+                                                                             title={`View ${stage.label} results`}
                                                                              className="h-8 px-4 border-emerald-500/30 bg-emerald-500/5 text-[12px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/50 transition-all rounded-lg"
                                                                          >
-                                                                             View
+                                                                             {{
+                                                                                 judge: "View Profile",
+                                                                                 transcript: source?.transcriptStatus === "transcribed" ? "View Transcript" : "View Metadata",
+                                                                                 insights: "View Insights",
+                                                                                 summary: "View Summary",
+                                                                                 draft: "View Draft",
+                                                                                 qa: "View Matrix",
+                                                                                 socialise: "View Assets",
+                                                                                 cluster: "View Analysis"
+                                                                             }[stage.id] || "View"}
                                                                          </Button>
                                                                      )}
                                                                 </div>

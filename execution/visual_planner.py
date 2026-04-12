@@ -1,4 +1,4 @@
-from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
+
 """
 Visual Planner — structural stub for future visual planning layer.
 Runs after draft generation. Prepares suggested visual hooks without

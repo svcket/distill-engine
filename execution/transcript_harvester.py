@@ -11,7 +11,7 @@ import os
 import argparse
 import sys
 import glob
-from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
+
 import subprocess
 import datetime
 import requests

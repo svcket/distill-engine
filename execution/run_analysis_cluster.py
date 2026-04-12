@@ -9,7 +9,7 @@ import html
 import glob
 import shutil
 import traceback
-from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
+
 # No unused typing imports
 
 # Ensure local imports work by adding directory to path immediately
@@ -141,16 +141,23 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             print(f"[{source_id}] Refine stage failed: {e}", file=sys.stderr)
             results["refine"] = {"status": "skipped", "error": str(e)}
 
-        # 2. Summary Stage
+    # 2. Summary Stage
         try:
             print(f"[{source_id}] Cluster Stage 2/4: Summarizing...", flush=True)
             # HARDENING: Check for transcript existence before calling summarizer
-            refined_path = get_safe_tmp_path(f"{source_id}_refined.json", f"refined_transcripts/{source_id}")
-            raw_path = get_safe_tmp_path(f"{source_id}_raw.json", f"transcripts/{source_id}")
+            # Use glob to be resilient to .json or .txt extensions
+            refined_dir = get_safe_tmp_dir(f"refined_transcripts/{source_id}")
+            raw_dir = get_safe_tmp_dir(f"transcripts/{source_id}")
             
-            if not os.path.exists(refined_path) and not os.path.exists(raw_path):
+            refined_files = glob.glob(os.path.join(refined_dir, "*_refined.*"))
+            raw_files = glob.glob(os.path.join(raw_dir, "*_raw.*"))
+            
+            if not refined_files and not raw_files:
                 print(f"[{source_id}] No transcript files found. Implementing METADATA RESCUE summarize.", flush=True)
-                summary_result = {"status": "rescued", "summary": "⚠️ Content restricted by source provider. Providing analysis based on available context."}
+                summary_result = {
+                    "status": "rescued", 
+                    "summary": "⚠️ Content restricted by source provider. Providing analysis based on available context and metadata."
+                }
             else:
                 summary_result = summarize_transcript(source_id, lang)
             

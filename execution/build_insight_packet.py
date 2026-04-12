@@ -1,4 +1,4 @@
-from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
+
 """
 Insight Packet Builder — packages source metadata, judgment, and transcript
 into a unified payload for LLM extraction stages.
