@@ -1037,8 +1037,8 @@ function SourceMissionControlContent() {
              if (!completedStages.has("summary")) return "active";
         }
 
-        // Force angle to be active if insights are done - handles ghost stage blockage
-        if (stage.id === "angle" && (completedStages.has("insights") || activeVisibleIndex === index)) return "active"
+        // Force angle to be active if insights/cluster are done
+        if (stage.id === "angle" && (completedStages.has("insights") || !!stageResults.insights || !!stageResults.cluster)) return "active"
         
         // A stage is active if it's the next visible thing to do
         if (index === activeVisibleIndex) return "active"
@@ -1579,7 +1579,7 @@ function SourceMissionControlContent() {
                                                             "gap-1.5 h-8 text-[12px] rounded-lg font-bold transition-all duration-300 border-none",
                                                             isRunningAll ? "bg-emerald-500/90 text-white animate-pulse-vibrant opacity-60" : "bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/10"
                                                         )}
-                                                        onClick={() => runFullPipeline()}
+                                                        onClick={() => runFullPipeline(activeIndex > 0)}
                                                         disabled={isRunningAll || !!executingStage}
                                                     >
                                                         {isRunningAll ? (
@@ -1677,7 +1677,7 @@ function SourceMissionControlContent() {
                                                             </div>
 
                                                     {/* Writing Intent Setup automatically appears when Insights are ready */}
-                                                    {stage.id === "angle" && (completedStages.has("insights") || status === "active" || status === "completed") && !completedStages.has("draft") && activeIndex <= STAGES.findIndex(s => s.id === "angle") && !isRunningAll && !executingStage && (
+                                                    {stage.id === "angle" && (completedStages.has("insights") || !!stageResults.insights || !!stageResults.cluster) && !completedStages.has("draft") && (
                                                         <div className="mt-8 p-8 rounded-[2rem] bg-card border border-border/80 shadow-soft animate-in fade-in slide-in-from-top-2 flex flex-col gap-6 w-full lg:max-w-3xl" onClick={e => e.stopPropagation()}>
                                                             <div className="flex items-center gap-2 mb-1">
                                                                 <Bot className="w-4 h-4 text-brand" />
