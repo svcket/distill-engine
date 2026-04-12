@@ -1769,7 +1769,13 @@ def fetch_transcript(
                             except Exception: pass
                     
                     # FINAL DEFENSE: Apify Universal Scavenger Rescue
-                    print(f"[{source_id}] SCAVENGER: All local methods failed. Launching cloud-scrapper rescue...", file=sys.stderr)
+                    from scavenger_hub import ScavengerHub
+                    hub_check = ScavengerHub()
+                    if not hub_check.is_available():
+                        print(f"[{source_id}] SCAVENGER SKIPPED: 'APIFY_TOKEN' not set. Restricted content cannot be recovered.", file=sys.stderr)
+                    else:
+                        print(f"[{source_id}] SCAVENGER: All local methods failed. Launching cloud-scrapper rescue...", file=sys.stderr)
+                    
                     rescue_res = trigger_scavenger_rescue("youtube", source_url or f"https://www.youtube.com/watch?v={yt_id}")
                     
                     if rescue_res:
