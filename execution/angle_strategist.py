@@ -60,22 +60,10 @@ def extract_angle(
             # Last resort: use the title
             input_text = f"SOURCE TITLE (Minimal context):\n{insights_bundle.get('title', 'Unknown Title')}"
 
-    # SPARSE CONTEXT GUARD: If input text is less than 500 characters, analysis is meaningless
+    # LOW-SIGNAL PROTECTION: Allow analysis even if context is thin, but warn the model
     if len(input_text.strip()) < 500:
-        msg = "Insufficient source context for strategic analysis. (Metadata and notes combined < 500 chars)"
-        print(json.dumps({
-            "status": "failed", 
-            "error": msg,
-            "error_code": "SPARSE_CONTEXT",
-            "source_id": source_id
-        }), file=sys.stderr)
-        # Still write a failure artifact so the UI can catch it
-        out_dir = get_safe_tmp_dir("angles")
-        os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, f"{source_id}_angle.json")
-        with open(out_path, 'w', encoding='utf-8') as f:
-            json.dump({"status": "failed", "error": msg, "error_code": "SPARSE_CONTEXT", "source_id": source_id}, f, indent=2)
-        sys.exit(1)
+        print(f"[{source_id}] Angle Strategist: LOW-SIGNAL detected ({len(input_text)} chars). Proceeding in Meta-Analysis mode.", file=sys.stderr)
+        input_text = f"[LOW-SIGNAL CONTEXT: Metadata only]\n\n{input_text}"
     
     if "OPENAI_API_KEY" not in os.environ or not os.environ["OPENAI_API_KEY"]:
         mock_result = {

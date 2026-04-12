@@ -1516,6 +1516,42 @@ def search_youtube_for_mirror(title: str, podcast_name: str = None, creator_name
         
     return None
 
+def search_podcast_mirror_on_youtube(title: str, creator_name: str = None) -> Optional[str]:
+    """
+    SCAVENGER MODE: If a direct YouTube video is restricted, 
+    search for its audio-only or podcast version hosted elsewhere on YouTube.
+    """
+    if not title or len(title) < 10: return None
+    
+    # Clean the title of bracketed channel names or generic tags
+    clean_title = re.sub(r'\[.*?\]|\(.*?\)', '', title).strip()
+    search_query = f'"{clean_title}"'
+    if creator_name:
+        search_query += f" {creator_name}"
+    search_query += " podcast full interview audio"
+    
+    print(f"[SCAVENGER HUNT] Searching YouTube for a full-length podcast version: {search_query}...")
+    
+    try:
+        cmd = [
+            "yt-dlp",
+            "--get-id",
+            "--quiet",
+            "--no-playlist",
+            f"ytsearch1:{search_query}"
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        video_id = result.stdout.strip()
+        
+        if video_id:
+            # Simple validation: ensure it's not the same video ID that failed
+            # (though the caller would usually handle this)
+            return f"https://www.youtube.com/watch?v={video_id}"
+    except Exception as e:
+        print(f"[SCAVENGER HUNT] Search failed: {e}")
+        
+    return None
+
 def fetch_transcript(
     source_id: str, source_url: str = None, source_type: str = None, 
     max_segments: int = 2000, passed_title: str = None, lang: str = "en"
@@ -1685,8 +1721,28 @@ def fetch_transcript(
                         referer=referer
                     )
                 except Exception as whisper_err:
-                    print(f"[{source_id}] Whisper fallback also failed: {whisper_err}.", file=sys.stderr)
-                    # Let the pipeline drop down to the standard rescue logic below
+                    print(f"[{source_id}] Whisper fallback also failed: {whisper_err}. Entering SCAVENGER MODE...", file=sys.stderr)
+                    
+                    # SCAVENGER PIVOT: Search for a podcast version or a mirror
+                    search_title = metadata.get("title")
+                    creator_name = metadata.get("creator") or metadata.get("channel")
+                    
+                    if search_title:
+                        scavenged_url = search_podcast_mirror_on_youtube(search_title, creator_name)
+                        if scavenged_url and scavenged_url != (source_url or f"https://www.youtube.com/watch?v={yt_id}"):
+                            print(f"[{source_id}] SCAVENGER WIN: Found mirror {scavenged_url}. Saving fallback to metadata and pivoting...")
+                            update_source_metadata(source_id, {"scavenged_mirror_url": scavenged_url, "transcript_strategy": "scavenger_hunt"})
+                            try:
+                                return fetch_transcript(
+                                    source_id, 
+                                    source_url=scavenged_url, 
+                                    source_type="youtube", 
+                                    max_segments=max_segments, 
+                                    lang=lang
+                                )
+                            except Exception: pass
+                    
+                    # If scavenger fails, fall through to rescued text logic
                     raise whisper_err
 
         elif source_type in ("podcast", "upload", "vimeo", "recording", "apple_podcast", "spotify_podcast", "spotify"):
@@ -1719,8 +1775,9 @@ def fetch_transcript(
                             search_title, podcast_name, creator_name
                         )
                         if mirror_url:
-                             print(f"[{source_id}] PIVOT: Bounty Hunt successful. Transcribing mirror...")
-                             try:
+                              print(f"[{source_id}] PIVOT: Bounty Hunt successful. Mirror: {mirror_url}. Saving fallback to metadata...")
+                              update_source_metadata(source_id, {"scavenged_mirror_url": mirror_url, "transcript_strategy": "bounty_hunt"})
+                              try:
                                  return fetch_transcript(
                                      source_id, 
                                      source_url=mirror_url, 
