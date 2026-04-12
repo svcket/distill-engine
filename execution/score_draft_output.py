@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 """
 Draft Evaluation Engine.
 Scores the final editorial draft based purely on density, clarity, and value.
@@ -85,7 +86,7 @@ def evaluate_draft(source_id: str):
     }
     
     # Save evaluation
-    out_dir = os.path.join(base, ".tmp", "evaluations")
+    out_dir = get_safe_tmp_dir("evaluations")
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, f"{source_id}_eval.json"), "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)

@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import sys
 import argparse
 import json
@@ -64,7 +65,7 @@ def generate_blueprint(angle_path: str, insights_path: str, lang: str = "en"):
             }
         }
         
-        out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "outlines")
+        out_dir = get_safe_tmp_dir("outlines")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{source_id}_outline.json")
         with open(out_path, 'w', encoding='utf-8') as f:
@@ -104,7 +105,7 @@ def generate_blueprint(angle_path: str, insights_path: str, lang: str = "en"):
         
         extracted_data = completion.choices[0].message.parsed
         
-        out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "outlines")
+        out_dir = get_safe_tmp_dir("outlines")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{source_id}_outline.json")
         

@@ -1,9 +1,10 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import os
 import json
 import argparse
 
 def verify_pipeline(source_id):
-    base_dir = os.path.join(os.path.dirname(__file__), ".tmp")
+    base_dir = get_safe_tmp_dir()
     
     stages = {
         "transcript": os.path.join(base_dir, "transcripts", source_id, f"{source_id}_raw.json"),

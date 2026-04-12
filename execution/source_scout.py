@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import sys
 import argparse
 import json
@@ -34,7 +35,7 @@ def scout_sources(query: str, max_results: int = 5):
             }]
             
             base_dir = os.path.dirname(os.path.abspath(__file__))
-            output_dir = os.path.join(base_dir, ".tmp", "sources")
+            output_dir = get_safe_tmp_dir("sources")
             os.makedirs(output_dir, exist_ok=True)
             out_path = os.path.join(output_dir, f"discovery_{datetime.now().strftime('%Y%m%d%H%M%S')}.json")
             with open(out_path, "w") as f:
@@ -67,7 +68,7 @@ def scout_sources(query: str, max_results: int = 5):
             } for i in range(max_results)
         ]
         
-        output_dir = os.path.join(os.getcwd(), ".tmp", "sources")
+        output_dir = get_safe_tmp_dir("sources")
         os.makedirs(output_dir, exist_ok=True)
         
         # Save to disk
@@ -122,7 +123,7 @@ def scout_sources(query: str, max_results: int = 5):
 
         # Standardize on execution/.tmp/ for all scripts
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        output_dir = os.path.join(base_dir, ".tmp", "sources")
+        output_dir = get_safe_tmp_dir("sources")
         os.makedirs(output_dir, exist_ok=True)
         
         # Save to disk

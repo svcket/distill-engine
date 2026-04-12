@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import os
 import json
 import re
@@ -49,7 +50,7 @@ def recover_title_via_llm(content):
 
 def run_repair():
     base = os.path.dirname(os.path.abspath(__file__))
-    sources_dir = os.path.join(base, ".tmp", "sources")
+    sources_dir = get_safe_tmp_dir("sources")
     if not os.path.exists(sources_dir):
         print("Sources directory not found.")
         return
@@ -74,7 +75,7 @@ def run_repair():
                 
                 # 2. Try LLM
                 if not new_title:
-                    txt_path = os.path.join(base, ".tmp", "transcripts", source_id, f"{source_id}_raw.txt")
+                    txt_path = get_safe_tmp_path(f"{source_id}_raw.txt", f"transcripts/{source_id}")
                     if os.path.exists(txt_path):
                         with open(txt_path, "r") as f:
                             content = f.read()

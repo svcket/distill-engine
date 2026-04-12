@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 """
 Distill Quality Matrix (DQM) Evaluator.
 Evaluates drafts across 7 editorial dimensions:
@@ -57,7 +58,7 @@ def _persist_evaluation(source_id: str, result: Dict, base_dir: str):
     Shared helper to save evaluation result to disk and upload to cloud storage.
     Ensures the JSON is wrapped in a 'payload' envelope for web-side hydration.
     """
-    eval_dir = os.path.join(base_dir, ".tmp", "evaluations")
+    eval_dir = get_safe_tmp_dir("evaluations")
     os.makedirs(eval_dir, exist_ok=True)
     
     eval_path = os.path.join(eval_dir, f"{source_id}_eval.json")

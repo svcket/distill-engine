@@ -1893,8 +1893,8 @@ if __name__ == "__main__":
         try:
             # Re-discover or mock the output_dir to ensure we save the file
             execution_dir = os.path.dirname(__file__)
-            out_dir = os.path.join(execution_dir, ".tmp", "transcripts", args.source_id)
-            os.makedirs(out_dir, exist_ok=True)
+            out_dir = get_safe_tmp_path(exist_ok=True, f"transcripts/{args.source_id)
+            os.makedirs(out_dir}")
             res = finish_transcript(args.source_id, rescued_segments, out_dir, status="rescued_text")
             res["error_detail"] = error_str
             res["is_failure"] = True

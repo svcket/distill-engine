@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 """
 Insight Packet Builder — packages source metadata, judgment, and transcript
 into a unified payload for LLM extraction stages.
@@ -29,7 +30,7 @@ def load_json(path: str):
 
 def find_source(source_id: str) -> dict:
     base = os.path.dirname(__file__)
-    source_dir = os.path.join(base, ".tmp", "sources")
+    source_dir = get_safe_tmp_dir("sources")
 
     # Direct file first
     direct = os.path.join(source_dir, f"{source_id}.json")
@@ -107,8 +108,8 @@ def build_packet(source_id: str) -> Dict[str, Any]:
     judgment = load_json(os.path.join(base, ".tmp", "judgments", f"{source_id}_judgment.json")) or {}
 
     # Load refined transcript (prefer refined; fall back to raw)
-    refined_path = os.path.join(base, ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
-    raw_path = os.path.join(base, ".tmp", "transcripts", source_id, f"{source_id}_raw.json")
+    refined_path = get_safe_tmp_path(f"{source_id}_refined.json", f"refined_transcripts/{source_id}")
+    raw_path = get_safe_tmp_path(f"{source_id}_raw.json", f"transcripts/{source_id}")
 
     t_data = load_json(refined_path) or load_json(raw_path) or []
     if isinstance(t_data, dict):
@@ -133,7 +134,7 @@ def build_packet(source_id: str) -> Dict[str, Any]:
         "packet_status": "ready_for_extraction",
     }
 
-    out_dir = os.path.join(base, ".tmp", "insight_packets")
+    out_dir = get_safe_tmp_dir("insight_packets")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"{source_id}_packet.json")
 

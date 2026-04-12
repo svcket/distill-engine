@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 """
 Visual Planner — structural stub for future visual planning layer.
 Runs after draft generation. Prepares suggested visual hooks without
@@ -182,7 +183,7 @@ CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.""
                 except Exception as e:
                     print(f"Failed to generate image for hook {i}: {e}", file=sys.stderr)
 
-    out_dir = os.path.join(base, ".tmp", "visual_plans")
+    out_dir = get_safe_tmp_dir("visual_plans")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"{source_id}_visual_plan.json")
 

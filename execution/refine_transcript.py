@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import sys
 import argparse
 import json
@@ -13,7 +14,7 @@ def refine_source_transcript(source_id: str, lang: str = "en") -> Dict[str, Any]
     Uses case-insensitive glob to find the directory, as Spotify IDs 
     can have casing mismatches between DB and Harvester.
     """
-    base_dir = os.path.join(os.path.dirname(__file__), ".tmp", "transcripts")
+    base_dir = get_safe_tmp_dir("transcripts")
     
     # Use glob for case-insensitive directory matching
     pattern = os.path.join(base_dir, "*")
@@ -29,7 +30,7 @@ def refine_source_transcript(source_id: str, lang: str = "en") -> Dict[str, Any]
         target_dir = os.path.join(base_dir, source_id)
         
     input_path = os.path.join(target_dir, f"{source_id}_raw.json")
-    output_path = os.path.join(os.path.dirname(__file__), ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
+    output_path = get_safe_tmp_path(f"{source_id}_refined.json", f"refined_transcripts/{source_id}")
     return refine_transcript(input_path, output_path, lang)
 
 ENTITY_NORMALIZATION = {

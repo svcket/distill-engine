@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import sys
 import argparse
 import json
@@ -10,11 +11,11 @@ from supabase_utils import upload_artifact
 def summarize_transcript(source_id: str, lang: str = "en") -> Dict[str, Any]:
     """Convenience wrapper for the Unified Analysis Cluster."""
     base = os.path.dirname(__file__)
-    transcript_path = os.path.join(base, ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
+    transcript_path = get_safe_tmp_path(f"{source_id}_refined.json", f"refined_transcripts/{source_id}")
     
     # Fallback to raw if refined doesn't exist yet (though it should in the standard pipeline)
     if not os.path.exists(transcript_path):
-        transcript_path = os.path.join(base, ".tmp", "transcripts", source_id, f"{source_id}_raw.json")
+        transcript_path = get_safe_tmp_path(f"{source_id}_raw.json", f"transcripts/{source_id}")
     
     output_path = os.path.join(base, ".tmp", "summaries", f"{source_id}_summary.md")
     return generate_summary(transcript_path, output_path, lang)
@@ -36,7 +37,7 @@ def generate_summary(transcript_path: str, output_path: str, lang: str = "en") -
             # Fallback to current script dir if .tmp not in path
             base = os.path.dirname(os.path.abspath(__file__))
             
-        fallback = os.path.join(base, ".tmp", "transcripts", source_id, f"{source_id}_raw.json")
+        fallback = get_safe_tmp_path(f"{source_id}_raw.json", f"transcripts/{source_id}")
         if os.path.exists(fallback):
             transcript_path = fallback
         else:

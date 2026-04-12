@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import sys
 import argparse
 import json
@@ -44,13 +45,13 @@ def extract_angle(
     input_text = json.dumps(insights_data)
     if not insights_data or not any(insights_data.values()):
         print(f"[{source_id}] Angle Strategist: Insights empty. Falling back to summary context.", file=sys.stderr)
-        summary_path = os.path.join(os.path.dirname(__file__), ".tmp", "summaries", f"{source_id}_summary.json")
+        summary_path = get_safe_tmp_path('Unknown Source', f"summaries/{f"{source_id}_summary.json")
         summary_bundle = load_json(summary_path)
         if summary_bundle and summary_bundle.get("summary"):
             input_text = f"SOURCE SUMMARY (Fallback):\n{summary_bundle['summary']}"
         else:
             # Last resort: use the title
-            input_text = f"SOURCE TITLE (Minimal context):\n{insights_bundle.get('title', 'Unknown Source')}"
+            input_text = f"SOURCE TITLE (Minimal context):\n{insights_bundle.get('title'}")}"
 
     # SPARSE CONTEXT GUARD: If input text is less than 500 characters, analysis is meaningless
     if len(input_text.strip()) < 500:
@@ -62,7 +63,7 @@ def extract_angle(
             "source_id": source_id
         }), file=sys.stderr)
         # Still write a failure artifact so the UI can catch it
-        out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "angles")
+        out_dir = get_safe_tmp_dir("angles")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{source_id}_angle.json")
         with open(out_path, 'w', encoding='utf-8') as f:
@@ -83,7 +84,7 @@ def extract_angle(
             }
         }
         
-        out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "angles")
+        out_dir = get_safe_tmp_dir("angles")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{source_id}_angle.json")
         with open(out_path, 'w', encoding='utf-8') as f:
@@ -130,7 +131,7 @@ def extract_angle(
         
         extracted_data = completion.choices[0].message.parsed
         
-        out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "angles")
+        out_dir = get_safe_tmp_dir("angles")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{source_id}_angle.json")
         

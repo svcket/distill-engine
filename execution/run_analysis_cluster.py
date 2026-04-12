@@ -145,8 +145,8 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         try:
             print(f"[{source_id}] Cluster Stage 2/4: Summarizing...", flush=True)
             # HARDENING: Check for transcript existence before calling summarizer
-            refined_path = os.path.join(base, ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
-            raw_path = os.path.join(base, ".tmp", "transcripts", source_id, f"{source_id}_raw.json")
+            refined_path = get_safe_tmp_path(f"{source_id}_refined.json", f"refined_transcripts/{source_id}")
+            raw_path = get_safe_tmp_path(f"{source_id}_raw.json", f"transcripts/{source_id}")
             
             if not os.path.exists(refined_path) and not os.path.exists(raw_path):
                 print(f"[{source_id}] No transcript files found. Implementing METADATA RESCUE summarize.", flush=True)

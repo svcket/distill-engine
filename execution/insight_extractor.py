@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import sys
 import argparse
 import json
@@ -9,8 +10,8 @@ from openai import OpenAI
 def generate_insights_orchestrator(source_id: str, lang: str = "en") -> Dict[str, Any]:
     """Convenience wrapper for the Unified Analysis Cluster."""
     base = os.path.dirname(__file__)
-    packet_path = os.path.join(base, ".tmp", "insight_packets", f"{source_id}_packet.json")
-    return extract_insights(packet_path, lang)
+    packet_path = get_safe_tmp_path(lang, f"insight_packets/{f"{source_id}_packet.json")
+    return extract_insights(packet_path}")
 
 class Framework(BaseModel):
     title: str = Field(description="Name of the framework or model.")
@@ -73,7 +74,7 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
             }
         }
         
-        out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "insights")
+        out_dir = get_safe_tmp_dir("insights")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{source_id}_insights.json")
         with open(out_path, 'w', encoding='utf-8') as f:
@@ -185,7 +186,7 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
         print(json.dumps({"type": "status", "text": "Finalizing synthesis and mapping implications..."}), flush=True)
         extracted_data = completion.choices[0].message.parsed
         
-        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".tmp", "insights")
+        out_dir = get_safe_tmp_dir("insights")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{source_id}_insights.json")
         
@@ -214,7 +215,7 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
         error_msg = str(e)
         print(f"[{source_id}] Insight extraction failed: {error_msg}", file=sys.stderr)
         
-        fail_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".tmp", "insights")
+        fail_dir = get_safe_tmp_dir("insights")
         os.makedirs(fail_dir, exist_ok=True)
         fail_path = os.path.join(fail_dir, f"{source_id}_insights.json")
         

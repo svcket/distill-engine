@@ -76,8 +76,8 @@ def resolve_file_path(base_dir: str, folder: str, source_id: str, suffix: str) -
 async def get_results(source_id: str, x_api_key: str = Header(None)):
     await verify_token(x_api_key)
     
-    execution_dir = os.path.dirname(os.path.abspath(__file__))
-    base_dir = os.path.join(execution_dir, ".tmp")
+    from fs_utils import get_safe_tmp_dir
+    base_dir = get_safe_tmp_dir()
     
     if not os.path.exists(base_dir):
         return {"results": {}}

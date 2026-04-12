@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 """
 Writer — generates draft articles from outline + insights.
 Supports streaming output for progressive UI rendering.
@@ -308,7 +309,7 @@ If there are issues, rewrite the section to be more specific, human, and properl
 
 
 def _save_draft(source_id: str, bundle: dict):
-    out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "drafts")
+    out_dir = get_safe_tmp_dir("drafts")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"{source_id}_draft.json")
     with open(path, "w", encoding="utf-8") as f:

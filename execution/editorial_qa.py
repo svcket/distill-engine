@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 """
 Editorial QA Evaluator.
 Scores the final draft across 6 editorial categories using OpenAI structured outputs.
@@ -177,7 +178,7 @@ Evaluate these 6 Categories explicitly reflecting the context above:
 
 def _save_evaluation(source_id: str, bundle: dict):
     base = os.path.dirname(__file__)
-    out_dir = os.path.join(base, ".tmp", "evaluations")
+    out_dir = get_safe_tmp_dir("evaluations")
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, f"{source_id}_eval.json"), "w", encoding="utf-8") as f:
         json.dump(bundle, f, indent=2)
