@@ -105,14 +105,15 @@ async function runPythonScriptLocal<T>(
     const scriptPath = path.join(executionDir, scriptName)
 
     const localEnv = loadEnvLocal()
-    const IS_VERCEL = process.env.VERCEL === '1' || !!process.env.NEXT_PUBLIC_VERCEL_URL
+    const IS_VERCEL = process.env.VERCEL === '1' || !!process.env.NEXT_PUBLIC_VERCEL_URL || !!process.env.VERCEL_URL
+    const tmpDir = IS_VERCEL ? '/tmp' : path.resolve(executionDir, '.tmp')
     
     const childEnv: Record<string, string | undefined> = { 
         ...process.env, 
         ...localEnv,
         ...options.env,
         PYTHONPATH: executionDir,
-        DISTILL_TMP_DIR: IS_VERCEL ? '/tmp' : path.resolve(executionDir, '.tmp')
+        DISTILL_TMP_DIR: tmpDir
     }
 
     // Safety: strip "mock" keys

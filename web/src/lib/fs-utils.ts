@@ -2,7 +2,7 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 
-const IS_VERCEL = process.env.VERCEL === '1' || !!process.env.NEXT_PUBLIC_VERCEL_URL
+const IS_VERCEL = process.env.VERCEL === '1' || !!process.env.NEXT_PUBLIC_VERCEL_URL || !!process.env.VERCEL_URL
 
 /**
  * Returns a writable temporary directory path and ensures it exists.
