@@ -27,9 +27,47 @@ import re
 from pydantic import BaseModel, Field
 from openai import OpenAI
 from typing import List, Dict
-from supabase_utils import upload_artifact
+from supabase_utils import upload_artifact, download_artifact
 
 class DQMMetrics(BaseModel):
+... (omitting metrics for brevity) ...
+
+def evaluate_dqm(source_id: str, lang: str = "en"):
+    base = os.path.dirname(__file__)
+    
+    # HYDRATION: In a stateless/distributed environment, local .tmp might be empty.
+    # We must ensure the draft exists locally before evaluating.
+    draft_dir = os.path.join(base, ".tmp", "drafts")
+    os.makedirs(draft_dir, exist_ok=True)
+    draft_file = os.path.join(draft_dir, f"{source_id}_draft.json")
+    
+    if not os.path.exists(draft_file):
+        logger.info(f"[Hydration] Draft not found locally for {source_id}. Attempting download from Supabase...")
+        recovered_path = download_artifact("drafts", source_id)
+        if recovered_path and os.path.exists(recovered_path):
+            # Move/Link if necessary, but download_artifact usually places it correctly if local structure matches
+            # If it's already at draft_file, we're good.
+            if os.path.abspath(recovered_path) != os.path.abspath(draft_file):
+                 import shutil
+                 shutil.copy2(recovered_path, draft_file)
+            logger.info(f"[Hydration] Draft successfully recovered for {source_id}")
+        else:
+            print(json.dumps({
+                "status": "failed", 
+                "error": f"Draft file not found at {draft_file} and recovery failed. Please generate the draft first.",
+                "source_id": source_id
+            }), file=sys.stderr)
+            sys.exit(1)
+            
+    # Also hydrate BRIEF for context
+    brief_dir = os.path.join(base, ".tmp", "briefs")
+    os.makedirs(brief_dir, exist_ok=True)
+    brief_file = os.path.join(brief_dir, f"{source_id}_brief.json")
+    if not os.path.exists(brief_file):
+        download_artifact("briefs", source_id)
+        
+    with open(draft_file, "r", encoding="utf-8") as f:
+        draft_bundle = json.load(f)
     source_grounding: int = Field(
         description="Score 0-100 on how strongly the draft reflects the original source/brief."
     )

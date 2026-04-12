@@ -95,30 +95,52 @@ Return ONLY the JSON structure."""
 
 def main():
     parser = argparse.ArgumentParser(description="Generate X Thread from Draft and Transcript")
-    parser.add_argument("--draft", required=True, help="Path to draft content file or raw content")
-    parser.add_argument("--transcript", required=True, help="Path to transcript summary or raw content")
+    parser.add_argument("--source-id", help="Source ID for hydration")
+    parser.add_argument("--draft", help="Path to draft content file or raw content")
+    parser.add_argument("--transcript", help="Path to transcript summary or raw content")
     parser.add_argument("--url", help="Original source URL")
     parser.add_argument("--output", help="Output JSON file path")
-    
     parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
+
+    source_id = args.source_id
+    draft_path = args.draft
+    transcript_path = args.transcript
+
+    # HYDRATION: In a stateless environment, we must recover artifacts from Supabase
+    if source_id:
+        if not draft_path or not os.path.exists(draft_path):
+            recovered = download_artifact("drafts", source_id)
+            if recovered: draft_path = recovered
+            
+        if not transcript_path or not os.path.exists(transcript_path):
+            recovered = download_artifact("summaries", source_id)
+            if recovered: transcript_path = recovered
+
     # Load content
-    if os.path.exists(args.draft):
-        with open(args.draft, "r") as f:
+    draft_content = ""
+    if draft_path and os.path.exists(draft_path):
+        with open(draft_path, "r") as f:
             draft_content = f.read()
     else:
-        draft_content = args.draft
+        draft_content = args.draft or ""
         
-    if os.path.exists(args.transcript):
-        with open(args.transcript, "r") as f:
+    transcript_content = ""
+    if transcript_path and os.path.exists(transcript_path):
+        with open(transcript_path, "r") as f:
             transcript_content = f.read()
     else:
-        transcript_content = args.transcript
+        transcript_content = args.transcript or ""
         
+    if not draft_content:
+        logger.error(f"Failed to generate thread: Draft content missing for {source_id or 'unknown'}")
+        sys.exit(1)
+
     architect = ThreadArchitect()
     thread_data = architect.generate_thread(draft_content, transcript_content, args.url, args.lang)
     
     if args.output:
+        os.makedirs(os.path.dirname(args.output), exist_ok=True)
         with open(args.output, "w") as f:
             json.dump(thread_data, f, indent=2)
     

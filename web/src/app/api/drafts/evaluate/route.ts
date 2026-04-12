@@ -40,14 +40,6 @@ export async function POST(request: Request) {
         const args = ['--source-id', sourceId]
         if (language) args.push('--lang', language)
 
-        // Run the evaluate_dqm.py script with typed response
-        const { success, data, error: scriptError } = await runPythonScript<DQMEvaluationResponse>('evaluate_dqm.py', args)
-        
-        if (success && data) {
-            // Standardize: Python returns { "status": "success", "result": { "total_score": X, ... } }
-            const result = data.result || data
-            const score = typeof result.total_score === 'number' ? result.total_score : 0
-            
             // console.log(`[Evaluate API] Evaluation success for ${sourceId}. Total Score: ${score}`)
 
             // Update the source record with completed state and extracted score using withRetry

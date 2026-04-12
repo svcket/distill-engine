@@ -29,31 +29,12 @@ export async function POST(request: Request) {
     }
 
     try {
-        // TRUTH CHECK: In Split Architecture, we pass relative paths. 
-        // Railway will resolve these within its own .tmp directory.
-        const draftPath = `.tmp/drafts/${sourceId}_draft.json`
-        const summaryPath = `.tmp/summaries/${sourceId}_summary.json`
-        const outputPath = `.tmp/socialise/${sourceId}_thread.json`
-
         const args = [
-            '--draft', draftPath,
-            '--transcript', summaryPath,
-            '--url', source.url || "",
-            '--output', outputPath
+            '--source-id', sourceId,
+            '--url', source.url || ""
         ]
         if (language) args.push('--lang', language)
 
-        const { success, error, data } = await runPythonScript<{
-            hook: string;
-            thread: string[];
-            cta: string;
-        }>('thread_architect.py', args)
-
-        if (!success) {
-            console.error(`[Social API] Thread generation failed for ${sourceId}:`, error)
-            return NextResponse.json({ 
-                error: "Thread generation failed", 
-                details: error,
                 status: "failed"
             }, { status: 500 })
         }

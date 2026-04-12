@@ -1148,8 +1148,8 @@ function SourceMissionControlContent() {
 
             let data: StagePayload | null = null;
             
-            // Handle streaming for Draft, Insights, and Editorial Strategy stages
-            if ((stage.id === "draft" || stage.id === "insights" || stage.id === "angle" || stage.id === "cluster") && res.body) {
+            // Handle streaming for all long-running stages (Draft, Insights, Strategize, Analyze, Socialise)
+            if ((stage.id === "draft" || stage.id === "insights" || stage.id === "angle" || stage.id === "cluster" || stage.id === "qa" || stage.id === "socialise") && res.body) {
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
                 let fullContent = "";
