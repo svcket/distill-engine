@@ -196,6 +196,7 @@ async def run_script(run_req: RunRequest, request: Request, x_api_key: str = Hea
             "success": process.returncode == 0,
             "stdout": stdout,
             "stderr": stderr,
+            "error": stderr if process.returncode != 0 else None,
             "data": result_data,
             "returncode": process.returncode
         }
