@@ -1,4 +1,3 @@
-
 import sys
 import argparse
 import json
@@ -6,12 +5,12 @@ import os
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 from openai import OpenAI
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 
 def generate_insights_orchestrator(source_id: str, lang: str = "en") -> Dict[str, Any]:
     """Convenience wrapper for the Unified Analysis Cluster."""
-    base = os.path.dirname(__file__)
-    packet_path = get_safe_tmp_path(lang, f"insight_packets/{f"{source_id}_packet.json")
-    return extract_insights(packet_path}")
+    packet_path = get_safe_tmp_path(f"{source_id}_packet.json", "insight_packets")
+    return extract_insights(packet_path, lang)
 
 class Framework(BaseModel):
     title: str = Field(description="Name of the framework or model.")

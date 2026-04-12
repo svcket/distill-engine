@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 """
 Transcript Harvester — multi-source transcript fetcher.
 # flake8: noqa: E501
@@ -766,7 +767,7 @@ def fetch_whisper_transcript(
                     blocks = re.split(r'\n\s*\n', content)
                     for block in blocks:
                         time_pattern = r'(\d{2}:\d{2}:\d{2}[\.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[\.,]\d{3})'
-                    time_match = re.search(time_pattern, block)
+                        time_match = re.search(time_pattern, block)
                         if time_match:
                             start_str, end_str = time_match.groups()
                             # Convert HH:MM:SS.mmm to seconds
@@ -1893,8 +1894,8 @@ if __name__ == "__main__":
         try:
             # Re-discover or mock the output_dir to ensure we save the file
             execution_dir = os.path.dirname(__file__)
-            out_dir = get_safe_tmp_path(exist_ok=True, f"transcripts/{args.source_id)
-            os.makedirs(out_dir}")
+            out_dir = get_safe_tmp_dir(f"transcripts/{args.source_id}")
+            os.makedirs(out_dir, exist_ok=True)
             res = finish_transcript(args.source_id, rescued_segments, out_dir, status="rescued_text")
             res["error_detail"] = error_str
             res["is_failure"] = True

@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import sys
 import argparse
 import json
@@ -121,14 +122,13 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
     start_time = time.time()
     results = {}
 
-    is_thin = (quality_reason == "THIN")
-    
-        # Cloud Storage Handshake (Mirroring intermediate results for Split Architecture)
-        try:
-            from supabase_utils import upload_artifact
-        except Exception:
-            upload_artifact = None
+    # Cloud Storage Handshake (Mirroring intermediate results for Split Architecture)
+    try:
+        from supabase_utils import upload_artifact
+    except Exception:
+        upload_artifact = None
 
+    try:
         # 1. Refine Stage (Hidden)
         try:
             print(f"[{source_id}] Cluster Stage 1/4: Refining Transcript...", flush=True)
@@ -141,11 +141,9 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             print(f"[{source_id}] Refine stage failed: {e}", file=sys.stderr)
             results["refine"] = {"status": "skipped", "error": str(e)}
 
-    # 2. Summary Stage
+        # 2. Summary Stage
         try:
             print(f"[{source_id}] Cluster Stage 2/4: Summarizing...", flush=True)
-            # HARDENING: Check for transcript existence before calling summarizer
-            # Use glob to be resilient to .json or .txt extensions
             refined_dir = get_safe_tmp_dir(f"refined_transcripts/{source_id}")
             raw_dir = get_safe_tmp_dir(f"transcripts/{source_id}")
             

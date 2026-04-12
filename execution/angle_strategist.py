@@ -1,3 +1,4 @@
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 
 import sys
 import argparse
@@ -45,13 +46,13 @@ def extract_angle(
     input_text = json.dumps(insights_data)
     if not insights_data or not any(insights_data.values()):
         print(f"[{source_id}] Angle Strategist: Insights empty. Falling back to summary context.", file=sys.stderr)
-        summary_path = get_safe_tmp_path('Unknown Source', f"summaries/{f"{source_id}_summary.json")
+        summary_path = get_safe_tmp_path(f"{source_id}_summary.json", "summaries")
         summary_bundle = load_json(summary_path)
         if summary_bundle and summary_bundle.get("summary"):
             input_text = f"SOURCE SUMMARY (Fallback):\n{summary_bundle['summary']}"
         else:
             # Last resort: use the title
-            input_text = f"SOURCE TITLE (Minimal context):\n{insights_bundle.get('title'}")}"
+            input_text = f"SOURCE TITLE (Minimal context):\n{insights_bundle.get('title', 'Unknown Title')}"
 
     # SPARSE CONTEXT GUARD: If input text is less than 500 characters, analysis is meaningless
     if len(input_text.strip()) < 500:
