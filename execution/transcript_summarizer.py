@@ -1,10 +1,14 @@
-from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
-
 import sys
+import os
+
+# Ensure local imports work by adding directory to path immediately
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import argparse
 import json
-import os
 import re
+import glob
 from openai import OpenAI
 from typing import Dict, Any
 from supabase_utils import upload_artifact
