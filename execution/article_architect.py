@@ -56,9 +56,10 @@ def generate_blueprint(angle_path: str, insights_path: str, lang: str = "en"):
     with open(insights_path, 'r', encoding='utf-8') as fi:
         insights_bundle = json.load(fi)
         
-    source_id = angle_bundle.get("source_id") or angle_bundle.get("video_id")
-    angle_data = angle_bundle.get("data", {})
-    insights_data = insights_bundle.get("data", {})
+    source_id = angle_bundle.get("source_id") or angle_bundle.get("video_id") or source_id
+    # Schema Resilience: Support both standard and rescued intelligence formats
+    angle_data = angle_bundle.get("data") or angle_bundle or {}
+    insights_data = insights_bundle.get("data") or insights_bundle.get("insights") or {}
     
     if "OPENAI_API_KEY" not in os.environ or not os.environ["OPENAI_API_KEY"]:
         mock_result = {

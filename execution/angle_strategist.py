@@ -67,7 +67,8 @@ def extract_angle(
         insights_bundle = json.load(f)
         
     source_id = insights_bundle.get("source_id") or insights_bundle.get("video_id")
-    insights_data = insights_bundle.get("data", {})
+    # Schema Resilience: Support both standard and rescued intelligence formats
+    insights_data = insights_bundle.get("data") or insights_bundle.get("insights") or {}
     
     # FALLBACK: If insights are empty, try to load the summary as content source
     input_text = json.dumps(insights_data)

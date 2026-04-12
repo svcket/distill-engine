@@ -97,6 +97,9 @@ def download_artifact(category: str, source_id: str, filename: str, local_path: 
     if not client:
         return False
 
+    # Self-Healing: Ensure bucket exists before download
+    ensure_bucket_exists(category)
+
     # Remote path: [source_id]/[filename]
     remote_path = f"{source_id}/{filename}"
     
