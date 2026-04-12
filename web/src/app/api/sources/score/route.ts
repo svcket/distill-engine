@@ -73,13 +73,12 @@ export async function POST(request: Request) {
         }
 
         // 3. Execution
-        const { success, data, error } = await runPythonScript(
+        const { success, data, error, mode } = await runPythonScript(
             'ingest_source.py',
-            [`--source-id=${sourceId}`]
+            [`--source-id=${sourceId}`, `--url=${source.url}`]
         )
 
         if (!success) {
-            const mode = (data as any)?.mode || 'unknown'
             console.error(`[Score API] Judge Alignment Failed (mode: ${mode}):`, error)
             return NextResponse.json({ 
                 error: `Judge Alignment Failed (${mode}): ${error || 'Unspecified execution error'}`, 
