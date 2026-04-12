@@ -1885,9 +1885,9 @@ def fetch_transcript(
                     print(f"[{source_id}] ERROR: {msg}", file=sys.stderr)
                     raise Exception(msg)
 
-                print(f"[{source_id}] SUCCESS: High-fidelity intelligence recovered.", file=sys.stderr)
-                    print(f"[{source_id}] RESCUE WARNING: Content is thin ({len(rescued)} chars). Prepending hallucination shield...", file=sys.stderr)
-
+                if rescued:
+                    print(f"[{source_id}] SUCCESS: High-fidelity intelligence recovered.", file=sys.stderr)
+                
                 # Create a single segment with the rescued text
                 result = finish_transcript(source_id, [{"text": rescued, "start": 0.0, "duration": 0.0}], output_dir)
                 result["status"] = "rescued_text"
