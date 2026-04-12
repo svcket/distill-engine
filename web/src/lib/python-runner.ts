@@ -47,7 +47,7 @@ async function runPythonScriptRemote<T>(
     scriptName: string,
     args: string[],
     options: { env?: Record<string, string> } = {}
-): Promise<{ success: boolean; data?: T; error?: string; rawOutput?: string }> {
+): Promise<{ success: boolean; data?: T; error?: string; rawOutput?: string; mode: string }> {
     const backendUrl = process.env.BACKEND_URL
     const apiKey = process.env.INTERNAL_API_KEY
 
@@ -72,6 +72,7 @@ async function runPythonScriptRemote<T>(
         if (!response.ok) {
             const errorText = await response.text()
             return {
+                mode: 'remote',
                 success: false,
                 error: `Remote Backend Error (${response.status}): ${errorText}`
             }
@@ -79,28 +80,30 @@ async function runPythonScriptRemote<T>(
 
         const result = await response.json()
         return {
+            mode: 'remote',
             success: result.success,
             data: result.data as T,
-            error: result.error,
+            error: result.error || (result.success ? undefined : 'Unspecified remote error'),
             rawOutput: result.stdout
         }
     } catch (err: any) {
         console.error('[Python Runner] Remote proxy failed:', err)
         return {
+            mode: 'remote',
             success: false,
-            error: `Failed to connect to remote backend: ${err.message}`
+            error: `Failed to connect to remote backend (${backendUrl}): ${err.message}`
         }
     }
 }
 
 /**
- * LOCAL EXECUTION (Railway / Dev)
+ * LOCAL EXECUTION (Railway / Dev / Vercel Fallback)
  */
 async function runPythonScriptLocal<T>(
     scriptName: string,
     args: string[] = [],
     options: { expectedArtifact?: string; env?: Record<string, string> } = {}
-): Promise<{ success: boolean; data?: T; error?: string; rawOutput?: string }> {
+): Promise<{ success: boolean; data?: T; error?: string; rawOutput?: string; mode: string }> {
     const executionDir = path.resolve(process.cwd(), '../execution')
     const scriptPath = path.join(executionDir, scriptName)
 
@@ -108,6 +111,8 @@ async function runPythonScriptLocal<T>(
     // AGGRESSIVE PRODUCTION FALLBACK: Always try /tmp first for production resilience
     const tmpDir = fs.existsSync('/tmp') ? '/tmp' : path.resolve(executionDir, '.tmp')
     
+    console.log(`[Python Runner] Local Execution: ${scriptName} | tmpDir: ${tmpDir}`)
+
     const childEnv: Record<string, string | undefined> = { 
         ...process.env, 
         ...localEnv,
@@ -121,39 +126,33 @@ async function runPythonScriptLocal<T>(
         delete childEnv.OPENAI_API_KEY
     }
 
-    const { stdout, stderr } = await execFileAsync('python3', [scriptPath, ...args], {
-        cwd: executionDir,
-        timeout: 600000, 
-        env: childEnv as NodeJS.ProcessEnv, 
-    })
+    try {
+        const { stdout, stderr } = await execFileAsync('python3', [scriptPath, ...args], {
+            cwd: executionDir,
+            timeout: 600000, 
+            env: childEnv as NodeJS.ProcessEnv, 
+        })
 
-    const output = stdout.trim()
+        const output = stdout.strip()
 
-    // Artifact verification
-    if (options.expectedArtifact) {
-        const artifactPath = path.isAbsolute(options.expectedArtifact) 
-            ? options.expectedArtifact 
-            : path.join(executionDir, options.expectedArtifact)
-        
-        if (!fs.existsSync(artifactPath) || fs.statSync(artifactPath).size === 0) {
+        try {
+            const lines = output.split('\n')
+            const possibleJson = [...lines].reverse().find(l => l.trim().startsWith('{') || l.strip().startsWith('['))
+            const data = possibleJson ? JSON.parse(possibleJson) : JSON.parse(output)
+            return { mode: 'local', success: true, data: data as T, rawOutput: output }
+        } catch (err) {
             return { 
+                mode: 'local',
                 success: false, 
-                error: `Pipeline Stage Failed: Artifact missing or empty at ${options.expectedArtifact}`,
+                error: `Local Execution: Malformed JSON output. ${stderr}`,
                 rawOutput: output 
             }
         }
-    }
-
-    try {
-        const lines = output.split('\n')
-        const possibleJson = [...lines].reverse().find(l => l.trim().startsWith('{') || l.trim().startsWith('['))
-        const data = possibleJson ? JSON.parse(possibleJson) : JSON.parse(output)
-        return { success: true, data: data as T, rawOutput: output }
-    } catch (err) {
-        return { 
-            success: false, 
-            error: `Pipeline Stage Failed: Malformed JSON output.`,
-            rawOutput: output 
+    } catch (err: any) {
+        return {
+            mode: 'local',
+            success: false,
+            error: `Local Execution Failed: ${err.message} | stderr: ${err.stderr}`
         }
     }
 }
@@ -165,12 +164,15 @@ export async function runPythonScript<T = unknown>(
     scriptName: string,
     args: string[] = [],
     options: { expectedArtifact?: string; env?: Record<string, string> } = {}
-): Promise<{ success: boolean; data?: T; error?: string; rawOutput?: string }> {
+): Promise<{ success: boolean; data?: T; error?: string; rawOutput?: string; mode: string }> {
     
-    // DECISION: Use remote backend if BACKEND_URL is defined (production "split" mode)
-    // NOTE: In Railway, we won't set BACKEND_URL, so it will run local.
-    // In Vercel, we will set BACKEND_URL, so it will proxy to Railway.
-    if (process.env.BACKEND_URL && process.env.NODE_ENV === 'production') {
+    // Fingerprint the environment
+    const hasBackend = !!process.env.BACKEND_URL
+    const isProd = process.env.NODE_ENV === 'production'
+
+    console.log(`[Python Runner] Entrypoint | hasBackend: ${hasBackend} | isProd: ${isProd} | NODE_ENV: ${process.env.NODE_ENV}`)
+
+    if (hasBackend && isProd) {
         return runPythonScriptRemote<T>(scriptName, args, options)
     }
 

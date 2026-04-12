@@ -79,9 +79,10 @@ export async function POST(request: Request) {
         )
 
         if (!success) {
-            console.error('[Score API] Judge Alignment Failed:', error)
+            const mode = (data as any)?.mode || 'unknown'
+            console.error(`[Score API] Judge Alignment Failed (mode: ${mode}):`, error)
             return NextResponse.json({ 
-                error: `Judge Alignment Failed: ${error || 'Unknown execution error'}`, 
+                error: `Judge Alignment Failed (${mode}): ${error || 'Unspecified execution error'}`, 
                 details: error 
             }, { status: 500 })
         }
