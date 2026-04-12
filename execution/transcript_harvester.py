@@ -52,6 +52,29 @@ from monitoring import log_rescue_attempt
 from supabase_utils import upload_artifact
 from adapters.podcast_adapter import is_generic_title
 
+def clean_title_for_search(title: str) -> str:
+    """
+    Clean a title for high-fidelity fuzzy search.
+    Removes YouTube/Podcast fluff like episode numbers, bracketed tags, and creator suffixes.
+    """
+    if not title: return ""
+    # 1. Remove bracketed/parenthetical content (e.g., "[Official Audio]", "(Out now)")
+    title = re.sub(r'\[.*?\]|\(.*?\)', '', title)
+    # 2. Split by common separators and take the core (e.g., "900 days left | Emad Mostaque" -> "900 days left")
+    for sep in ['|', '-', ':', '–']:
+        if sep in title:
+            # Check which part is more likely the title (usually the first part)
+            parts = title.split(sep)
+            # If the first part is more than 5 chars, it's likely the title
+            if len(parts[0].strip()) > 5:
+                title = parts[0]
+                break
+    # 3. Strip episode notation (e.g., "Ep. 12", "Episode #456")
+    title = re.sub(r'(?i)ep(isode)?\.?\s*#?\s*\d+', '', title)
+    # 4. Final cleanup
+    title = title.replace('"', '').strip()
+    return title
+
 def get_audio_duration(filepath: str) -> float:
     """Helper to get audio duration using ffprobe/ffmpeg."""
     try:
@@ -1521,20 +1544,24 @@ def search_podcast_mirror_on_youtube(title: str, creator_name: str = None) -> Op
     SCAVENGER MODE: If a direct YouTube video is restricted, 
     search for its audio-only or podcast version hosted elsewhere on YouTube.
     """
-    if not title or len(title) < 10: return None
+    if not title: return None
     
-    # Clean the title of bracketed channel names or generic tags
-    clean_title = re.sub(r'\[.*?\]|\(.*?\)', '', title).strip()
+    # 1. FUZZY CLEANING: Remove title fluff
+    clean_title = clean_title_for_search(title)
+    if not clean_title: return None
+
+    # 2. QUERY BUILDING: Focus on the semantic core
+    # We use a broad search first, then a very targeted one
     search_query = f'"{clean_title}"'
     if creator_name:
         search_query += f" {creator_name}"
-    search_query += " podcast full interview audio"
+    search_query += " podcast full"
     
-    print(f"[SCAVENGER HUNT] Searching YouTube for a full-length podcast version: {search_query}...")
+    print(f"[SCAVENGER HUNT] Searching YouTube for mirror: {search_query}...")
     
     try:
         cmd = [
-            "yt-dlp",
+            "python3", "-m", "yt_dlp",
             "--get-id",
             "--quiet",
             "--no-playlist",
@@ -1544,8 +1571,6 @@ def search_podcast_mirror_on_youtube(title: str, creator_name: str = None) -> Op
         video_id = result.stdout.strip()
         
         if video_id:
-            # Simple validation: ensure it's not the same video ID that failed
-            # (though the caller would usually handle this)
             return f"https://www.youtube.com/watch?v={video_id}"
     except Exception as e:
         print(f"[SCAVENGER HUNT] Search failed: {e}")
