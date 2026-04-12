@@ -79,7 +79,11 @@ export async function POST(request: Request) {
         )
 
         if (!success) {
-            return NextResponse.json({ error: 'Failed to execute judge script', details: error }, { status: 500 })
+            console.error('[Score API] Judge Alignment Failed:', error)
+            return NextResponse.json({ 
+                error: `Judge Alignment Failed: ${error || 'Unknown execution error'}`, 
+                details: error 
+            }, { status: 500 })
         }
 
         const result = (data || {}) as Record<string, unknown>
