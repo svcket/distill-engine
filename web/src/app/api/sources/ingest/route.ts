@@ -35,7 +35,7 @@ export async function POST(request: Request) {
         // Artifacts are stored on the remote engine and proxied via /api/sources/[id]/results
         
         const userId = String(session.user.id)
-        // SELF-HEALING: Recreate user record if deleted during migration but session persists
+        // Ensure user exists
         const userExists = await withRetry(() => prisma.user.findUnique({ where: { id: userId } }))
         if (!userExists) {
             await withRetry(() => prisma.user.create({
@@ -48,13 +48,15 @@ export async function POST(request: Request) {
             }))
         }
 
+        const sourceId = `${userId}_${result.source_id}`;
+
         // Persist the source to Postgres scoped to the user (Atomic Ownership Logic)
         let source;
         try {
             source = await withRetry(() => prisma.source.create({
                 data: {
+                    id: sourceId,
                     userId: userId,
-                    externalId: result.source_id,
                     title: result.title || 'Unknown Source',
                     url: result.url || url,
                     type: result.source_type || 'youtube',
@@ -66,10 +68,10 @@ export async function POST(request: Request) {
                 }
             }))
         } catch (err: unknown) {
-            // If the user already has this specific URL, we update their existing record
+            // Update existing record for THIS user
             const updateResult = await withRetry(() => prisma.source.updateMany({
                 where: { 
-                    url: result.url || url,
+                    id: sourceId,
                     userId: userId 
                 },
                 data: {
@@ -79,38 +81,32 @@ export async function POST(request: Request) {
             }))
             
             if (updateResult.count === 0) {
-                 // Fallback if update fails for some reason
                  throw err;
             }
 
-            source = await withRetry(() => prisma.source.findFirst({ 
-                where: { url: result.url || url, userId: userId } 
+            source = await withRetry(() => prisma.source.findUnique({ 
+                where: { id: sourceId } 
             }))
         }
 
-        // Reset usage count logic (Stage 6 prep)
+        // Reset usage count logic
         await withRetry(() => prisma.usage.upsert({
             where: { userId: userId },
             update: { sourcesProcessed: { increment: 1 } },
             create: { userId: userId, sourcesProcessed: 1 }
         }))
 
-        // AUTOMATION: Pipeline now parallelized for speed. 
-        // TRUTH PROTOCOL: Prioritize explicit environment variable, fallback to dynamic request origin.
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin
 
-        // Trigger the pipeline without waiting for full completion in this request
-        // (Ensures the user gets a response immediately while backend works)
+        // Trigger the pipeline
         const triggerPipeline = async () => {
             try {
-                // console.log(`[Pipeline] Triggering fetch for ${result.source_id} at ${baseUrl}`)
-                
-                // Step 1: Transcription (Sequential Dependency)
+                // Step 1: Transcription
                 const fetchRes = await globalThis.fetch(`${baseUrl}/api/transcripts/fetch`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Cookie': request.headers.get('cookie') || '' },
                     body: JSON.stringify({ 
-                        sourceId: result.source_id, 
+                        sourceId: sourceId, 
                         url: result.url || url, 
                         sourceType: result.source_type 
                     })
@@ -119,41 +115,28 @@ export async function POST(request: Request) {
                 if (fetchRes.ok) {
                     const transcriptionResult = await fetchRes.json();
                     
-                    // STATUS CHECK: Ensure transcription actually succeeded before clearing subsequent stages
                     if (transcriptionResult.status === 'success' || transcriptionResult.result?.status === 'success') {
-                        // console.log(`[Pipeline] Fetch successful for ${result.source_id}. Starting sequential summary and insights...`)
-                        // Step 2 & 3: Summary and Insights (Sequential to prevent CPU saturation)
+                        // Step 2 & 3: Summary and Insights
                         const summaryRes = await globalThis.fetch(`${baseUrl}/api/transcripts/summary`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Cookie': request.headers.get('cookie') || '' },
-                            body: JSON.stringify({ transcriptId: result.source_id })
+                            body: JSON.stringify({ transcriptId: sourceId })
                         })
                         if (summaryRes.ok) {
-                            // console.log(`[Pipeline] Summary completed for ${result.source_id}`)
                             await globalThis.fetch(`${baseUrl}/api/insights/extract`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json', 'Cookie': request.headers.get('cookie') || '' },
-                                body: JSON.stringify({ transcriptId: result.source_id })
+                                body: JSON.stringify({ transcriptId: sourceId })
                             })
-                            // console.log(`[Pipeline] Insights extraction completed for ${result.source_id}`)
-                        } else {
-                            console.error(`[Pipeline] Summary failed for ${result.source_id}`)
                         }
-                    } else {
-                        console.error(`[Pipeline] Fetch transcription failed (result: ${transcriptionResult.status}) for ${result.source_id}. Pipeline halted.`);
                     }
-                } else {
-                    console.error(`[Pipeline] Fetch HTTP error ${fetchRes.status} for ${result.source_id}. Pipeline halted.`);
                 }
-                // console.log(`[Pipeline] Background chain lifecycle ended for ${result.source_id}`)
             } catch (pipelineErr) {
-                console.error(`[Pipeline Background ERROR] Trigger failed at ${baseUrl}. Ensure NEXT_PUBLIC_APP_URL is correct. Detail:`, pipelineErr)
+                console.error(`[Pipeline Background ERROR] Trigger failed:`, pipelineErr)
             }
         }
         
-        // Execute trigger in background
         triggerPipeline();
-
         return NextResponse.json({ result: source })
 
     } catch (err: unknown) {
