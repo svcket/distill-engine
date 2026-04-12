@@ -1659,7 +1659,11 @@ function SourceMissionControlContent() {
                                                                                  draft: "View Draft",
                                                                                  qa: "View Matrix",
                                                                                  socialise: "View Assets",
-                                                                                 cluster: "View Analysis"
+                                                                                 cluster: "View Analysis",
+                                                                                 angle: "View Strategy",
+                                                                                 packet: "View Density",
+                                                                                 refine: "View Refinement",
+                                                                                 export: "Export"
                                                                              }[stage.id] || "View"}
                                                                          </Button>
                                                                      )}
