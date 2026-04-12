@@ -50,7 +50,6 @@ except ImportError:
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from monitoring import log_rescue_attempt
 from supabase_utils import upload_artifact
-from scavenger_hub import trigger_scavenger_rescue
 from adapters.podcast_adapter import is_generic_title
 
 def clean_title_for_search(title: str) -> str:
@@ -1769,7 +1768,7 @@ def fetch_transcript(
                             except Exception: pass
                     
                     # FINAL DEFENSE: Apify Universal Scavenger Rescue
-                    from scavenger_hub import ScavengerHub
+                    from scavenger_hub import ScavengerHub, trigger_scavenger_rescue
                     hub_check = ScavengerHub()
                     if not hub_check.is_available():
                         print(f"[{source_id}] SCAVENGER SKIPPED: 'APIFY_TOKEN' not set. Restricted content cannot be recovered.", file=sys.stderr)

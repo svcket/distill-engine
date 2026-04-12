@@ -14,8 +14,8 @@ import re
 # Ensure local imports work by adding directory to path immediately
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+
 from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
-from scavenger_hub import trigger_scavenger_rescue
 
 
 # ─── Language Detection ─────────────────────────────────────────────────────
@@ -106,6 +106,7 @@ def ingest_source(source_id: str, url: str = None):
             s_type = metadata.get("source_type", "youtube")
             s_url = metadata.get("url")
             if s_url:
+                from scavenger_hub import trigger_scavenger_rescue
                 rescue = trigger_scavenger_rescue(s_type, s_url, mode="metadata")
                 if rescue:
                     print(f"[ingest] Scavenger Success: Recovered metadata for {s_url}", file=sys.stderr)
