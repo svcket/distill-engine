@@ -1,8 +1,7 @@
 import { auth } from "@/auth"
 import { prisma, withRetry } from "@/lib/prisma"
 import { NextResponse } from 'next/server'
-import { runPythonScript } from '@/lib/python-runner'
-import { sendPushNotification } from '@/lib/one-signal'
+import { runPythonScriptStream } from '@/lib/python-runner'
 
 export async function POST(request: Request) {
     const session = await auth()
@@ -35,35 +34,15 @@ export async function POST(request: Request) {
         ]
         if (language) args.push('--lang', language)
 
-                status: "failed"
-            }, { status: 500 })
+        // Switch to streaming mode to prevent Vercel/Next.js timeouts during socialization
+        const response = await runPythonScriptStream('thread_architect.py', args)
+        
+        if (!response.ok) {
+            const errorText = await response.text()
+            return NextResponse.json({ error: errorText }, { status: response.status })
         }
 
-        // Updating source status in Supabase
-        await withRetry(() => prisma.source.update({
-            where: { id: sourceId, userId: session.user?.id },
-            data: { 
-                status: 'done',
-                completedStages: {
-                    push: 'socialise'
-                }
-            }
-        }));
-
-        // Dispatch Push Notification
-        if (session.user?.id) {
-            await sendPushNotification(
-                session.user.id, 
-                "Distillation Complete", 
-                `Your analysis for "${source.title}" is ready.`,
-                `${process.env.NEXT_PUBLIC_APP_URL}/directory?id=${sourceId}`
-            );
-        }
-
-        return NextResponse.json({ 
-            result: data,
-            message: "Socialised assets generated successfully."
-        })
+        return response
 
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
