@@ -1839,7 +1839,7 @@ def fetch_transcript(
                                      max_segments=max_segments, 
                                      lang=lang
                                  )
-                             except Exception: pass
+                              except Exception: pass
 
                     # 3. UNIVERSAL SCRAPE PIVOT (Podtail etc)
                     try:
