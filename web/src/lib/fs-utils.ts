@@ -2,30 +2,42 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 
-const IS_VERCEL = process.env.VERCEL === '1' || !!process.env.NEXT_PUBLIC_VERCEL_URL || !!process.env.VERCEL_URL
-
 /**
  * Returns a writable temporary directory path and ensures it exists.
- * In Vercel, this is always /tmp.
- * In local/dev, it's relative to the execution directory.
+ * In production (Vercel), we prioritize /tmp.
+ * In development, we use .tmp in the execution directory.
  */
 export function getSafeTmpDir(subDir: string = ''): string {
-    const baseDir = IS_VERCEL 
-        ? os.tmpdir()
-        : path.resolve(process.cwd(), '../execution/.tmp')
+    // AGGRESSIVE PRODUCTION FALLBACK: Try system /tmp first, then os.tmpdir, then local.
+    // This removes reliance on environment variables that might be missing in certain contexts.
+    let baseDir = '/tmp'
+    
+    try {
+        if (!fs.existsSync(baseDir)) {
+            baseDir = os.tmpdir()
+        }
+    } catch (e) {
+        baseDir = path.resolve(process.cwd(), '../execution/.tmp')
+    }
 
     const targetDir = subDir ? path.join(baseDir, subDir) : baseDir
 
-    if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true })
+    try {
+        if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true })
+        }
+    } catch (e) {
+        // Final fallback if /tmp is strictly forbidden (unlikely on Vercel)
+        const fallback = path.resolve(process.cwd(), '../execution/.tmp', subDir)
+        if (!fs.existsSync(fallback)) {
+            fs.mkdirSync(fallback, { recursive: true })
+        }
+        return fallback
     }
 
     return targetDir
 }
 
-/**
- * Returns a safe path for a specific file within the temporary directory.
- */
 export function getSafeTmpPath(fileName: string, subDir: string = ''): string {
     return path.join(getSafeTmpDir(subDir), fileName)
 }

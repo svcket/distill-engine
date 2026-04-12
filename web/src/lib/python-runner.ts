@@ -105,8 +105,8 @@ async function runPythonScriptLocal<T>(
     const scriptPath = path.join(executionDir, scriptName)
 
     const localEnv = loadEnvLocal()
-    const IS_VERCEL = process.env.VERCEL === '1' || !!process.env.NEXT_PUBLIC_VERCEL_URL || !!process.env.VERCEL_URL
-    const tmpDir = IS_VERCEL ? '/tmp' : path.resolve(executionDir, '.tmp')
+    // AGGRESSIVE PRODUCTION FALLBACK: Always try /tmp first for production resilience
+    const tmpDir = fs.existsSync('/tmp') ? '/tmp' : path.resolve(executionDir, '.tmp')
     
     const childEnv: Record<string, string | undefined> = { 
         ...process.env, 
