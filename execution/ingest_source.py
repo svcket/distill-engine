@@ -10,6 +10,10 @@ import json
 import os
 import glob
 import re
+
+# Ensure local imports work by adding directory to path immediately
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 
 
@@ -145,6 +149,9 @@ def ingest_source(source_id: str):
             from adapters.adapter_router import route_source, ADAPTERS
             url = metadata.get("url")
             if url:
+                # Resolve the correct adapter for this URL
+                adapter = next(a for a in ADAPTERS if a.detect(url))
+                
                 enriched = route_source(url, shell=False)
                 metadata.update(enriched.to_legacy_dict())
 
