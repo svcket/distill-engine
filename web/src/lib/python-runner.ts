@@ -137,7 +137,7 @@ async function runPythonScriptLocal<T>(
 
         try {
             const lines = output.split('\n')
-            const possibleJson = [...lines].reverse().find(l => l.trim().startsWith('{') || l.strip().startsWith('['))
+            const possibleJson = [...lines].reverse().find(l => l.trim().startsWith('{') || l.trim().startsWith('['))
             const data = possibleJson ? JSON.parse(possibleJson) : JSON.parse(output)
             return { mode: 'local', success: true, data: data as T, rawOutput: output }
         } catch (err) {
