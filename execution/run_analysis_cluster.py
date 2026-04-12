@@ -23,7 +23,7 @@ from adapters.podcast_adapter import is_generic_title
 
 # ─── Content Quality Gate ─────────────────────────────────────────────────────
 
-MIN_WORD_COUNT = 5            # Minimum real words required to proceed (Lowered from 100 for resilience)
+MIN_WORD_COUNT = 150           # Minimum real words required to proceed
 MAX_URL_RATIO  = 0.85         # If >85% of tokens are URLs/links, flag as thin but proceed
 
 def _assess_content_quality(source_id: str, base: str) -> tuple:
@@ -57,10 +57,10 @@ def _assess_content_quality(source_id: str, base: str) -> tuple:
     real_words   = len(word_tokens)
 
     if real_words < MIN_WORD_COUNT:
-        return True, "THIN"
+        return False, "THIN"
 
     if url_ratio > MAX_URL_RATIO:
-        return True, "THIN"
+        return False, "THIN"
 
     return True, ""
 
@@ -100,7 +100,9 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
 
     is_sufficient, quality_reason = _assess_content_quality(source_id, base)
     if not is_sufficient:
-        print(f"[{source_id}] CONTENT QUALITY GATE FAILED: {quality_reason}", file=sys.stderr)
+        msg = f"Analysis Cluster Failed: Insufficient source data for '{source_id}' ({quality_reason}). Pipeline halted at hard quality gate."
+        print(f"[{source_id}] ERROR: {msg}", file=sys.stderr)
+        raise Exception(msg)
         final_payload = {
             "status": "thin_content",
             "source_id": source_id,
