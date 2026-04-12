@@ -133,7 +133,7 @@ async function runPythonScriptLocal<T>(
             env: childEnv as NodeJS.ProcessEnv, 
         })
 
-        const output = stdout.strip()
+        const output = stdout.trim()
 
         try {
             const lines = output.split('\n')
