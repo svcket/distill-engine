@@ -755,6 +755,12 @@ function SourceMissionControlContent() {
                     return next
                 })
 
+                setLogs(prev => [{ 
+                    event: `${stage.label} completed`, 
+                    time: "Just now", 
+                    status: "success" 
+                }, ...prev])
+
                 currentCompleted.add(stage.id)
                 if (stage.id === "cluster") {
                     currentCompleted.add("refine")

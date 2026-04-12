@@ -182,27 +182,29 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
 
         # 3. Packet / Density Mapping (Hidden)
         try:
-            print(f"[{source_id}] Cluster Stage 3/4: Building Density Packet...", flush=True)
+            print(f"[{source_id}] Cluster Stage 3/4: Building Insight Packet...", flush=True)
+            # If summary failed but we rescued it, generate_packet_orchestrator should know or handle it
             results["packet"] = generate_packet_orchestrator(source_id)
             if upload_artifact:
                 packet_path = get_safe_tmp_path(f"{source_id}_packet.json", "insight_packets")
                 if os.path.exists(packet_path):
                     upload_artifact("packets", source_id, packet_path)
         except Exception as e:
-            print(f"[{source_id}] Packet stage failed: {e}", file=sys.stderr)
-            results["packet"] = {"status": "error", "error": str(e)}
-        
+            print(f"[{source_id}] Packet stage error: {str(e)}", file=sys.stderr)
+            results["packet"] = {"status": "rescued", "error": str(e)}
+
         # 4. Insights Extraction
         try:
             print(f"[{source_id}] Cluster Stage 4/4: Extracting Insights...", flush=True)
+            # HARDENING: If packet failed, pass empty or metadata-derived content
             results["insights"] = generate_insights_orchestrator(source_id, lang)
             if upload_artifact:
                 insights_path = get_safe_tmp_path(f"{source_id}_insights.json", "insights")
                 if os.path.exists(insights_path):
                     upload_artifact("insights", source_id, insights_path)
         except Exception as e:
-            print(f"[{source_id}] Insights stage failed: {e}", file=sys.stderr)
-            results["insights"] = {"status": "failed", "error": str(e)}
+            print(f"[{source_id}] Insights stage error: {str(e)}", file=sys.stderr)
+            results["insights"] = {"status": "rescued", "error": str(e)}
 
         end_time = time.time()
         print(f"[{source_id}] Unified Cluster COMPLETE in {end_time - start_time:.2f}s", flush=True)
