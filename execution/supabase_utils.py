@@ -25,6 +25,30 @@ def get_supabase_client():
         print("[Supabase] Warning: Missing URL or SERVICE_KEY. Skipping cloud upload.", file=sys.stderr)
         return None
     return create_client(url, key)
+    
+def ensure_bucket_exists(bucket_id: str):
+    """
+    Ensure a Supabase Storage bucket exists. Creates it if missing.
+    """
+    client = get_supabase_client()
+    if not client:
+        return False
+        
+    try:
+        # Check if bucket exists
+        client.storage.get_bucket(bucket_id)
+        return True
+    except Exception as e:
+        # If 404/not found, attempt creation
+        if "not found" in str(e).lower() or "404" in str(e):
+            try:
+                print(f"[Supabase] Provisioning missing bucket: '{bucket_id}'...", file=sys.stderr)
+                client.storage.create_bucket(bucket_id, options={"public": False})
+                return True
+            except Exception as create_err:
+                print(f"[Supabase] Failed to provision bucket '{bucket_id}': {create_err}", file=sys.stderr)
+                return False
+        return False
 
 def upload_artifact(category: str, source_id: str, local_path: str, filename: Optional[str] = None):
     """
@@ -33,6 +57,9 @@ def upload_artifact(category: str, source_id: str, local_path: str, filename: Op
     client = get_supabase_client()
     if not client:
         return None
+
+    # Self-Healing: Ensure bucket exists before upload
+    ensure_bucket_exists(category)
 
     if not filename:
         filename = os.path.basename(local_path)
