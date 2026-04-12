@@ -3,7 +3,7 @@ import sys
 import json
 import time
 import requests
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 class ScavengerHub:
     """
