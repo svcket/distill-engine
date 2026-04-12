@@ -95,6 +95,7 @@ model Source {
   score            Int      @default(0)
   transcriptStatus String?  @default("pending")
 
+  externalId       String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   completedStages  String[] @default([])

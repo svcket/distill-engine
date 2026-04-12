@@ -53,8 +53,8 @@ export async function POST(request: Request) {
         try {
             source = await withRetry(() => prisma.source.create({
                 data: {
-                    id: result.source_id,
                     userId: userId,
+                    externalId: result.source_id,
                     title: result.title || 'Unknown Source',
                     url: result.url || url,
                     type: result.source_type || 'youtube',
@@ -66,37 +66,26 @@ export async function POST(request: Request) {
                 }
             }))
         } catch (err: unknown) {
-            // P2002 is Prisma's code for Unique Constraint Violation
-            if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'P2002') {
-                // ATOMIC SECURITY: Combined check and update using updateMany to prevent race-condition bypass
-                const updateResult = await withRetry(() => prisma.source.updateMany({
-                    where: { 
-                        id: result.source_id,
-                        userId: userId 
-                    },
-                    data: {
-                        title: result.title || 'Unknown Source',
-                        status: 'idle', 
-                    }
-                }))
-                
-                if (updateResult.count === 0) {
-                    return NextResponse.json({ 
-                        error: 'Authorization Error: Update failed. This source may be managed by another user or does not exist.' 
-                    }, { status: 403 })
+            // If the user already has this specific URL, we update their existing record
+            const updateResult = await withRetry(() => prisma.source.updateMany({
+                where: { 
+                    url: result.url || url,
+                    userId: userId 
+                },
+                data: {
+                    title: result.title || 'Unknown Source',
+                    status: 'idle', 
                 }
-
-                // HARDEN RE-READ: Ensure retrieved source is strictly scoped to authenticated user to fail closed
-                source = await withRetry(() => prisma.source.findFirst({ 
-                    where: { id: result.source_id, userId: userId } 
-                }))
-                
-                if (!source) {
-                    throw new Error('Verification Error: Source was updated but retrieval failed. Potential race condition detected.')
-                }
-            } else {
-                throw err;
+            }))
+            
+            if (updateResult.count === 0) {
+                 // Fallback if update fails for some reason
+                 throw err;
             }
+
+            source = await withRetry(() => prisma.source.findFirst({ 
+                where: { url: result.url || url, userId: userId } 
+            }))
         }
 
         // Reset usage count logic (Stage 6 prep)

@@ -148,6 +148,13 @@ function ExportsContent() {
                             <p className="text-sm text-muted-foreground/70 max-w-md mx-auto">
                                 {t("monitorSources")}
                             </p>
+                            <div className="pt-4">
+                                <Link href="/sources">
+                                    <Button className="bg-emerald-500 hover:bg-emerald-600 text-white rounded-full px-8 shadow-lg shadow-emerald-500/20 transition-all hover:scale-105 active:scale-95">
+                                        Start Ingesting
+                                    </Button>
+                                </Link>
+                            </div>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
