@@ -10,6 +10,7 @@ import json
 import os
 import glob
 import re
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 
 
 # ─── Language Detection ─────────────────────────────────────────────────────
@@ -97,8 +98,7 @@ def detect_language(text: str) -> tuple:
 # ─── Source Discovery ────────────────────────────────────────────────────────
 
 def find_source(source_id: str) -> dict:
-    base = os.path.dirname(__file__)
-    source_dir = os.path.join(base, ".tmp", "sources")
+    source_dir = get_safe_tmp_dir("sources")
     if not os.path.exists(source_dir):
         return {}
 
@@ -149,9 +149,7 @@ def ingest_source(source_id: str):
                 metadata.update(enriched.to_legacy_dict())
 
                 # Persist enriched metadata so future stages benefit
-                base = os.path.dirname(__file__)
-                adapter = next(a for a in ADAPTERS if a.detect(url))
-                adapter.save(enriched, base)
+                adapter.save(enriched, get_safe_tmp_dir())
         except Exception:
             # Non-fatal — proceed with shell metadata
             pass
@@ -188,7 +186,7 @@ def ingest_source(source_id: str):
         "language_warning": language_warning,
     }
 
-    out_dir = os.path.join(os.path.dirname(__file__), ".tmp", "judgments")
+    out_dir = get_safe_tmp_dir("judgments")
     os.makedirs(out_dir, exist_ok=True)
     json_path = os.path.join(out_dir, f"{source_id}_judgment.json")
     with open(json_path, "w", encoding="utf-8") as f:

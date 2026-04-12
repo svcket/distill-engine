@@ -11,6 +11,7 @@ import os
 import argparse
 import sys
 import glob
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 import subprocess
 import datetime
 import requests
@@ -138,7 +139,7 @@ def extract_video_id(url_or_id: str) -> str:
 def load_source_metadata(source_id: str) -> dict:
     """Load normalized source from .tmp/judgments/ or .tmp/sources/."""
     # 1. Try exact source metadata file first (Most detailed)
-    direct = os.path.join(base, ".tmp", "sources", f"{source_id}.json")
+    direct = get_safe_tmp_path(f"{source_id}.json", "sources")
     
     # Add a small retry loop to handle file system eventual consistency (first-run race condition)
     for attempt in range(3):
@@ -153,7 +154,7 @@ def load_source_metadata(source_id: str) -> dict:
             time.sleep(0.5)
 
     # 2. Loop through discovery files
-    for file in glob.glob(os.path.join(base, ".tmp", "sources", "*.json")):
+    for file in glob.glob(os.path.join(get_safe_tmp_dir("sources"), "*.json")):
         try:
             with open(file, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -165,7 +166,7 @@ def load_source_metadata(source_id: str) -> dict:
             pass
 
     # 3. Try judgments fallback
-    judg_path = os.path.join(base, ".tmp", "judgments", f"{source_id}_judgment.json")
+    judg_path = get_safe_tmp_path(f"{source_id}_judgment.json", "judgments")
     if os.path.exists(judg_path):
         try:
             with open(judg_path, "r", encoding="utf-8") as f:
@@ -178,7 +179,7 @@ def load_source_metadata(source_id: str) -> dict:
 
     # 4. CASE-INSENSITIVE FALLBACK (New)
     # If we didn't find the exact ID, try a case-insensitive search in the sources directory
-    all_sources = glob.glob(os.path.join(base, ".tmp", "sources", "*.json"))
+    all_sources = glob.glob(os.path.join(get_safe_tmp_dir("sources"), "*.json"))
     for file in all_sources:
         if os.path.basename(file).lower() == f"{source_id.lower()}.json":
             try:
@@ -293,8 +294,7 @@ def merge_segments(segments: list, max_segments: int) -> list:
 
 def update_source_metadata(source_id: str, updates: dict):
     """Update the source metadata JSON with new fields (e.g. duration)."""
-    base = os.path.dirname(os.path.abspath(__file__))
-    meta_path = os.path.join(base, ".tmp", "sources", f"{source_id}.json")
+    meta_path = get_safe_tmp_path(f"{source_id}.json", "sources")
     
     if not os.path.exists(meta_path):
         return
@@ -1567,8 +1567,7 @@ def fetch_transcript(
     if lang:
         metadata["language"] = lang
     
-    output_dir = os.path.join(base, ".tmp", "transcripts", source_id)
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = get_safe_tmp_dir(f"transcripts/{source_id}")
     
     # 1. NEW: Determine Strategy
     strategy, method = determine_transcript_strategy(source_id, metadata)
@@ -1581,8 +1580,7 @@ def fetch_transcript(
     metadata["last_fetch_attempt_at"] = datetime.datetime.now().isoformat()
     
     # Save the updated metadata back to disc
-    # (In a real system we'd use the adapter.save, but here we just update .tmp/sources/)
-    meta_path = os.path.join(base, ".tmp", "sources", f"{source_id}.json")
+    meta_path = get_safe_tmp_path(f"{source_id}.json", "sources")
     if os.path.exists(meta_path):
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump([metadata], f, indent=2)

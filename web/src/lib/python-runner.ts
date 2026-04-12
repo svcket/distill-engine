@@ -105,11 +105,14 @@ async function runPythonScriptLocal<T>(
     const scriptPath = path.join(executionDir, scriptName)
 
     const localEnv = loadEnvLocal()
+    const IS_VERCEL = process.env.VERCEL === '1' || !!process.env.NEXT_PUBLIC_VERCEL_URL
+    
     const childEnv: Record<string, string | undefined> = { 
         ...process.env, 
         ...localEnv,
         ...options.env,
-        PYTHONPATH: executionDir 
+        PYTHONPATH: executionDir,
+        DISTILL_TMP_DIR: IS_VERCEL ? '/tmp' : path.resolve(executionDir, '.tmp')
     }
 
     // Safety: strip "mock" keys

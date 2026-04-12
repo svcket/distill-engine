@@ -9,6 +9,7 @@ import html
 import glob
 import shutil
 import traceback
+from fs_utils import get_safe_tmp_dir, get_safe_tmp_path
 # No unused typing imports
 
 # Ensure local imports work by adding directory to path immediately
@@ -30,7 +31,7 @@ def _assess_content_quality(source_id: str, base: str) -> tuple:
     Reads the raw transcript from disk and returns (is_sufficient, reason).
     Catches URL-only / promotional-link rescues before any API call fires.
     """
-    txt_path = os.path.join(base, ".tmp", "transcripts", source_id, f"{source_id}_raw.json")
+    txt_path = get_safe_tmp_path(f"{source_id}_raw.json", f"transcripts/{source_id}")
     if not os.path.exists(txt_path):
         # No transcript file at all — let the cluster fail naturally
         return True, ""
@@ -78,11 +79,11 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
     # SURGICAL ISOLATION: Purge stale artifacts for this source_id to prevent "Ghost Leaks" / Cross-contamination
     print(f"[{source_id}] Cluster: Initializing Surgical Isolation...")
     stale_patterns = [
-        os.path.join(base, ".tmp", "refined_transcripts", source_id, "*"),
-        os.path.join(base, ".tmp", "summaries", f"{source_id}_summary.*"),
-        os.path.join(base, ".tmp", "insight_packets", f"{source_id}_packet.json"),
-        os.path.join(base, ".tmp", "insights", f"{source_id}_insights.json"),
-        os.path.join(base, ".tmp", "clusters", f"{source_id}_cluster.json")
+        os.path.join(get_safe_tmp_dir("refined_transcripts"), source_id, "*"),
+        os.path.join(get_safe_tmp_dir("summaries"), f"{source_id}_summary.*"),
+        os.path.join(get_safe_tmp_dir("insight_packets"), f"{source_id}_packet.json"),
+        os.path.join(get_safe_tmp_dir("insights"), f"{source_id}_insights.json"),
+        os.path.join(get_safe_tmp_dir("clusters"), f"{source_id}_cluster.json")
     ]
     for pattern in stale_patterns:
         for f in glob.glob(pattern):
@@ -92,7 +93,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             except Exception: pass
 
     # HARDENING: Ensure the transcript directory exists even if manual fetch stage was skipped (Summary-First pivot)
-    transcript_dir = os.path.join(base, ".tmp", "transcripts", source_id)
+    transcript_dir = get_safe_tmp_dir(f"transcripts/{source_id}")
     if not os.path.exists(transcript_dir):
         os.makedirs(transcript_dir, exist_ok=True)
         print(f"[{source_id}] Cluster: Created missing transcript directory for Rescued intelligence.")
@@ -133,7 +134,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             print(f"[{source_id}] Cluster Stage 1/4: Refining Transcript...", flush=True)
             results["refine"] = refine_source_transcript(source_id)
             if upload_artifact:
-                refined_path = os.path.join(base, ".tmp", "refined_transcripts", source_id, f"{source_id}_refined.json")
+                refined_path = get_safe_tmp_path(f"{source_id}_refined.json", f"refined_transcripts/{source_id}")
                 if os.path.exists(refined_path):
                     upload_artifact("transcripts", f"{source_id}_refined", refined_path)
         except Exception as e:
@@ -156,7 +157,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             results["summary"] = summary_result
             
             if upload_artifact:
-                summary_path = os.path.join(base, ".tmp", "summaries", f"{source_id}_summary.json")
+                summary_path = get_safe_tmp_path(f"{source_id}_summary.json", "summaries")
                 if os.path.exists(summary_path):
                     upload_artifact("summaries", source_id, summary_path)
         except Exception as e:
@@ -166,9 +167,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             
             # HARDENING: We MUST write the summary artifact even in rescue mode
             try:
-                summary_dir = os.path.join(base, ".tmp", "summaries")
-                os.makedirs(summary_dir, exist_ok=True)
-                summary_path = os.path.join(summary_dir, f"{source_id}_summary.json")
+                summary_path = get_safe_tmp_path(f"{source_id}_summary.json", "summaries")
                 with open(summary_path, 'w', encoding='utf-8') as f:
                     json.dump({"summary": rescue_msg, "status": "rescued", "source_id": source_id}, f, indent=2)
                 if upload_artifact:
@@ -181,7 +180,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             print(f"[{source_id}] Cluster Stage 3/4: Building Density Packet...", flush=True)
             results["packet"] = generate_packet_orchestrator(source_id)
             if upload_artifact:
-                packet_path = os.path.join(base, ".tmp", "insight_packets", f"{source_id}_packet.json")
+                packet_path = get_safe_tmp_path(f"{source_id}_packet.json", "insight_packets")
                 if os.path.exists(packet_path):
                     upload_artifact("packets", source_id, packet_path)
         except Exception as e:
@@ -193,7 +192,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             print(f"[{source_id}] Cluster Stage 4/4: Extracting Insights...", flush=True)
             results["insights"] = generate_insights_orchestrator(source_id, lang)
             if upload_artifact:
-                insights_path = os.path.join(base, ".tmp", "insights", f"{source_id}_insights.json")
+                insights_path = get_safe_tmp_path(f"{source_id}_insights.json", "insights")
                 if os.path.exists(insights_path):
                     upload_artifact("insights", source_id, insights_path)
         except Exception as e:
@@ -247,7 +246,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         ids_to_try = [source_id, source_id.replace("spotify_", "")]
         for sid in ids_to_try:
             # HARVESTER CONVENTION: metadata is saved in .tmp/sources/{id}.json
-            meta_path = os.path.join(base, ".tmp", "sources", f"{sid}.json")
+            meta_path = get_safe_tmp_path(f"{sid}.json", "sources")
             if os.path.exists(meta_path):
                 with open(meta_path, "r", encoding="utf-8") as f:
                     meta_data = json.load(f)
@@ -313,9 +312,7 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         final_payload["metadata"] = metadata
         
         # Final result persistence for cloud-bridge sync
-        cluster_dir = os.path.join(base, ".tmp", "clusters")
-        os.makedirs(cluster_dir, exist_ok=True)
-        cluster_path = os.path.join(cluster_dir, f"{source_id}_cluster.json")
+        cluster_path = get_safe_tmp_path(f"{source_id}_cluster.json", "clusters")
         with open(cluster_path, "w", encoding="utf-8") as f:
             json.dump(final_payload, f, indent=2)
 
