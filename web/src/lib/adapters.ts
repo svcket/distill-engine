@@ -133,7 +133,7 @@ export function adaptRefinerResponse(rawOutput: string): { segments: { text: str
 export function adaptInsightResponse(rawOutput: string): { status: Status, payload?: Record<string, unknown> | null } {
     try {
         const payload = JSON.parse(rawOutput);
-        if (payload.status === "success" || payload.status === "success_mocked") {
+        if (payload.status === "success" || payload.status === "success_mocked" || payload.status === "success_fallback") {
             return {
                 status: "done",
                 payload: payload.data

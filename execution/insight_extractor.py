@@ -116,9 +116,18 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
             # If no transcript and no description, do NOT proceed to LLM.
             # This prevents the LLM from hallucinating 'Strategic Execution of Pipelines' from empty input.
             print(json.dumps({"type": "status", "text": "Insufficient content for strategic extraction. Aborting."}), flush=True)
+            
+            metadata = packet.get("metadata", {})
+            title = metadata.get("title") or "Unknown Title"
+            creator = metadata.get("creator") or metadata.get("channel") or "Unknown Creator"
+            url = metadata.get("url") or "#"
+
             return {
                 "status": "thin_content",
                 "source_id": source_id,
+                "title": title,
+                "creator": creator,
+                "url": url,
                 "error": "No transcript or description available for analysis.",
                 "data": {
                     "core_argument": "Analysis Paused: Insufficient Source Data",
@@ -129,7 +138,7 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
                     "contradictions": [],
                     "implications": [],
                     "memorable_quotes": [],
-                    "speaker_identity": "Unknown",
+                    "speaker_identity": creator,
                     "source_context": "Restricted or Private Source"
                 }
             }
@@ -191,9 +200,17 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{source_id}_insights.json")
         
+        metadata = packet.get("metadata", {})
+        title = metadata.get("title") or "Unknown Title"
+        creator = metadata.get("creator") or metadata.get("channel") or "Unknown Creator"
+        url = metadata.get("url") or "#"
+
         bundle = {
             "status": "success",
             "source_id": source_id,
+            "title": title,
+            "creator": creator,
+            "url": url,
             "is_rescued": is_rescued,
             "data": json.loads(extracted_data.model_dump_json())
         }
@@ -233,9 +250,17 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
             "source_context": "Failed analysis"
         }
         
+        metadata = packet.get("metadata", {})
+        title = metadata.get("title") or "Unknown Title"
+        creator = metadata.get("creator") or metadata.get("channel") or "Unknown Creator"
+        url = metadata.get("url") or "#"
+
         fail_bundle = {
             "status": "failed",
             "source_id": source_id,
+            "title": title,
+            "creator": creator,
+            "url": url,
             "error": error_msg,
             "data": mock_data
         }

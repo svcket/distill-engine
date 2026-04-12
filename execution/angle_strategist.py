@@ -111,8 +111,13 @@ def extract_angle(
     CRITICAL: You MUST write your response entirely in the '{lang}' language.
     """
     
-    source_title = insights_bundle.get("title") or "Unknown Title"
-    source_creator = insights_bundle.get("creator") or insights_bundle.get("channel") or "Unknown Creator"
+    # ZERO-FAILURE PROTOCOL: Metadata Ingestion
+    metadata = insights_bundle
+    data = insights_bundle.get("data", {})
+    
+    source_title = metadata.get("title") or data.get("source_context") or metadata.get("source_id") or "Unknown Title"
+    source_creator = metadata.get("creator") or metadata.get("channel") or data.get("speaker_identity") or "Unknown Creator"
+    source_url = metadata.get("url") or "#"
 
     try:
         completion = client.beta.chat.completions.parse(
