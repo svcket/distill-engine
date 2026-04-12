@@ -27,33 +27,15 @@ export async function POST(request: Request) {
         if (tone) args.push("--tone", tone)
         if (language) args.push("--lang", language)
 
-        const { success, error, rawOutput } = await runPythonScript("angle_strategist.py", args, {
-            expectedArtifact: `.tmp/angles/${transcriptId}_angle.json`
-        })
-
-        if (!success) {
-            console.error(`[Angle API] Failed to generate angles for ${transcriptId}:`, error)
-            return NextResponse.json({ 
-                error: "Editorial Strategy Generation Failed", 
-                details: error || "The strategist script exited without outputting the expected resulting angle artifact.",
-                status: "failed"
-            }, { status: 500 })
+        // Switch to streaming mode to prevent Vercel/Next.js timeouts
+        const response = await runPythonScriptStream("angle_strategist.py", args)
+        
+        if (!response.ok) {
+            const errorText = await response.text()
+            return NextResponse.json({ error: errorText }, { status: response.status })
         }
 
-        // We can reuse the JSON parsing structure from adaptInsightResponse since it's standardized
-        const result = adaptInsightResponse(rawOutput || "")
-
-        // Persist stage completion
-        await prisma.source.update({
-            where: { id: transcriptId, userId: session.user.id },
-            data: {
-                completedStages: {
-                    push: 'angle'
-                }
-            }
-        })
-
-        return NextResponse.json({ result, message: `Strategized angles for: ${transcriptId}` })
+        return response
 
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "An unknown error occurred"

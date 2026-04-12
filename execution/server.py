@@ -220,6 +220,65 @@ async def run_script(run_req: RunRequest, request: Request, x_api_key: str = Hea
             content={"success": False, "error": str(e)}
         )
 
+from fastapi.responses import StreamingResponse
+
+@app.post("/run-stream")
+async def run_script_stream(run_req: RunRequest, x_api_key: str = Header(None)):
+    await verify_token(x_api_key)
+
+    script_name = run_req.script
+    args = run_req.args
+    
+    if ".." in script_name or script_name.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid script path")
+
+    execution_dir = os.path.dirname(os.path.abspath(__file__))
+    script_path = os.path.join(execution_dir, script_name)
+
+    if not os.path.exists(script_path):
+        raise HTTPException(status_code=404, detail=f"Script {script_name} not found")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = execution_dir
+    if run_req.env_overrides:
+        env.update(run_req.env_overrides)
+
+    def generate():
+        logger.info(f"Stream-Executing: python3 {script_name} {' '.join(args)}")
+        process = subprocess.Popen(
+            ["python3", "-u", script_path] + args, # -u for unbuffered output
+            cwd=execution_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env
+        )
+
+        # Yield status updates as they come in
+        for line in process.stdout:
+            trimmed = line.strip()
+            if not trimmed: continue
+            
+            # Simple heuristic: if it's JSON, it might be the final payload
+            if (trimmed.startswith('{') and trimmed.endsWith('}')) or (trimmed.startswith('[') and trimmed.endsWith(']')):
+                try:
+                    parsed = json.loads(trimmed)
+                    yield json.dumps({"type": "payload", "data": parsed}) + "\n"
+                    continue
+                except: pass
+                
+            yield json.dumps({"type": "status", "text": trimmed}) + "\n"
+        
+        process.wait()
+        
+        if process.returncode == 0:
+            yield json.dumps({"type": "success", "status": "completed"}) + "\n"
+        else:
+            err_msg = process.stderr.read().strip()
+            yield json.dumps({"type": "error", "message": err_msg or "Execution failed"}) + "\n"
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))

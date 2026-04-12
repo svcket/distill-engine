@@ -60,55 +60,15 @@ export async function POST(request: Request) {
         ]
         if (language) writerArgs.push('--lang', language)
 
-        const { success, error, data, rawOutput } = await runPythonScript<any>('writer.py', writerArgs)
-
-        if (!success) {
-            return NextResponse.json({ error: 'Draft generation failed', details: error }, { status: 500 })
+        // Switch to streaming mode to prevent Vercel/Next.js timeouts during the heavy writing stage
+        const response = await runPythonScriptStream("writer.py", writerArgs)
+        
+        if (!response.ok) {
+            const errorText = await response.text()
+            return NextResponse.json({ error: errorText }, { status: response.status })
         }
 
-        // Parse result
-        let draftContent = ""
-        try {
-            const result: any = data || {}
-            draftContent = result.data?.content || result.content || (typeof (data || rawOutput) === 'string' ? (data || rawOutput) : JSON.stringify(data || rawOutput))
-        } catch (e) {
-            draftContent = String(rawOutput)
-        }
-
-        // PERSISTENCE: Save to Prisma (Supabase) instead of local disk
-        const savedDraft = await prisma.$transaction([
-            draftId 
-                ? prisma.draft.update({
-                    where: { id: draftId, userId: userId },
-                    data: { content: draftContent }
-                  })
-                : prisma.draft.create({
-                    data: {
-                        userId: userId,
-                        title: source.title || `Draft for ${sourceId}`,
-                        content: draftContent
-                    }
-                }),
-            prisma.usage.upsert({
-                where: { userId: userId },
-                update: { draftsGenerated: { increment: 1 } },
-                create: { userId: userId, draftsGenerated: 1 }
-            }),
-            prisma.source.update({
-                where: { id: sourceId, userId: userId },
-                data: {
-                     completedStages: {
-                        push: 'draft'
-                    }
-                }
-            })
-        ])
-
-        return NextResponse.json({ 
-            success: true, 
-            result: { content: draftContent },
-            id: Array.isArray(savedDraft) ? savedDraft[0].id : null
-        })
+        return response
 
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Unknown error'

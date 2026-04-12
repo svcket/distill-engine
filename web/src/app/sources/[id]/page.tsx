@@ -1148,8 +1148,8 @@ function SourceMissionControlContent() {
 
             let data: StagePayload | null = null;
             
-            // Handle streaming for Draft & Insights stages
-            if ((stage.id === "draft" || stage.id === "insights") && res.body) {
+            // Handle streaming for Draft, Insights, and Editorial Strategy stages
+            if ((stage.id === "draft" || stage.id === "insights" || stage.id === "angle" || stage.id === "cluster") && res.body) {
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
                 let fullContent = "";
@@ -1183,6 +1183,9 @@ function SourceMissionControlContent() {
                                         } 
                                     } 
                                 }));
+                            } else if (parsed.type === "payload") {
+                                // Captured final JSON payload from the stream (e.g. angle strategy)
+                                data = { status: "success", result: parsed.data };
                             } else if (parsed.type === "error") {
                                 // CRITICAL: Stop the stream and report backend error
                                 setError({ message: parsed.message || parsed.error || "A streaming error occurred", type: "error" });
@@ -1190,9 +1193,9 @@ function SourceMissionControlContent() {
                                 shouldAbort = true;
                                 setExecutingStage(null);
                                 break;
-                            } else if (parsed.status === "success" || (parsed as StagePayload).data) {
-                                // Capture final payload from insights or other status:success scripts
-                                data = parsed as StagePayload;
+                            } else if (parsed.type === "success" || parsed.status === "success" || (parsed as StagePayload).data) {
+                                // Capture final payload if it comes with the success signal
+                                data = data || (parsed as StagePayload);
                             }
                         } catch {
                             // Minor parse issues during stream are ignored

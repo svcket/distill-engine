@@ -178,3 +178,35 @@ export async function runPythonScript<T = unknown>(
 
     return runPythonScriptLocal<T>(scriptName, args, options)
 }
+
+/**
+ * STREAMING EXECUTION (Railway -> Vercel)
+ */
+export async function runPythonScriptStream(
+    scriptName: string,
+    args: string[] = [],
+    options: { env?: Record<string, string> } = {}
+): Promise<Response> {
+    const backendUrl = process.env.BACKEND_URL
+    const apiKey = process.env.INTERNAL_API_KEY
+
+    // Fallback to local execution if no backend URL is set
+    if (!backendUrl) {
+        throw new Error('Streaming only supported via remote backend')
+    }
+
+    console.log(`[Python Runner] Initiating Stream Proxy: ${backendUrl}/run-stream (${scriptName})`)
+    
+    return fetch(`${backendUrl}/run-stream`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey || ''
+        },
+        body: JSON.stringify({
+            script: scriptName,
+            args: args,
+            env_overrides: options.env
+        })
+    })
+}
