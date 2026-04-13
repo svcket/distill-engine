@@ -102,12 +102,12 @@ const validateStageGating = (stageId: StageId, results: Record<string, unknown>)
             if (!results.transcript) return { valid: false, missing: "Transcript", type: "error" };
             break;
         case "summary":
-            if (results.summary) return { valid: true }; // Rescue path: if we have a summary, it's valid
+            if (results.summary || results.cluster?.status === "success" || results.cluster?.status === "success_fallback") return { valid: true };
             if (results.transcriptStatus === 'unavailable' || results.transcriptStatus === 'rescued_text') return { valid: true };
-            if (!results.refine && !results.transcript) return { valid: false, missing: "Refined Transcript", type: "error" };
+            if (!results.refine && !results.transcript) return { valid: false, missing: "Summary/Refinement", type: "error" };
             break;
         case "insights":
-            if (results.insights) return { valid: true };
+            if (results.insights || results.cluster?.status === "success" || results.cluster?.status === "success_fallback") return { valid: true };
             if (results.transcriptStatus === 'unavailable' || results.transcriptStatus === 'rescued_text') return { valid: true };
             if (!results.summary && !results.refine) return { valid: false, missing: "Summary/Refinement", type: "error" };
             break;
@@ -1095,6 +1095,8 @@ function SourceMissionControlContent() {
 
     // Execute a workflow stage
     const executeStage = async (stage: WorkflowStage) => {
+        // SILENT SKIP: If a stage has no API endpoint, it's an internal/bundled stage
+        // We skip it silently to keep the processing logs professional.
         if (!stage.apiEndpoint || !stage.apiBody) return
 
         // ════ STAGE GATING ════
