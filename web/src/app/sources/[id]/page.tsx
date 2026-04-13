@@ -77,11 +77,11 @@ type StageResultData = JudgeResult | TranscriptResult | RefineResult | SummaryRe
 const STAGES: WorkflowStage[] = [
     { id: "judge", label: "Judge Alignment", description: "Enrich source metadata and evaluate against NorthStar Profile", icon: Bot, apiEndpoint: "/api/sources/score", apiBody: (sid) => ({ source_id: sid }), hidden: true },
     { id: "transcript", label: "Content Sourcing", description: "Acquire official context and raw content signals", icon: FileText, apiEndpoint: "/api/transcripts/fetch", apiBody: (sid) => ({ source_id: sid }), hidden: true },
-    { id: "refine", label: "Refine Context", description: "Denoise transcript and segment into logical chunks", icon: Edit3, apiEndpoint: "/api/transcripts/refine", apiBody: (sid) => ({ transcript_id: sid }), hidden: true },
+    { id: "refine", label: "Refine Context", description: "Denoise transcript and segment into logical chunks", icon: Edit3, hidden: true },
     { id: "cluster", label: "Analysis Cluster", description: "Unified high-performance analysis (Refine, Summary, Insights)", icon: Sparkles, apiEndpoint: "/api/pipeline/cluster", apiBody: (sid) => ({ source_id: sid }), hidden: true },
-    { id: "summary", label: "Source Summary", description: "Concise summary and key framework identification", icon: FileText, apiEndpoint: "/api/transcripts/summary", apiBody: (sid) => ({ transcript_id: sid }), hidden: true },
-    { id: "packet", label: "Density Mapping", description: "Identify high-signal segments for extraction", icon: Target, apiEndpoint: "/api/packets/build", apiBody: (sid) => ({ transcript_id: sid }), hidden: true },
-    { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles, apiEndpoint: "/api/insights/extract", apiBody: (sid) => ({ transcript_id: sid }) },
+    { id: "summary", label: "Source Summary", description: "Concise summary and key framework identification", icon: FileText, hidden: true },
+    { id: "packet", label: "Density Mapping", description: "Identify high-signal segments for extraction", icon: Target, hidden: true },
+    { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles },
     { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (sid, params) => ({ transcriptId: sid, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (sid, params) => ({ transcriptId: sid, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (sid) => ({ sourceId: sid }) },
@@ -1332,15 +1332,14 @@ function SourceMissionControlContent() {
             const msg = err instanceof Error ? err.message : "Unknown error"
             setError({ message: msg, type: "error" })
             setLogs(prev => [{ event: `${stage.label} failed: ${msg}`, time: "Just now", status: "error" }, ...prev])
+            // ABORT: If a stage fails, we must stop the entire 'Run All' sequence
+            if (isRunningAll) setIsRunningAll(false)
         } finally {
             setExecutingStage(null)
-            // If this was the last stage, mark source as done
-            if (STAGES.findIndex(s => s.id === stage.id) === STAGES.length - 1) {
+            // CELEBRATION HARDENING: Only show celebration if the FINAL stage was reached AND completed
+            if (stage.id === "socialise" && !error) {
                 setSource(s => ({ ...s, status: "done" }))
-                // Trigger celebratory UI if it was just completed
-                if (isRunningAll || executingStage === "socialise") {
-                    setShowCelebration(true)
-                }
+                setShowCelebration(true)
             }
         }
     }

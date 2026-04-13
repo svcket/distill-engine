@@ -117,7 +117,8 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
             },
             "is_rescue": True
         }
-        print(json.dumps(final_payload))
+        # HARDENING: In a failure state, we MUST NOT print the final payload
+        # Doing so tricks the UI's stream listener into thinking the stage succeeded.
         sys.exit(1)  # HARD FAIL so the UI turns red on insufficient data
 
     start_time = time.time()
