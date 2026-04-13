@@ -408,26 +408,35 @@ function SourceMissionControlContent() {
 
                     const updateObj: Record<string, StageResultData> = { ...currentResults };
                     
-                    if (results.refine) { updateObj.refine = results.refine; currentResults.refine = results.refine; currentCompleted.add("refine"); }
-                    if (results.summary) { updateObj.summary = results.summary; currentResults.summary = results.summary; currentCompleted.add("summary"); }
-                    if (results.packet) { updateObj.packet = results.packet; currentResults.packet = results.packet; currentCompleted.add("packet"); }
-                    if (results.insights) { updateObj.insights = results.insights; currentResults.insights = results.insights; currentCompleted.add("insights"); }
-                    
-                    currentCompleted.add("cluster");
-                    
-                    setStageResults(prev => ({ ...prev, ...updateObj }));
-                    setCompletedStages(new Set(currentCompleted));
-                    
-                    // NOTE: DB persistence for cluster stages is now handled server-side in /api/pipeline/cluster
-                    // to reduce roundtrips and prevent race conditions.
-                    await persistStageCompletion("cluster");
+                    // HONEST HANDSHAKE: Only mark as completed if the status is success
+                    if (results.status === "success" || results.status === "success_fallback") {
+                        if (results.refine) { updateObj.refine = results.refine; currentResults.refine = results.refine; currentCompleted.add("refine"); }
+                        if (results.summary) { updateObj.summary = results.summary; currentResults.summary = results.summary; currentCompleted.add("summary"); }
+                        if (results.packet) { updateObj.packet = results.packet; currentResults.packet = results.packet; currentCompleted.add("packet"); }
+                        if (results.insights) { updateObj.insights = results.insights; currentResults.insights = results.insights; currentCompleted.add("insights"); }
+                        
+                        currentCompleted.add("cluster");
+                        
+                        setStageResults(prev => ({ ...prev, ...updateObj }));
+                        setCompletedStages(new Set(currentCompleted));
+                        
+                        await persistStageCompletion("cluster");
 
-                    const angleIndex = STAGES.findIndex(s => s.id === "angle");
-                    i = angleIndex - 1; 
-                    
-                    setLogs(prev => [{ event: "Analysis Cluster completed (Refine, Summary, Insights)", time: "Just now", status: "success" }, ...prev]);
-                    setExecutingStage(null);
-                    continue; 
+                        setLogs(prev => [{ event: "Analysis Cluster completed (Refine, Summary, Insights)", time: "Just now", status: "success" }, ...prev]);
+                        
+                        const angleIndex = STAGES.findIndex(s => s.id === "angle");
+                        i = angleIndex - 1; 
+                        setExecutingStage(null);
+                        continue; 
+                    } else {
+                        // IT FAILED OR PAUSED IN BACKEND
+                        const failMsg = results.error || "Analysis Paused: Insufficient source context";
+                        setError({ message: failMsg, type: "error" });
+                        setLogs(prev => [{ event: failMsg, time: "Just now", status: "error" }, ...prev]);
+                        setIsRunningAll(false);
+                        setExecutingStage(null);
+                        break;
+                    }
                     
                 } catch (err: unknown) {
                     const msg = err instanceof Error ? err.message : 'Unknown error'
