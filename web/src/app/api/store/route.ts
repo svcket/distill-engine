@@ -123,6 +123,9 @@ export async function POST(request: Request) {
                     // Optimized: All core intelligence is now in the 'clusters' bucket
                     bucket = 'clusters'
                     filename = `${sourceId}_cluster.json`
+                } else if (stageId === 'angle') {
+                    bucket = 'angles'
+                    filename = `${sourceId}_angle.json`
                 } else if (stageId === 'refine') {
                     filename = `${sourceId}/refined.json`
                 } else if (stageId === 'draft') {

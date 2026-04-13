@@ -1244,8 +1244,18 @@ function SourceMissionControlContent() {
                 return next;
             })
 
-            // Mark completed
-            setCompletedStages(prev => new Set([...prev, stage.id]))
+            // Mark completed (with Cluster-Aware ID expansion)
+            setCompletedStages(prev => {
+                const next = new Set(prev);
+                next.add(stage.id as StageId);
+                
+                if (stage.id === 'cluster') {
+                    next.add('transcript');
+                    next.add('summary');
+                    next.add('insights');
+                }
+                return next;
+            })
 
             // ─── REACTIVE PANEL SYNC ───
             // If the panel is open for this stage, refresh it immediately
@@ -1371,9 +1381,23 @@ function SourceMissionControlContent() {
                 })
                 if (res.ok) {
                     const json = await res.json()
-                    data = json.result
-                    if (data) {
-                        setStageResults(prev => ({ ...prev, [stage.id]: data }))
+                    // Unwrap the result to find the actual data payload
+                    let dataValue = json.result
+                    if (dataValue && typeof dataValue === 'object') {
+                        dataValue = dataValue.data || dataValue.results || dataValue.result || dataValue
+                    }
+                    
+                    if (dataValue) {
+                        setStageResults(prev => {
+                            const next = { ...prev, [stage.id]: dataValue };
+                            // If this was a cluster, ensure constituent parts are also hydrated
+                            if (stage.id === 'cluster' && dataValue.results) {
+                                if (dataValue.results.summary) next.summary = dataValue.results.summary;
+                                if (dataValue.results.insights) next.insights = dataValue.results.insights;
+                            }
+                            return next;
+                        })
+                        data = dataValue
                     }
                 }
             } catch (e) {
