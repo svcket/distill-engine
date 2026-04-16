@@ -359,7 +359,30 @@ function SourceMissionControlContent() {
         setIsRunningAll(true)
         setError(null)
 
-        const currentCompleted = new Set(completedStages)
+        // RACE CONDITION FIX: completedStages React state may not be hydrated yet
+        // when autostart fires. Fetch authoritative completion data directly from the
+        // DB before building our snapshot so we never re-run already-finished stages.
+        let authorativeCompleted = new Set(completedStages)
+        try {
+            const freshRes = await fetch(`/api/store/source?id=${id}`)
+            if (freshRes.ok) {
+                const freshJson = await freshRes.json()
+                const freshData = freshJson?.source ?? freshJson
+                const dbStages: string[] = freshData?.completedStages ?? []
+                dbStages.forEach(s => authorativeCompleted.add(s as StageId))
+                // Also infer hidden stage completions from metadata
+                if ((freshData?.score ?? 0) > 0) authorativeCompleted.add("judge")
+                if (freshData?.transcriptStatus === "transcribed" || freshData?.transcriptStatus === "rescued_text") {
+                    authorativeCompleted.add("transcript")
+                }
+                // Sync back to React state so the UI reflects reality
+                setCompletedStages(new Set(authorativeCompleted))
+            }
+        } catch {
+            // Non-fatal: fall back to whatever state we have
+        }
+
+        const currentCompleted = authorativeCompleted
         const currentResults: Record<string, StageResultData> = { ...stageResults }; 
         const startIndex = getFirstIncompleteIndex()
 
