@@ -239,6 +239,9 @@ function SourceMissionControlContent() {
     const executingStageRef = useRef<StageId | null>(null)
     useEffect(() => { executingStageRef.current = executingStage }, [executingStage])
     const [isRunningAll, setIsRunningAll] = useState(false)
+    // Synchronous ref so runFullPipeline can prevent double-execution even
+    // before React re-renders with the new isRunningAll=true value.
+    const isRunningAllRef = useRef(false)
     const [showCelebration, setShowCelebration] = useState(false)
     const [error, setError] = useState<{ message: string; type: "error" | "info" } | null>(null)
 
@@ -356,6 +359,14 @@ function SourceMissionControlContent() {
     // ════ DATA FETCHING ════
 
     const runFullPipeline = useCallback(async (resuming = false) => {
+        // HARD GUARD: Use a ref (not state) to prevent double-execution.
+        // React state is async; a second call can slip through before the first
+        // render cycle completes with isRunningAll=true.
+        if (isRunningAllRef.current) {
+            console.warn("[Pipeline] runFullPipeline called while already running. Ignoring.")
+            return
+        }
+        isRunningAllRef.current = true
         setIsRunningAll(true)
         setError(null)
 
@@ -460,6 +471,7 @@ function SourceMissionControlContent() {
                         const failMsg = results.error || "Analysis Paused: Insufficient source context";
                         setError({ message: failMsg, type: "error" });
                         setLogs(prev => [{ event: failMsg, time: "Just now", status: "error" }, ...prev]);
+                        isRunningAllRef.current = false
                         setIsRunningAll(false);
                         setExecutingStage(null);
                         break;
@@ -468,6 +480,7 @@ function SourceMissionControlContent() {
                 } catch (err: unknown) {
                     const msg = err instanceof Error ? err.message : 'Unknown error'
                     setError({ message: msg, type: "error" });
+                    isRunningAllRef.current = false
                     setIsRunningAll(false);
                     setExecutingStage(null);
                     break;
@@ -546,6 +559,7 @@ function SourceMissionControlContent() {
                 } catch (err: unknown) {
                     const msg = err instanceof Error ? err.message : 'Unknown error'
                     setError({ message: msg, type: "error" });
+                    isRunningAllRef.current = false
                     setIsRunningAll(false);
                     setExecutingStage(null);
                     break;
@@ -561,6 +575,7 @@ function SourceMissionControlContent() {
                     setLogs(prev => [{ event: `Pipeline halted: ${stage.label} is missing ${gate.missing}`, time: "Just now", status: "info" }, ...prev])
                     setError({ message: `Pipeline stopped at ${stage.label} due to missing ${gate.missing}`, type: "info" })
                 }
+                isRunningAllRef.current = false
                 setIsRunningAll(false)
                 break
             }
@@ -890,6 +905,7 @@ function SourceMissionControlContent() {
                 const msg = err instanceof Error ? err.message : "Unknown error"
                 setError({ message: msg, type: "error" })
                 setLogs(prev => [{ event: `Pipeline stopped: ${stage.label} failed — ${msg}`, time: "Just now", status: "error" }, ...prev])
+                isRunningAllRef.current = false
                 setIsRunningAll(false)
                 break 
             } finally {
@@ -897,6 +913,7 @@ function SourceMissionControlContent() {
             }
         }
 
+        isRunningAllRef.current = false
         setIsRunningAll(false)
         setExecutingStage(null)
         
@@ -1110,7 +1127,7 @@ function SourceMissionControlContent() {
         // autoRunSignal takes precedence over user preference autoStart
         const shouldRun = autoRunSignal || (autoStart && isFresh);
         
-        if (shouldRun && activeIndex < STAGES.length && !isRunningAll && !executingStage && source.status === "idle") {
+        if (shouldRun && activeIndex < STAGES.length && !isRunningAllRef.current && !executingStage && source.status === "idle") {
             const timer = setTimeout(() => {
                 if (source.status === "idle" && !hasAutoStartedRef.current) {
                     hasAutoStartedRef.current = true
@@ -1378,7 +1395,7 @@ function SourceMissionControlContent() {
             setError({ message: msg, type: "error" })
             setLogs(prev => [{ event: `${stage.label} failed: ${msg}`, time: "Just now", status: "error" }, ...prev])
             // ABORT: If a stage fails, we must stop the entire 'Run All' sequence
-            if (isRunningAll) setIsRunningAll(false)
+            if (isRunningAll) { isRunningAllRef.current = false; setIsRunningAll(false) }
         } finally {
             setExecutingStage(null)
             // CELEBRATION HARDENING: Only show celebration if the FINAL stage was reached AND completed
