@@ -586,15 +586,18 @@ function SourceMissionControlContent() {
             }
 
             if (!stage.apiEndpoint || !stage.apiBody) {
-                setCompletedStages(prev => {
-                    const next = new Set(prev)
-                    next.add(stage.id)
-                    return next
-                })
-                currentCompleted.add(stage.id)
+                // CLUSTER-BUNDLED STAGES: These stages are handled internally by the Analysis Cluster.
+                // Skip them completely and silently -- no state mutation, no log entry.
+                // Marking them "completed" here would corrupt the gating logic.
+                const CLUSTER_BUNDLED: StageId[] = ["refine", "summary", "packet"]
+                if (CLUSTER_BUNDLED.includes(stage.id)) {
+                    continue
+                }
+                // For any other unimplemented stage, log it visibly
                 setLogs(prev => [{ event: `${stage.label} skipped (not implemented)`, time: "Just now", status: "info" }, ...prev])
                 continue
             }
+
 
             // Clear previous info/error state before starting a new stage
             setError(null)

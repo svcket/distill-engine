@@ -29,24 +29,31 @@ MAX_URL_RATIO  = 0.85         # If >85% of tokens are URLs/links, flag as thin b
 def _assess_content_quality(source_id: str, base: str) -> tuple:
     """
     Reads the raw transcript from disk and returns (is_sufficient, reason).
-    Catches URL-only / promotional-link rescues before any API call fires.
+    Catches URL-only / promotional-link rescues and DRM blocks before any API call fires.
+
+    Return reasons:
+      ""       → sufficient
+      "THIN"   → file exists but has < MIN_WORD_COUNT real words
+      "MISSING" → no transcript file at all (DRM block, private video, scavenger failed)
     """
     txt_path = get_safe_tmp_path(f"{source_id}_raw.json", f"transcripts/{source_id}")
     if not os.path.exists(txt_path):
-        # No transcript file at all — let the cluster fail naturally
-        return True, ""
+        # MISSING: No transcript at all — DRM block, private video, or complete extraction failure.
+        # Do NOT pass through. Fail-fast here so the error is clear and honest.
+        print(f"[{source_id}] Quality Gate: No transcript file found. Assuming DRM/access block.",
+              file=sys.stderr)
+        return False, "MISSING"
 
     try:
         with open(txt_path, "r", encoding="utf-8") as f:
             raw = f.read().strip()
     except Exception:
-        return True, ""
+        return False, "MISSING"
 
     if not raw:
-        return True, "THIN"
+        return False, "THIN"
 
     # Count real words (non-URL tokens)
-    # Tighter regex to avoid false-positive dot/slash matches
     url_pattern = re.compile(r"https?://\S+|www\.\S+|[a-zA-Z0-9-]+\.(com|org|net|io|co|edu|gov|info|biz|me)/\S*")
     tokens = raw.split()
     url_tokens  = [t for t in tokens if url_pattern.match(t)]
@@ -100,26 +107,25 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
 
     is_sufficient, quality_reason = _assess_content_quality(source_id, base)
     if not is_sufficient:
-        msg = f"Analysis Cluster Failed: Insufficient source data for '{source_id}' ({quality_reason}). Pipeline halted at hard quality gate."
-        print(f"[{source_id}] ERROR: {msg}", file=sys.stderr)
-        
-        final_payload = {
-            "status": "thin_content",
-            "source_id": source_id,
-            "duration": 0,
-            "error_detail": quality_reason,
-            "error_type": "THIN_CONTENT",
-            "results": {
-                "refine":   {"status": "skipped", "chunk_count": 0},
-                "summary":  {"status": "skipped", "summary": f"⚠️ Analysis skipped: {quality_reason}"},
-                "packet":   {"status": "skipped"},
-                "insights": {"status": "skipped", "insights": []}
-            },
-            "is_rescue": True
-        }
-        # HARDENING: In a failure state, we MUST NOT print the final payload
-        # Doing so tricks the UI's stream listener into thinking the stage succeeded.
-        sys.exit(1)  # HARD FAIL so the UI turns red on insufficient data
+        # Produce a human-readable, actionable error message based on WHY it failed
+        if quality_reason == "MISSING":
+            user_msg = (
+                "Content Unavailable: This video's transcript could not be extracted. "
+                "The video may be private, age-restricted, region-blocked, or the creator "
+                "has disabled captions. Try a different source or a public mirror of this content."
+            )
+            error_type = "DRM_BLOCK"
+        else:
+            user_msg = (
+                "Insufficient Content: The extracted source data is too thin to produce "
+                "meaningful intelligence. The source may only contain show notes, promotional "
+                "links, or a short preview clip."
+            )
+            error_type = "THIN_CONTENT"
+
+        print(f"[{source_id}] QUALITY GATE FAIL ({error_type}): {user_msg}", file=sys.stderr)
+        # Do NOT print a JSON payload — doing so tricks the UI into thinking the stage succeeded.
+        sys.exit(1)  # HARD FAIL: UI will turn the progress bar red
 
     start_time = time.time()
     results = {}
