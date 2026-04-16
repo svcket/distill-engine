@@ -101,16 +101,20 @@ const validateStageGating = (stageId: StageId, results: Record<string, unknown>)
         case "refine": 
             if (!results.transcript) return { valid: false, missing: "Transcript", type: "error" };
             break;
-        case "summary":
-            if (results.summary || results.cluster?.status === "success" || results.cluster?.status === "success_fallback") return { valid: true };
+        case "summary": {
+            const clusterS = (results.cluster as { status?: string } | undefined)?.status
+            if (results.summary || clusterS === "success" || clusterS === "success_fallback") return { valid: true };
             if (results.transcriptStatus === 'unavailable' || results.transcriptStatus === 'rescued_text') return { valid: true };
             if (!results.refine && !results.transcript) return { valid: false, missing: "Summary/Refinement", type: "error" };
             break;
-        case "insights":
-            if (results.insights || results.cluster?.status === "success" || results.cluster?.status === "success_fallback") return { valid: true };
+        }
+        case "insights": {
+            const clusterI = (results.cluster as { status?: string } | undefined)?.status
+            if (results.insights || clusterI === "success" || clusterI === "success_fallback") return { valid: true };
             if (results.transcriptStatus === 'unavailable' || results.transcriptStatus === 'rescued_text') return { valid: true };
             if (!results.summary && !results.refine) return { valid: false, missing: "Summary/Refinement", type: "error" };
             break;
+        }
         case "angle":
             if (!results.insights) return { valid: false, missing: "Insights", type: "error" };
             break;
