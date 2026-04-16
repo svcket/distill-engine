@@ -1075,8 +1075,11 @@ function SourceMissionControlContent() {
     }
 
     // Auto-start Harvesting Automation
+    // IMPORTANT: hasAutoStartedRef prevents double-firing when activeIndex changes
+    // between stages (which previously caused judge + transcript to run twice).
+    const hasAutoStartedRef = useRef(false)
     useEffect(() => {
-        if (!source) return;
+        if (!source || hasAutoStartedRef.current) return;
         // GATING: Only trigger auto-start for sources created in the last 15 minutes to avoid re-running legacy data
         const createdAt = source.createdAt ? new Date(source.createdAt).getTime() : 0;
         const isFresh = createdAt > 0 && (Date.now() - createdAt < 15 * 60 * 1000);
@@ -1086,7 +1089,8 @@ function SourceMissionControlContent() {
         
         if (shouldRun && activeIndex < STAGES.length && !isRunningAll && !executingStage && source.status === "idle") {
             const timer = setTimeout(() => {
-                if (source.status === "idle") {
+                if (source.status === "idle" && !hasAutoStartedRef.current) {
+                    hasAutoStartedRef.current = true
                     console.log("[Pipeline] Auto-starting via signal:", autoRunSignal ? "URL" : "Preference");
                     runFullPipeline();
                 }

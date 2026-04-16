@@ -105,7 +105,25 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
         os.makedirs(transcript_dir, exist_ok=True)
         print(f"[{source_id}] Cluster: Created missing transcript directory for Rescued intelligence.")
 
+    # STATELESS RECOVERY: On cloud servers, the transcript was saved by transcript_harvester,
+    # uploaded to Supabase, but this cluster runs in a fresh container with no local files.
+    # Attempt Supabase recovery BEFORE the quality gate so we don't mistake a stateless
+    # environment for a DRM block.
+    raw_json_path = get_safe_tmp_path(f"{source_id}_raw.json", f"transcripts/{source_id}")
+    if not os.path.exists(raw_json_path):
+        print(f"[{source_id}] Cluster: Transcript not found locally. Attempting Supabase recovery...", flush=True)
+        try:
+            from supabase_utils import download_artifact
+            recovered = download_artifact("transcripts", source_id, f"{source_id}_raw.json", raw_json_path)
+            if recovered:
+                print(f"[{source_id}] Cluster: Transcript recovered from Supabase ({os.path.getsize(raw_json_path)} bytes).", flush=True)
+            else:
+                print(f"[{source_id}] Cluster: Supabase recovery returned nothing — likely DRM/access block.", file=sys.stderr)
+        except Exception as e:
+            print(f"[{source_id}] Cluster: Supabase recovery error: {e}. Proceeding to quality gate.", file=sys.stderr)
+
     is_sufficient, quality_reason = _assess_content_quality(source_id, base)
+
     if not is_sufficient:
         # Produce a human-readable, actionable error message based on WHY it failed
         if quality_reason == "MISSING":
