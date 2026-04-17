@@ -186,6 +186,12 @@ def extract_angle(
     
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(bundle, f, indent=2)
+
+    try:
+        from supabase_utils import upload_artifact
+        upload_artifact("angles", source_id, out_path)
+    except Exception as up_e:
+        print(f"[{source_id}] Angle Strategist: Failed to upload artifact to Supabase: {up_e}", file=sys.stderr)
         
     print(json.dumps(bundle))
     sys.exit(0)
@@ -200,3 +206,4 @@ if __name__ == "__main__":
     parser.add_argument("--lang", default="en", help="Language code")
     args = parser.parse_args()
     extract_angle(args.input, args.type, args.audience, args.tone, args.lang)
+# Build cache buster: Fri Apr 17 10:02:51 WAT 2026

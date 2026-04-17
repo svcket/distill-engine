@@ -1655,17 +1655,8 @@ def fetch_transcript(
          rescued = metadata.get("raw_metadata", {}).get("rescued_article_text") or metadata.get("description")
          if rescued:
              print(f"[{source_id}] RESCUED TEXT FOUND. Bypassing audio processing.")
-             json_path = os.path.join(output_dir, f"{source_id}_raw.json")
-             txt_path = os.path.join(output_dir, f"{source_id}_raw.txt")
-             with open(json_path, "w") as f:
-                 json.dump([{"text": rescued, "start": 0, "duration": 0}], f)
-             with open(txt_path, "w") as f:
-                 f.write(rescued)
-             print(json.dumps({
-                 "source_id": source_id, "status": "rescued_text",
-                 "json_path": json_path, "text_path": txt_path,
-                 "segment_count": 1, "title": metadata.get("title")
-             }))
+             res = finish_transcript(source_id, [{"text": rescued, "start": 0, "duration": 0}], output_dir, status="rescued_text")
+             print(json.dumps(res))
              return
 
     if strategy == "unavailable":
@@ -2053,3 +2044,4 @@ if __name__ == "__main__":
             }))
             
         sys.exit(0) # Exit cleanly to allow UI parsing
+# Build cache buster: Fri Apr 17 10:02:51 WAT 2026

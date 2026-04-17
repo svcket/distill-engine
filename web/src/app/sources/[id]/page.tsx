@@ -209,6 +209,7 @@ function SourceMissionControlContent() {
 
     // Track which stages are completed
     const [completedStages, setCompletedStages] = useState<Set<StageId>>(new Set())
+    const [isHydrated, setIsHydrated] = useState(false)
 
     // Hydration fix for completedStages — Listen to the Source-of-Truth from Prisma
     useEffect(() => {
@@ -368,6 +369,8 @@ function SourceMissionControlContent() {
     }, [id]);
 
     // ════ DATA FETCHING ════
+    // Stable ref so autostart effect can safely call without re-firing on every state update
+    const runFullPipelineRef = useRef<((resuming?: boolean) => Promise<void>) | null>(null)
 
     const runFullPipeline = useCallback(async (resuming = false) => {
         // HARD GUARD: Use a ref (not state) to prevent double-execution.
@@ -406,9 +409,34 @@ function SourceMissionControlContent() {
 
         const currentCompleted = authorativeCompleted
         const currentResults: Record<string, StageResultData> = { ...stageResults }; 
-        const startIndex = getFirstIncompleteIndex()
 
-        for (let i = startIndex === STAGES.length ? 0 : startIndex; i < STAGES.length; i++) {
+        // CRITICAL FIX: Compute startIndex directly from currentCompleted (the authoritative merged
+        // set), NOT from getFirstIncompleteIndex() which reads stale React state.
+        // The old `startIndex === STAGES.length ? 0 : startIndex` was the root cause of double-
+        // execution: when the pipeline appeared fully done it would reset i=0 and re-run judge+transcript.
+        const tStatusNow = source?.transcriptStatus
+        const isTranscriptDoneNow = tStatusNow === "transcribed" || tStatusNow === "rescued_text" || tStatusNow === "unavailable"
+        let startIndex = 0
+        for (let k = 0; k < STAGES.length; k++) {
+            const s = STAGES[k]
+            if (s.id === "judge" && currentCompleted.has("judge")) continue
+            if (s.id === "transcript" && (isTranscriptDoneNow || currentCompleted.has("transcript"))) continue
+            if (s.id === "summary" && (currentCompleted.has("summary") || currentCompleted.has("cluster"))) continue
+            if (s.id === "packet" && (currentCompleted.has("packet") || currentCompleted.has("cluster"))) continue
+            if (!currentCompleted.has(s.id)) { startIndex = k; break }
+            startIndex = k + 1
+        }
+
+        // Safety: if pipeline is already complete, do nothing
+        if (startIndex >= STAGES.length) {
+            console.log("[Pipeline] All stages already complete. Nothing to run.")
+            isRunningAllRef.current = false
+            setIsRunningAll(false)
+            setShowCelebration(true)
+            return
+        }
+
+        for (let i = startIndex; i < STAGES.length; i++) {
             const stage = STAGES[i]
 
             // ENFORCE LOCAL DATA for loop progression
@@ -670,14 +698,6 @@ function SourceMissionControlContent() {
 
             if (i !== startIndex) {
                 await new Promise(resolve => setTimeout(resolve, 100))
-            }
-
-            if (stage.id === "angle" && !resuming) {
-                setIsRunningAll(false)
-                setExecutingStage(null)
-                setLogs(prev => [{ event: `Pipeline paused. Select your Writing Intent Strategy below, then click Continue.`, time: "Just now", status: "info" }, ...prev])
-                setError({ message: "Select your writing intent strategy below, then click Continue Pipeline.", type: "info" })
-                break
             }
 
             setExecutingStage(stage.id)
@@ -969,6 +989,10 @@ function SourceMissionControlContent() {
         }
     }, [completedStages, getFirstIncompleteIndex, id, intentAudience, intentTone, intentType, panelContent, source?.channel, source?.title, source?.url, source?.completedStages, source?.transcriptStatus, source?.score, stageResults, persistStageCompletion, lang]);
 
+    // Keep the ref pointing at the latest closure so autostart can call it without
+    // creating a reactive dependency on runFullPipeline itself.
+    useEffect(() => { runFullPipelineRef.current = runFullPipeline }, [runFullPipeline])
+
     // Load persisted state on mount
     useEffect(() => {
         async function fetchPrefs() {
@@ -1085,7 +1109,7 @@ function SourceMissionControlContent() {
                 }
             } catch { /* silently fail */ }
         }
-        loadPersistedState()
+        loadPersistedState().then(() => setIsHydrated(true))
     }, [id])
 
     // Close dropdowns on outside click
@@ -1155,12 +1179,9 @@ function SourceMissionControlContent() {
     // between stages (which previously caused judge + transcript to run twice).
     const hasAutoStartedRef = useRef(false)
     useEffect(() => {
-        if (!source || hasAutoStartedRef.current) return;
-        // GATING: Only trigger auto-start for sources created in the last 15 minutes to avoid re-running legacy data
+        if (!source || hasAutoStartedRef.current || !isHydrated) return;
         const createdAt = source.createdAt ? new Date(source.createdAt).getTime() : 0;
         const isFresh = createdAt > 0 && (Date.now() - createdAt < 15 * 60 * 1000);
-
-        // autoRunSignal takes precedence over user preference autoStart
         const shouldRun = autoRunSignal || (autoStart && isFresh);
         
         if (shouldRun && activeIndex < STAGES.length && !isRunningAllRef.current && !executingStage && source.status === "idle") {
@@ -1168,12 +1189,17 @@ function SourceMissionControlContent() {
                 if (source.status === "idle" && !hasAutoStartedRef.current) {
                     hasAutoStartedRef.current = true
                     console.log("[Pipeline] Auto-starting via signal:", autoRunSignal ? "URL" : "Preference");
-                    runFullPipeline();
+                    // Call via ref — stable identity that never causes this effect to re-fire
+                    runFullPipelineRef.current?.()
                 }
             }, 1000); 
             return () => clearTimeout(timer);
         }
-    }, [autoStart, autoRunSignal, activeIndex, isRunningAll, executingStage, source.status, source.createdAt, id, runFullPipeline]);
+    // INTENTIONALLY omit runFullPipeline — it recreates on every state update during
+    // execution which would re-trigger this effect and re-enter the pipeline.
+    // We call through runFullPipelineRef.current instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoStart, autoRunSignal, activeIndex, isRunningAll, executingStage, source.status, source.createdAt, id, isHydrated]);
 
     const runStage = async (stageId: StageId) => {
         const stage = STAGES.find(s => s.id === stageId)
@@ -2093,3 +2119,4 @@ function SourceMissionControlContent() {
         </div>
     )
 }
+# Build cache buster: Fri Apr 17 10:02:51 WAT 2026
