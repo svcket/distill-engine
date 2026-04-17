@@ -408,10 +408,19 @@ function SourceMissionControlContent() {
         const currentResults: Record<string, StageResultData> = { ...stageResults }; 
         const startIndex = getFirstIncompleteIndex()
 
-        for (let i = 0; i < STAGES.length; i++) {
+        for (let i = startIndex === STAGES.length ? 0 : startIndex; i < STAGES.length; i++) {
             const stage = STAGES[i]
 
-            if (currentCompleted.has(stage.id)) continue
+            // ENFORCE LOCAL DATA for loop progression
+            let hasData = true;
+            if (stage.id === "angle" && !currentResults.angle) hasData = false;
+            if (stage.id === "draft" && !currentResults.draft && !currentResults.WrittenDraft) hasData = false;
+
+            if (currentCompleted.has(stage.id)) {
+                // Verify all upstream dependencies are still met, AND the data is locally present
+                const gate = validateStageGating(stage.id, currentResults);
+                if (gate.valid && hasData) continue;
+            }
 
             // ─── CLUSTER OPTIMIZATION ───
             if ((stage.id === "cluster" || stage.id === "refine" || stage.id === "summary" || stage.id === "insights") && 
