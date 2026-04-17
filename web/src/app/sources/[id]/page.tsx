@@ -369,6 +369,7 @@ function SourceMissionControlContent() {
         isRunningAllRef.current = true
         setIsRunningAll(true)
         setError(null)
+        setLogs([])  // Clear logs for fresh run — each "Continue Pipeline" starts clean
 
         // RACE CONDITION FIX: completedStages React state may not be hydrated yet
         // when autostart fires. Read from the `source` object (Prisma data — already loaded
@@ -426,10 +427,12 @@ function SourceMissionControlContent() {
                         throw new Error(errorMsg);
                     }
                     const clusterData = await clusterRes.json();
-                    const results = clusterData.result; 
-                    
-                    // Sync Metadata (Title, Duration) immediately to header
-                    const meta = clusterData?.metadata;
+                    // API returns: { status: "success", result: { refine, summary, packet, insights }, metadata: {...} }
+                    // The outer `status` field tells us success/failure.
+                    // The inner `result` IS the results dict — no sub-status field on it.
+                    const clusterStatus = clusterData.status;  // "success" | "success_fallback" | "rescued"
+                    const results = clusterData.result;        // { refine, summary, packet, insights }
+                    const meta = clusterData?.metadata || results?.metadata;
                     if (meta) {
                         setSource(prev => {
                             if (!prev) return prev;
@@ -445,8 +448,10 @@ function SourceMissionControlContent() {
 
                     const updateObj: Record<string, StageResultData> = { ...currentResults };
                     
-                    // HONEST HANDSHAKE: Only mark as completed if the status is success
-                    if (results.status === "success" || results.status === "success_fallback") {
+                    // HONEST HANDSHAKE: Only mark completed if the outer API status is success.
+                    // clusterData.status = "success" | "success_fallback" — do NOT read results.status
+                    // because the inner results dict has no .status field.
+                    if (clusterStatus === "success" || clusterStatus === "success_fallback") {
                         if (results.refine) { updateObj.refine = results.refine; currentResults.refine = results.refine; currentCompleted.add("refine"); }
                         if (results.summary) { updateObj.summary = results.summary; currentResults.summary = results.summary; currentCompleted.add("summary"); }
                         if (results.packet) { updateObj.packet = results.packet; currentResults.packet = results.packet; currentCompleted.add("packet"); }
@@ -467,7 +472,7 @@ function SourceMissionControlContent() {
                         continue; 
                     } else {
                         // IT FAILED OR PAUSED IN BACKEND
-                        const failMsg = results.error || "Analysis Paused: Insufficient source context";
+                        const failMsg = clusterData.error || results?.error_detail || "Analysis Paused: Insufficient source context";
                         setError({ message: failMsg, type: "error" });
                         setLogs(prev => [{ event: failMsg, time: "Just now", status: "error" }, ...prev]);
                         isRunningAllRef.current = false
