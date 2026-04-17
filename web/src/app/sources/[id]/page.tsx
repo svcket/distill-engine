@@ -1111,6 +1111,11 @@ function SourceMissionControlContent() {
     const activeVisibleIndex = getActiveVisibleIndex()
 
     const getStageStatus = (index: number): StageStatus => {
+        // ENFORCE CHRONOLOGICAL INTEGRITY: 
+        // If a stage is positioned downstream of the current active blocker, it MUST physically be locked, 
+        // even if the database claims it's completed from a previous session.
+        if (index > activeIndex) return "locked"
+
         const stage = STAGES[index]
         const tStatus = source?.transcriptStatus
         
@@ -1809,7 +1814,7 @@ function SourceMissionControlContent() {
                                                                 {/* Primary Action Button Cluster */}
                                                                 <div className="flex items-center gap-4">
                                                                     {/* View Button (Primary for completed stages) */}
-                                                                     {(isCompleted || !!stageResults[stage.id]) && (
+                                                                     {(!isLocked && (isCompleted || (stageResults[stage.id] && Object.keys(stageResults[stage.id] as Record<string,unknown> || {}).length > 0))) && (
                                                                          <Button
                                                                              variant="outline"
                                                                              size="sm"
