@@ -1479,7 +1479,7 @@ function SourceMissionControlContent() {
                         }
                     }
                     
-                    data = dataValue ?? undefined
+                    if (dataValue) data = dataValue
 
                 }
             } catch (e) {
