@@ -278,9 +278,20 @@ function SourceMissionControlContent() {
             if (s.id === "packet" && (completedStages.has("packet") || completedStages.has("cluster"))) continue
             
             if (!completedStages.has(s.id)) return i
+
+            // IMPORTANT FIX: Even if stage is marked completed in DB, if it fails gating 
+            // (e.g. missing dependencies), we MUST stop at it!
+            const gate = validateStageGating(s.id, stageResults);
+            if (!gate.valid) return i;
+
+            // ENFORCE LOCAL DATA for interactive/critical stages.
+            // If the DB says 'angle' is completed but we have no local results for it,
+            // we must not skip it. We must stop to allow regeneration.
+            if (s.id === "angle" && !stageResults.angle) return i;
+            if (s.id === "draft" && !stageResults.draft && !stageResults.WrittenDraft) return i;
         }
         return STAGES.length
-    }, [completedStages, source.transcriptStatus, source.id]);
+    }, [completedStages, source.transcriptStatus, source.id, stageResults]);
 
     const persistStageCompletion = useCallback(async (stageId: StageId) => {
         try {
@@ -1095,9 +1106,14 @@ function SourceMissionControlContent() {
         const tStatus = source?.transcriptStatus
         
         if (completedStages.has(stage.id)) {
-            // Visual Gate: Only show completed if dependencies are met
+            // Visual Gate: Only show completed if dependencies are met AND stage data exists
             const gate = validateStageGating(stage.id, stageResults);
-            if (gate.valid) return "completed";
+            
+            let hasData = true;
+            if (stage.id === "angle" && !stageResults.angle) hasData = false;
+            if (stage.id === "draft" && !stageResults.draft && !stageResults.WrittenDraft) hasData = false;
+
+            if (gate.valid && hasData) return "completed";
         }
         
         // Ensure transcript stage shows as completed if status is retrieved
