@@ -102,6 +102,15 @@ async def get_results(source_id: str, x_api_key: str = Header(None)):
     }
     
     results = {}
+    
+    # ─── CLOUD RECOVERY HANDSHAKE ───
+    # If we are on a stateless server (Railway), we might be missing local files.
+    # We attempt a pro-active recovery from Supabase.
+    try:
+        from supabase_utils import download_artifact
+    except ImportError:
+        download_artifact = None
+
     for stage_id, suffix in folders.items():
         folder_name = stage_id
         # Special folder mappings
@@ -115,6 +124,17 @@ async def get_results(source_id: str, x_api_key: str = Header(None)):
         if stage_id == "visual": folder_name = "visual_plans"
 
         file_path = resolve_file_path(base_dir, folder_name, source_id, suffix)
+        
+        # PROACTIVE RECOVERY: If missing locally, try Supabase
+        if not file_path and download_artifact:
+            target_local = os.path.join(base_dir, folder_name, f"{source_id}{suffix}")
+            # Map folder_name to Supabase bucket (usually matches)
+            bucket = folder_name
+            # Supabase buckets: transcripts, summaries, insight_packets, insights, angles, drafts, evaluations, visual_plans
+            if download_artifact(bucket, source_id, f"{source_id}{suffix}", target_local):
+                logger.info(f"[Server] Recovered {stage_id} artifact from Supabase.")
+                file_path = target_local
+
         if file_path:
             try:
                 with open(file_path, 'r') as f:

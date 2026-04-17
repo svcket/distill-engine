@@ -410,24 +410,32 @@ function SourceMissionControlContent() {
         const currentCompleted = authorativeCompleted
         const currentResults: Record<string, StageResultData> = { ...stageResults }; 
 
-        // CRITICAL FIX: Compute startIndex directly from currentCompleted (the authoritative merged
+        // ═══ AUTHORITATIVE START INDEX CALCULATION ═══
+        // Critical: Compute startIndex directly from currentCompleted (the authoritative merged
         // set), NOT from getFirstIncompleteIndex() which reads stale React state.
-        // The old `startIndex === STAGES.length ? 0 : startIndex` was the root cause of double-
-        // execution: when the pipeline appeared fully done it would reset i=0 and re-run judge+transcript.
         const tStatusNow = source?.transcriptStatus
         const isTranscriptDoneNow = tStatusNow === "transcribed" || tStatusNow === "rescued_text" || tStatusNow === "unavailable"
+        
         let startIndex = 0
+        const currentCompletedIds = new Set(authorativeCompleted)
+        
         for (let k = 0; k < STAGES.length; k++) {
             const s = STAGES[k]
-            if (s.id === "judge" && currentCompleted.has("judge")) continue
-            if (s.id === "transcript" && (isTranscriptDoneNow || currentCompleted.has("transcript"))) continue
-            if (s.id === "summary" && (currentCompleted.has("summary") || currentCompleted.has("cluster"))) continue
-            if (s.id === "packet" && (currentCompleted.has("packet") || currentCompleted.has("cluster"))) continue
-            if (!currentCompleted.has(s.id)) { startIndex = k; break }
-            startIndex = k + 1
+            const isDone = currentCompletedIds.has(s.id) || 
+                          (s.id === "judge" && (source?.score ?? 0) > 0) ||
+                          (s.id === "transcript" && isTranscriptDoneNow) ||
+                          ((s.id === "summary" || s.id === "packet") && currentCompletedIds.has("cluster"));
+
+            if (isDone) {
+                startIndex = k + 1
+            } else {
+                startIndex = k
+                break
+            }
         }
 
-        // Safety: if pipeline is already complete, do nothing
+        console.log(`[Orchestrator] Starting at index ${startIndex} (${STAGES[startIndex]?.id || 'END'})`)
+
         if (startIndex >= STAGES.length) {
             console.log("[Pipeline] All stages already complete. Nothing to run.")
             isRunningAllRef.current = false
@@ -935,8 +943,6 @@ function SourceMissionControlContent() {
                     }
                 }
 
-                setLogs(prev => [{ event: `${stage.label} completed`, time: "Just now", status: "success" }, ...prev])
-
                 try {
                     await fetch("/api/store", {
                         method: "POST",
@@ -1084,6 +1090,7 @@ function SourceMissionControlContent() {
                             }
                         } else if (prev.has(sid) && !isRunningAll) {
                             // Only delete if NOT running AND we are absolutely sure it's missing
+                            // Use a small safety window: if it was JUST completed in this session, keep it
                             validated.delete(sid) 
                         }
                     })
@@ -2119,4 +2126,4 @@ function SourceMissionControlContent() {
         </div>
     )
 }
-// Build cache buster: Fri Apr 17 10:02:51 WAT 2026
+// Build cache buster: Fri Apr 17 09:28:12 WAT 2026

@@ -145,11 +145,19 @@ def generate_blueprint(angle_path: str, insights_path: str, lang: str = "en"):
         with open(out_path, 'w', encoding='utf-8') as f:
             json.dump(bundle, f, indent=2)
             
+        try:
+            from supabase_utils import upload_artifact
+            upload_artifact("outlines", source_id, out_path)
+        except Exception as up_e:
+            print(f"[{source_id}] Architect: Failed to upload artifact to Supabase: {up_e}", file=sys.stderr)
+            
         print(json.dumps(bundle))
         
     except Exception as e:
         print(json.dumps({"status": "failed", "error": str(e)}), file=sys.stderr)
         sys.exit(1)
+
+# Deployment cache buster: Fri Apr 17 09:28:34 WAT 2026
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate an architectural text outline from angles and insights.")
