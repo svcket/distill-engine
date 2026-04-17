@@ -326,10 +326,10 @@ function SourceMissionControlContent() {
                         const newCompleted = new Set(stagesFromPayload as StageId[]);
                         
                         setCompletedStages(prev => {
-                            if (isRunningAll) {
-                                return new Set([...Array.from(prev), ...Array.from(newCompleted)]);
-                            }
-                            return newCompleted;
+                            // ALWAYS merge — never replace. The DB payload may not include
+                            // judge/transcript (inferred stages never pushed to Prisma).
+                            // Replacing would clobber them and break stage circle display.
+                            return new Set([...Array.from(prev), ...Array.from(newCompleted)]);
                         });
                         
                         if (executingStageRef.current && newCompleted.has(executingStageRef.current)) {
@@ -937,7 +937,9 @@ function SourceMissionControlContent() {
                         const resApi = await fetch(`/api/sources/${id}/results`);
                         const resultData = await resApi.json();
                         if (resultData?.results) {
-                            setStageResults(resultData.results);
+                            // MERGE — never replace. In-memory stageResults from the
+                            // just-completed run (angle, draft, qa, socialise) must survive.
+                            setStageResults(prev => ({ ...prev, ...resultData.results }));
                         }
                     }
                 }
@@ -1446,24 +1448,39 @@ function SourceMissionControlContent() {
                 })
                 if (res.ok) {
                     const json = await res.json()
-                    // Unwrap the result to find the actual data payload
-                    let dataValue = json.result
-                    if (dataValue && typeof dataValue === 'object') {
-                        dataValue = dataValue.data || dataValue.results || dataValue.result || dataValue
+                    // json.result = the raw artifact from Supabase
+                    // Cluster artifact shape: { status, source_id, results: { refine, summary, packet, insights } }
+                    // Other artifacts: raw data objects
+                    const rawResult = json.result
+                    
+                    let dataValue: StageResultData | null = null
+                    
+                    if (stage.id === 'cluster' || stage.id === 'insights' || stage.id === 'summary') {
+                        // Cluster artifact — extract the constituent results AND hydrate siblings
+                        const clusterResults = rawResult?.results || rawResult
+                        if (clusterResults) {
+                            setStageResults(prev => {
+                                const next = { ...prev }
+                                if (clusterResults.insights) next.insights = clusterResults.insights as StageResultData
+                                if (clusterResults.summary) next.summary = clusterResults.summary as StageResultData
+                                if (clusterResults.packet) next.packet = clusterResults.packet as StageResultData
+                                if (clusterResults.refine) next.refine = clusterResults.refine as StageResultData
+                                next.cluster = clusterResults as StageResultData
+                                return next
+                            })
+                            // Use the insights data as the display payload for cluster/insights
+                            dataValue = (clusterResults.insights || clusterResults.summary || clusterResults) as StageResultData
+                        }
+                    } else {
+                        // Standard artifact — unwrap common wrappers
+                        dataValue = (rawResult?.data || rawResult?.result || rawResult) as StageResultData
+                        if (dataValue) {
+                            setStageResults(prev => ({ ...prev, [stage.id]: dataValue! }))
+                        }
                     }
                     
-                    if (dataValue) {
-                        setStageResults(prev => {
-                            const next = { ...prev, [stage.id]: dataValue };
-                            // If this was a cluster, ensure constituent parts are also hydrated
-                            if (stage.id === 'cluster' && dataValue.results) {
-                                if (dataValue.results.summary) next.summary = dataValue.results.summary;
-                                if (dataValue.results.insights) next.insights = dataValue.results.insights;
-                            }
-                            return next;
-                        })
-                        data = dataValue
-                    }
+                    data = dataValue ?? undefined
+
                 }
             } catch (e) {
                 console.error(`Failed to hydrate ${stage.id}:`, e)

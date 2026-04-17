@@ -80,11 +80,13 @@ export async function POST(request: Request) {
                 
                 // HYDRATION MAPPING: Some stages are "Clusters" that represent multiple UI stages
                 const stageMappings: Record<string, string[]> = {
-                    'cluster': ['transcript', 'summary', 'insights'],
-                    'qa': ['qa'],
-                    'evaluate': ['qa'],
+                    'judge':     ['judge'],
+                    'transcript':['transcript'],
+                    'cluster':   ['cluster', 'transcript', 'summary', 'insights', 'refine', 'packet'],
+                    'qa':        ['qa'],
+                    'evaluate':  ['qa'],
                     'socialise': ['socialise'],
-                    'social': ['socialise']
+                    'social':    ['socialise']
                 };
 
                 const stagesToAdd = stageMappings[stageId] || [stageId];
