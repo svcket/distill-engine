@@ -74,7 +74,7 @@ def _assess_content_quality(source_id: str, base: str) -> tuple:
 
 # ─── Cluster Runner ───────────────────────────────────────────────────────────
 
-def run_analysis_cluster(source_id: str, lang: str = "en"):
+def run_analysis_cluster(source_id: str, lang: str = "en", rescued: bool = False):
     """
     Unified Analysis Cluster — groups Refine, Summary, Packet, and Insights stages 
     into a single process to eliminate process startup latency.
@@ -125,25 +125,32 @@ def run_analysis_cluster(source_id: str, lang: str = "en"):
     is_sufficient, quality_reason = _assess_content_quality(source_id, base)
 
     if not is_sufficient:
-        # Produce a human-readable, actionable error message based on WHY it failed
-        if quality_reason == "MISSING":
-            user_msg = (
-                "Content Unavailable: This video's transcript could not be extracted. "
-                "The video may be private, age-restricted, region-blocked, or the creator "
-                "has disabled captions. Try a different source or a public mirror of this content."
-            )
-            error_type = "DRM_BLOCK"
-        else:
-            user_msg = (
-                "Insufficient Content: The extracted source data is too thin to produce "
-                "meaningful intelligence. The source may only contain show notes, promotional "
-                "links, or a short preview clip."
-            )
-            error_type = "THIN_CONTENT"
+        # For rescued/DRM content, THIN is expected (show notes are short) — don't hard-fail.
+        # MISSING still always fails: if Supabase recovery found nothing, there's truly no content.
+        should_fail = (quality_reason == "MISSING") or (quality_reason == "THIN" and not rescued)
+        
+        if should_fail:
+            if quality_reason == "MISSING":
+                user_msg = (
+                    "Content Unavailable: This video's transcript could not be extracted. "
+                    "The video may be private, age-restricted, region-blocked, or the creator "
+                    "has disabled captions. Try a different source or a public mirror of this content."
+                )
+                error_type = "DRM_BLOCK"
+            else:
+                user_msg = (
+                    "Insufficient Content: The extracted source data is too thin to produce "
+                    "meaningful intelligence. The source may only contain show notes, promotional "
+                    "links, or a short preview clip."
+                )
+                error_type = "THIN_CONTENT"
 
-        print(f"[{source_id}] QUALITY GATE FAIL ({error_type}): {user_msg}", file=sys.stderr)
-        # Do NOT print a JSON payload — doing so tricks the UI into thinking the stage succeeded.
-        sys.exit(1)  # HARD FAIL: UI will turn the progress bar red
+            print(f"[{source_id}] QUALITY GATE FAIL ({error_type}): {user_msg}", file=sys.stderr)
+            # Do NOT print a JSON payload — doing so tricks the UI into thinking the stage succeeded.
+            sys.exit(1)  # HARD FAIL: UI will turn the progress bar red
+        else:
+            print(f"[{source_id}] Quality Gate: THIN content allowed through (rescued mode). Proceeding with show notes...", flush=True)
+
 
     start_time = time.time()
     results = {}
@@ -365,5 +372,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the full analysis cluster for a source.")
     parser.add_argument("--source-id", required=True)
     parser.add_argument("--lang", default="en")
+    parser.add_argument("--rescued", action="store_true", default=False,
+                        help="Set when transcript is rescued from metadata/show notes. Relaxes THIN gate.")
     args = parser.parse_args()
-    run_analysis_cluster(args.source_id, args.lang)
+    run_analysis_cluster(args.source_id, args.lang, rescued=args.rescued)

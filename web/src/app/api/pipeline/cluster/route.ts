@@ -28,6 +28,11 @@ export async function POST(request: Request) {
 
         const args = ['--source-id', sourceId]
         if (language) args.push('--lang', language)
+        // Tell the cluster it's working with rescued/metadata-only content so the quality
+        // gate uses a lower threshold rather than hard-failing on thin show notes.
+        if (source.transcriptStatus === 'rescued_text' || source.transcriptStatus === 'unavailable') {
+            args.push('--rescued')
+        }
 
         // The cluster script runs Summary, Packet, and Insights in a single process
         const { success, data, error: scriptError } = await runPythonScript<{ results: Record<string, unknown> }>('run_analysis_cluster.py', args)
@@ -36,8 +41,10 @@ export async function POST(request: Request) {
             const result = data as unknown as Record<string, unknown>
 
             // ── Content Quality Gate response ────────────────────────────────
-            // RELAXED: Allow processing of rescued metadata (rescued_text) even if thin
-            if (source.status !== 'rescued_text' && (result.status === 'thin_content' || result.error_type === 'THIN_CONTENT')) {
+            // RELAXED: Allow processing of rescued metadata (rescued_text / unavailable) even if thin.
+            // Check transcriptStatus (set by harvester) not status (which stays "processing").
+            const isRescued = source.transcriptStatus === 'rescued_text' || source.transcriptStatus === 'unavailable'
+            if (!isRescued && (result.status === 'thin_content' || result.error_type === 'THIN_CONTENT')) {
                 console.warn(`[Cluster API] Thin content gate triggered for ${sourceId}:`, result.error_detail)
                 return NextResponse.json({
                     error: result.error_detail || "Insufficient content to analyse. Please provide a source with accessible audio or a richer description.",

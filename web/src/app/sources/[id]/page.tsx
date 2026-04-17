@@ -371,27 +371,26 @@ function SourceMissionControlContent() {
         setError(null)
 
         // RACE CONDITION FIX: completedStages React state may not be hydrated yet
-        // when autostart fires. Fetch authoritative completion data directly from the
-        // DB before building our snapshot so we never re-run already-finished stages.
-        let authorativeCompleted = new Set(completedStages)
-        try {
-            const freshRes = await fetch(`/api/store/source?id=${id}`)
-            if (freshRes.ok) {
-                const freshJson = await freshRes.json()
-                const freshData = freshJson?.source ?? freshJson
-                const dbStages: string[] = freshData?.completedStages ?? []
-                dbStages.forEach(s => authorativeCompleted.add(s as StageId))
-                // Also infer hidden stage completions from metadata
-                if ((freshData?.score ?? 0) > 0) authorativeCompleted.add("judge")
-                if (freshData?.transcriptStatus === "transcribed" || freshData?.transcriptStatus === "rescued_text") {
-                    authorativeCompleted.add("transcript")
-                }
-                // Sync back to React state so the UI reflects reality
-                setCompletedStages(new Set(authorativeCompleted))
-            }
-        } catch {
-            // Non-fatal: fall back to whatever state we have
+        // when autostart fires. Read from the `source` object (Prisma data — already loaded
+        // on page mount via the Server Component) which is always authoritative.
+        // This avoids an extra network round-trip and the local-store 404 problem.
+        const authorativeCompleted = new Set(completedStages)
+        
+        // Merge in DB completedStages from Prisma source object (already in React state)
+        if (source?.completedStages && Array.isArray(source.completedStages)) {
+            source.completedStages.forEach((s: string) => authorativeCompleted.add(s as StageId))
         }
+        // Infer hidden stages from metadata fields
+        if ((source?.score ?? 0) > 0) authorativeCompleted.add("judge")
+        if (
+            source?.transcriptStatus === "transcribed" ||
+            source?.transcriptStatus === "rescued_text" ||
+            source?.transcriptStatus === "unavailable"  // DRM-restricted: treated as done
+        ) {
+            authorativeCompleted.add("transcript")
+        }
+        // Sync to React state so UI reflects reality before we start looping
+        setCompletedStages(new Set(authorativeCompleted))
 
         const currentCompleted = authorativeCompleted
         const currentResults: Record<string, StageResultData> = { ...stageResults }; 
@@ -941,7 +940,7 @@ function SourceMissionControlContent() {
         } catch (e) {
             console.error("Failed final metadata refresh:", e)
         }
-    }, [completedStages, getFirstIncompleteIndex, id, intentAudience, intentTone, intentType, panelContent, source?.channel, source?.title, source?.url, stageResults, persistStageCompletion, lang]);
+    }, [completedStages, getFirstIncompleteIndex, id, intentAudience, intentTone, intentType, panelContent, source?.channel, source?.title, source?.url, source?.completedStages, source?.transcriptStatus, source?.score, stageResults, persistStageCompletion, lang]);
 
     // Load persisted state on mount
     useEffect(() => {
