@@ -56,6 +56,11 @@ async function runPythonScriptRemote<T>(
     try {
         console.log(`[Python Runner] Proxying to Remote Backend: ${backendUrl}/run (${scriptName})`)
         
+        const globalForwardEnv = {
+            APIFY_TOKEN: process.env.APIFY_TOKEN || '',
+            ...options.env
+        };
+
         const response = await fetch(`${backendUrl}/run`, {
             method: 'POST',
             headers: {
@@ -65,7 +70,7 @@ async function runPythonScriptRemote<T>(
             body: JSON.stringify({
                 script: scriptName,
                 args: args,
-                env_overrides: options.env
+                env_overrides: globalForwardEnv
             })
         })
 
@@ -197,6 +202,11 @@ export async function runPythonScriptStream(
 
     console.log(`[Python Runner] Initiating Stream Proxy: ${backendUrl}/run-stream (${scriptName})`)
     
+    const globalForwardEnv = {
+        APIFY_TOKEN: process.env.APIFY_TOKEN || '',
+        ...options.env
+    };
+
     return fetch(`${backendUrl}/run-stream`, {
         method: 'POST',
         headers: {
@@ -206,7 +216,7 @@ export async function runPythonScriptStream(
         body: JSON.stringify({
             script: scriptName,
             args: args,
-            env_overrides: options.env
+            env_overrides: globalForwardEnv
         })
     })
 }
