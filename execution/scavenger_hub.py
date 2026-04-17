@@ -24,7 +24,8 @@ class ScavengerHub:
         if not self.api_token:
             return None
 
-        url = f"{self.api_base}/acts/{actor_id}/run-sync-get-dataset-items?token={self.api_token}&timeout={timeout}"
+        actor_id_escaped = actor_id.replace("/", "~")
+        url = f"{self.api_base}/acts/{actor_id_escaped}/run-sync-get-dataset-items?token={self.api_token}&timeout={timeout}"
         
         try:
             print(f"[ScavengerHub] Triggering Heavy Artillery (Actor: {actor_id})...", file=sys.stderr)
@@ -56,7 +57,7 @@ class ScavengerHub:
         
         # Note: apify/youtube-scraper is a complex actor. 
         # For transcripts, we might prefer a more specialized one or ensure settings are right.
-        results = self._run_actor("apify/youtube-scraper", actor_input)
+        results = self._run_actor("streamers/youtube-scraper", actor_input)
         
         if results and len(results) > 0:
             video_data = results[0]
@@ -104,7 +105,7 @@ class ScavengerHub:
         """
         if source_type == "youtube":
             actor_input = {"startUrls": [{"url": url}], "maxResults": 1}
-            results = self._run_actor("apify/youtube-scraper", actor_input)
+            results = self._run_actor("streamers/youtube-scraper", actor_input)
             if results and len(results) > 0:
                 v = results[0]
                 return {
