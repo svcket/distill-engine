@@ -12,6 +12,8 @@ import json
 import os
 
 # Pydantic and OpenAI are lazy-loaded in generate_blueprint
+from pydantic import BaseModel, Field
+from typing import List, Optional
 
 class SectionBlueprint(BaseModel):
     heading: str = Field(description="The section heading.")

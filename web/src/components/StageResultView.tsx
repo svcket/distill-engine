@@ -463,46 +463,102 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
         )
     }
 
-    const format = getStr(d, "recommended_format")
-    const secondaryFormats = getArr(d, "secondary_formats")
-    const audience = getStr(d, "target_audience")
-    const framing = getStr(d, "framing_angle")
+    const format = getStr(d, "content_type") || getStr(d, "recommended_format")
+    const audience = getStr(d, "audience") || getStr(d, "target_audience")
+    const tone = getStr(d, "tone")
+    const goal = getStr(d, "goal") || getStr(d, "framing_angle")
+    const readingLevel = getStr(d, "reading_level")
+    const seoPriority = getStr(d, "seo_priority")
+    const grounding = getStr(d, "source_grounding_mode")
+    const mustInclude = getArr(d, "must_include")
+    const avoidPatterns = getArr(d, "avoid_patterns")
+    
     const titles = getArr(d, "working_titles")
     const rationale = getStr(d, "rationale")
 
     const displayFormat = format.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-5 animate-in fade-in duration-300">
             <div className="flex items-center gap-2 flex-wrap">
                 <Badge className="bg-brand/10 text-brand border-brand/20 flex items-center h-8 px-4 text-[13px] font-semibold">
-                    {displayFormat}
+                    {displayFormat || "Article"}
                 </Badge>
-                {secondaryFormats.map((f, i) => (
-                    <Badge key={i} variant="secondary" className="flex items-center h-8 px-4 text-[13px] text-muted-foreground/80">
-                        {String(f).replace(/_/g, " ")}
+                {audience && (
+                    <Badge variant="secondary" className="flex items-center h-8 px-4 text-[13px] text-muted-foreground/80">
+                        {audience.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
                     </Badge>
-                ))}
+                )}
+                {tone && (
+                    <Badge variant="secondary" className="flex items-center h-8 px-4 text-[13px] text-muted-foreground/80">
+                        {tone.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
+                    </Badge>
+                )}
+                {seoPriority && (
+                    <Badge variant="secondary" className="flex items-center h-8 px-4 text-[13px] text-muted-foreground/80">
+                        SEO: {seoPriority}
+                    </Badge>
+                )}
             </div>
 
-            {framing && (
+            {goal && (
                 <div>
-                    <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif mb-1">Framing Angle</div>
-                    <p className="text-sm text-foreground/70 italic leading-relaxed">&ldquo;{framing}&rdquo;</p>
+                    <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif mb-1">Editorial Goal</div>
+                    <p className="text-[13px] text-foreground/70 italic leading-relaxed">&ldquo;{goal}&rdquo;</p>
                 </div>
             )}
 
-            {audience && (
+            {grounding && (
                 <div>
-                    <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif mb-1">Target Audience</div>
+                    <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif mb-1">Source Grounding</div>
                     <div className="flex items-center gap-2">
-                        <p className="text-sm text-foreground/70">{audience}</p>
+                        <p className="text-[13px] text-foreground/70">{grounding}</p>
+                    </div>
+                </div>
+            )}
+            
+            {readingLevel && (
+                <div>
+                    <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif mb-1">Reading Level</div>
+                    <div className="flex items-center gap-2">
+                        <p className="text-[13px] text-foreground/70">{readingLevel}</p>
                     </div>
                 </div>
             )}
 
+            {(mustInclude.length > 0 || avoidPatterns.length > 0) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                    {mustInclude.length > 0 && (
+                        <div className="space-y-2">
+                            <div className="text-[11px] font-bold text-emerald-500 uppercase tracking-widest font-serif">Must Include</div>
+                            <ul className="space-y-1">
+                                {mustInclude.map((item, i) => (
+                                    <li key={i} className="text-[13px] text-muted-foreground flex gap-1.5 items-start">
+                                        <span className="text-emerald-500 mt-0.5 shrink-0">+</span>
+                                        <span className="leading-snug">{String(item)}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    {avoidPatterns.length > 0 && (
+                        <div className="space-y-2">
+                            <div className="text-[11px] font-bold text-red-500/80 uppercase tracking-widest font-serif">Avoid Patterns</div>
+                            <ul className="space-y-1">
+                                {avoidPatterns.map((item, i) => (
+                                    <li key={i} className="text-[13px] text-muted-foreground flex gap-1.5 items-start">
+                                        <span className="text-red-500/80 mt-0.5 shrink-0">-</span>
+                                        <span className="leading-snug">{String(item)}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {titles.length > 0 && (
-                <div>
+                <div className="pt-2">
                     <div className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest font-serif mb-2">Working Titles</div>
                     <div className="space-y-1.5">
                         {titles.map((t, i) => (

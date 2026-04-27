@@ -12,6 +12,8 @@ import json
 import os
 
 # Heavy dependencies are lazy-loaded to ensure zero-crash deployment
+from pydantic import BaseModel, Field
+from typing import List, Optional
 
 class AngleStrategy(BaseModel):
     recommended_format: str = Field(description="Primary format (e.g., 'Long-form Essay', 'X Thread')")
