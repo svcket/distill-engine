@@ -810,7 +810,7 @@ function SourceMissionControlContent() {
                                         data = parsed as StagePayload;
                                     }
                                     // If we got a final success result with payload data, we can stop reading the stream entirely
-                                    if (data.result || data.data) {
+                                    if (data.result || data.data || (Object.keys(parsed).length > 2 && !parsed.type)) {
                                         shouldAbortStream = true;
                                         break;
                                     }
@@ -1789,10 +1789,10 @@ function SourceMissionControlContent() {
                                 const normalizedScore = score > 10 ? score : score * 10;
                                 return (
                                     <>
-                                        <span className={cn("font-semibold tabular-nums", score > 0 ? (normalizedScore >= 80 ? "text-emerald-600" : normalizedScore >= 60 ? "text-amber-600" : "text-red-500") : "text-muted-foreground")}>
-                                            {score > 0 ? (score > 10 ? `${score}/100` : `${score}/10`) : (stageResults.qa ? <span className="text-muted-foreground opacity-50">Calculating...</span> : <span className="opacity-70 font-normal italic">{t("pending")}...</span>)}
+                                        <span className={cn("font-semibold tabular-nums", (score > 0 && completedStages.has('qa')) ? (normalizedScore >= 80 ? "text-emerald-600" : normalizedScore >= 60 ? "text-amber-600" : "text-red-500") : "text-muted-foreground")}>
+                                            {(score > 0 && completedStages.has('qa')) ? (score > 10 ? `${score}/100` : `${score}/10`) : (stageResults.qa ? <span className="text-muted-foreground opacity-50">Calculating...</span> : <span className="opacity-70 font-normal italic">{t("pending")}...</span>)}
                                         </span>
-                                        {score > 0 && (
+                                        {(score > 0 && completedStages.has('qa')) && (
                                             <span className={cn("text-xs px-1.5 py-0.5 rounded-md font-medium", normalizedScore >= 80 ? "bg-emerald-50 text-emerald-700" : normalizedScore >= 60 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-600")}>
                                                 {normalizedScore >= 80 ? "Exceptional" : normalizedScore >= 60 ? "Solid" : "Low score"}
                                             </span>

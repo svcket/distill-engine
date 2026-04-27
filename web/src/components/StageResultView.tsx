@@ -283,7 +283,10 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
     const quotes = getArr(d, "memorable_quotes")
     
     // Check for is_rescued flag in d or data, or if status indicates a rescue/fallback
+    // We refine this to only show if the transcript was actually rescued or unavailable
     const isRescued = d.is_rescued === true || data.is_rescued === true || d.status === "rescued" || data.status === "rescued" || d.status === "success_fallback" || data.status === "success_fallback"
+    // NEW: Cross-reference with actual source status if available
+    const trulyRescued = isRescued && (!d.core_argument || d.core_argument.toString().toLowerCase().includes("metadata"))
 
     if (compact) {
         return (
@@ -302,7 +305,7 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
     return (
         <div className="space-y-8 animate-in fade-in duration-300">
             {/* Rescue Indicator */}
-            {isRescued && (
+            {trulyRescued && (
                 <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
                     <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                     <div className="space-y-1">
@@ -947,7 +950,7 @@ function SocialiseResult({ data, sourceId }: { data: Record<string, unknown>; so
 }
 
 function QaResult({ data, compact }: { data: Record<string, unknown>; compact?: boolean }) {
-    const dqmData = ((data?.result || data?.payload || data?.data || data) as unknown) as (DQMData & { total_score?: number; score?: number; dqmScore?: number; publishability?: number })
+    const dqmData = ((data?.result || data?.payload || data?.data || data) as unknown) as (DQMData & { total_score?: number; score?: number; dqmScore?: number; publishability?: number; scores?: any })
     if (!dqmData) return <div className="p-4 text-xs text-muted-foreground italic">Matrix analysis pending...</div>
     const pubScore = dqmData?.scores?.publishability ?? dqmData?.scores?.total_score ?? dqmData?.total_score ?? dqmData?.publishability ?? dqmData?.score ?? dqmData?.dqmScore ?? 0
     const normalizedScore = pubScore > 10 ? pubScore : pubScore * 10
