@@ -845,7 +845,9 @@ function SourceMissionControlContent() {
                 // CRITICAL: Explicitly fail the pipeline if the returned payload contains an error
                 if (typeof resValue === 'object' && resValue !== null) {
                     const rv = resValue as Record<string, unknown>;
-                    if (rv.status === 'failed' || rv.status === 'error') {
+                    // Only throw if there is an explicit error message, OR if it's a stream chunk failure
+                    // We must NOT throw if rv.status === 'failed' but it's just a Prisma Source record update!
+                    if (rv.status === 'error' || (rv.status === 'failed' && (rv.error || rv.message))) {
                         throw new Error(`[Execution Error] ${rv.error || rv.message || "Stage failed"}`);
                     }
                 }
