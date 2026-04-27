@@ -105,6 +105,24 @@ export async function POST(request: Request) {
                 }
             }));
 
+            // CLOUD BRIDGE: Guarantee the file exists in Supabase for the Analysis Cluster
+            // (Railway might fail to upload if it lacks keys, so Vercel does it as a backup)
+            if (result.segments && result.segments.length > 0 && supabaseAdmin) {
+                try {
+                    const jsonString = JSON.stringify(result.segments, null, 2);
+                    const { error: uploadErr } = await supabaseAdmin.storage
+                        .from('transcripts')
+                        .upload(`${sourceId}/${sourceId}_raw.json`, jsonString, {
+                            upsert: true,
+                            contentType: 'application/json'
+                        });
+                    if (uploadErr) console.error("[Vercel] Backup Supabase Upload Error:", uploadErr);
+                    else console.log(`[Vercel] Backup Supabase Upload Success for ${sourceId}`);
+                } catch (e) {
+                    console.error("[Vercel] Backup Supabase Exception:", e);
+                }
+            }
+
             return NextResponse.json({ 
                 message: "Transcription completed", 
                 status: finalStatus,
