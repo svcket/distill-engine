@@ -805,9 +805,15 @@ function SourceMissionControlContent() {
                                     shouldAbortStream = true; 
                                     break; 
                                 } else if (parsed.type === "success" || parsed.status === "success" || (parsed as StagePayload).data || parsed.result) {
-                                    data = parsed as StagePayload;
-                                    // If we got a final success result in the stream, we can stop reading
-                                    if (data.result || data.data) break;
+                                    // Only overwrite if the new chunk actually contains payload data, or if we don't have data yet
+                                    if ((parsed as StagePayload).data || parsed.result || !data) {
+                                        data = parsed as StagePayload;
+                                    }
+                                    // If we got a final success result with payload data, we can stop reading the stream entirely
+                                    if (data.result || data.data) {
+                                        shouldAbortStream = true;
+                                        break;
+                                    }
                                 }
                             } catch (e) {
                                 console.error("Error parsing stream chunk:", e, line);
