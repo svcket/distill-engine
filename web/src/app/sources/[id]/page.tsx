@@ -816,7 +816,8 @@ function SourceMissionControlContent() {
                 } else {
                     data = await res.json()
                     if (!res.ok) {
-                        const errorDetails = data?.details ? (typeof data.details === 'string' ? data.details : JSON.stringify(data.details)) : "";
+                        const errorData = data as any;
+                        const errorDetails = errorData?.details ? (typeof errorData.details === 'string' ? errorData.details : JSON.stringify(errorData.details)) : "";
                         throw new Error(`[${data?.error || "Execution failed"}] ${errorDetails}`)
                     }
                     
