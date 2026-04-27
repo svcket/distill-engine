@@ -349,8 +349,17 @@ def update_source_metadata(source_id: str, updates: dict):
         print(f"[{source_id}] Metadata update FAILED: {e}", file=sys.stderr)
 
 
-def fetch_youtube_transcript(source_id: str, output_dir: str, max_segments: int = 2000) -> dict:
-    """Fetch YouTube transcript via youtube_transcript_api with simple fallback."""
+def fetch_youtube_transcript(source_id: str, output_dir: str, max_segments: int = 2000, storage_id: str = None) -> dict:
+    """
+    Fetch YouTube transcript via youtube_transcript_api with simple fallback.
+    
+    source_id: the YouTube video ID (used for the API call)
+    storage_id: the Prisma/DB source ID to use for file naming and Supabase storage.
+                Falls back to source_id if not provided (backwards compat).
+    """
+    # The key used for file paths and Supabase storage must be the Prisma cuid
+    # so the cluster can find the file when it runs separately.
+    file_id = storage_id or source_id
     
     # fetch is an instance method in this version
     try:
@@ -375,13 +384,14 @@ def fetch_youtube_transcript(source_id: str, output_dir: str, max_segments: int 
             "duration": duration,
         })
 
-    # NEW: Apply segment merging to hasten downstream processing
+    # Apply segment merging to hasten downstream processing
     if max_segments and len(transcript_list) > max_segments:
-        print(f"[{source_id}] Merging {len(transcript_list)} segments into max {max_segments}...")
+        print(f"[{file_id}] Merging {len(transcript_list)} segments into max {max_segments}...")
         transcript_list = merge_segments(transcript_list, max_segments)
 
-    json_path = os.path.join(output_dir, f"{source_id}_raw.json")
-    txt_path = os.path.join(output_dir, f"{source_id}_raw.txt")
+    # CRITICAL: Use file_id (Prisma cuid) for file naming so the cluster finds it
+    json_path = os.path.join(output_dir, f"{file_id}_raw.json")
+    txt_path = os.path.join(output_dir, f"{file_id}_raw.txt")
 
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(transcript_list, f, indent=2)
@@ -390,7 +400,7 @@ def fetch_youtube_transcript(source_id: str, output_dir: str, max_segments: int 
         f.write("\n\n".join(str(c.get("text", "")) for c in transcript_list))
 
     return {
-        "source_id": source_id,
+        "source_id": file_id,
         "status": "success",
         "json_path": json_path,
         "text_path": txt_path,
@@ -1723,7 +1733,9 @@ def fetch_transcript(
                 yt_id = source_id
                 
             try:
-                result = fetch_youtube_transcript(yt_id, output_dir, max_segments=max_segments)
+                # Pass source_id (Prisma cuid) as storage_id so files are stored under
+                # the correct key that the analysis cluster will look up.
+                result = fetch_youtube_transcript(yt_id, output_dir, max_segments=max_segments, storage_id=source_id)
                 result["source_id"] = source_id
             except Exception as yt_err:
                 msg = (f"[{source_id}] YouTube API Transcript failed: {yt_err}. "
