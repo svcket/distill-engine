@@ -82,10 +82,10 @@ const STAGES: WorkflowStage[] = [
     { id: "summary", label: "Source Summary", description: "Concise summary and key framework identification", icon: FileText, hidden: true },
     { id: "packet", label: "Density Mapping", description: "Identify high-signal segments for extraction", icon: Target, hidden: true },
     { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles },
-    { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (sid, params) => ({ transcriptId: sid, type: params?.type, audience: params?.audience, tone: params?.tone }) },
-    { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (sid, params) => ({ transcriptId: sid, type: params?.type, audience: params?.audience, tone: params?.tone }) },
-    { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (sid) => ({ sourceId: sid }) },
-    { id: "socialise", label: "Social content", description: "Generate X threads, LinkedIn posts, and distribution assets", icon: Share2, apiEndpoint: "/api/socialise", apiBody: (sid) => ({ transcriptId: sid }) },
+    { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (sid, params) => ({ sourceId: sid, transcriptId: sid, type: params?.type, audience: params?.audience, tone: params?.tone }) },
+    { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (sid, params) => ({ sourceId: sid, transcriptId: sid, type: params?.type, audience: params?.audience, tone: params?.tone }) },
+    { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (sid) => ({ sourceId: sid, transcriptId: sid }) },
+    { id: "socialise", label: "Social content", description: "Generate X threads, LinkedIn posts, and distribution assets", icon: Share2, apiEndpoint: "/api/socialise", apiBody: (sid) => ({ sourceId: sid, transcriptId: sid }) },
 ];
 
 const INTENT_DESCRIPTIONS: Record<string, string> = {
