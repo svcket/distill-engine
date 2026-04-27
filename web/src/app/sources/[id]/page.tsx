@@ -530,10 +530,15 @@ function SourceMissionControlContent() {
 
                         setLogs(prev => [{ event: "Analysis Cluster completed (Refine, Summary, Insights)", time: "Just now", status: "success" }, ...prev]);
                         
-                        const angleIndex = STAGES.findIndex(s => s.id === "angle");
-                        i = angleIndex - 1; 
+                        // PIIPELINE PAUSE POINT: We halt execution here to allow the user to review insights 
+                        // and configure the Editorial Strategy (Intent) before continuing.
+                        setLogs(prev => [{ event: `Pipeline paused for review. Please check insights and configure Framing/Intent.`, time: "Just now", status: "info" }, ...prev])
+                        setError({ message: `Pipeline waiting for Editorial Strategy. Please confirm your intent options below.`, type: "info" })
+                        
+                        isRunningAllRef.current = false
+                        setIsRunningAll(false);
                         setExecutingStage(null);
-                        continue; 
+                        break; 
                     } else {
                         // IT FAILED OR PAUSED IN BACKEND
                         const failMsg = clusterData.error || results?.error_detail || "Analysis Paused: Insufficient source context";
@@ -810,60 +815,68 @@ function SourceMissionControlContent() {
                     }
                 } else {
                     data = await res.json()
-                    if (!res.ok) throw new Error(data?.error || "Execution failed")
+                    if (!res.ok) {
+                        const errorDetails = data?.details ? (typeof data.details === 'string' ? data.details : JSON.stringify(data.details)) : "";
+                        throw new Error(`[${data?.error || "Execution failed"}] ${errorDetails}`)
+                    }
+                    
+                    // Verify execution actually returned success state
+                    if (data?.status === 'failed') throw new Error(data.error || "Stage failed")
                 }
 
                 const resValue = (data?.result || data) as StageResultData
-                if (resValue) {
-                    setStageResults(prev => {
-                        const next = { ...prev, [stage.id]: resValue }
-                        if (stage.id === "cluster" && typeof resValue === "object") {
-                            const cr = resValue as Record<string, unknown>
-                            if (cr.summary) next.summary = cr.summary as StageResultData
-                            if (cr.packet) next.packet = cr.packet as StageResultData
-                            if (cr.insights) next.insights = cr.insights as StageResultData
-                        }
-                        return next
-                    })
-                    currentResults[stage.id] = resValue 
+                if (!resValue) {
+                    throw new Error(`[Execution Error] ${stage.label} produced no output data. The pipeline execution crashed silently.`)
+                }
+                
+                setStageResults(prev => {
+                    const next = { ...prev, [stage.id]: resValue }
                     if (stage.id === "cluster" && typeof resValue === "object") {
                         const cr = resValue as Record<string, unknown>
-                        if (cr.summary) currentResults.summary = cr.summary as StageResultData
-                        if (cr.packet) currentResults.packet = cr.packet as StageResultData
-                        if (cr.insights) currentResults.insights = cr.insights as StageResultData
+                        if (cr.summary) next.summary = cr.summary as StageResultData
+                        if (cr.packet) next.packet = cr.packet as StageResultData
+                        if (cr.insights) next.insights = cr.insights as StageResultData
                     }
+                    return next
+                })
+                currentResults[stage.id] = resValue 
+                if (stage.id === "cluster" && typeof resValue === "object") {
+                    const cr = resValue as Record<string, unknown>
+                    if (cr.summary) currentResults.summary = cr.summary as StageResultData
+                    if (cr.packet) currentResults.packet = cr.packet as StageResultData
+                    if (cr.insights) currentResults.insights = cr.insights as StageResultData
+                }
 
-                    if (stage.id === "transcript") {
-                        const tsData = (resValue as TranscriptResult);
-                        const segments = tsData?.segments || (resValue as { result?: { segments?: unknown[] } })?.result?.segments;
-                        const status = (resValue as {status?: string}).status || (resValue as {result?: {status?: string}}).result?.status;
-                        
-                        // Relaxed Gating: If no segments, warn but DO NOT halt
-                        if ((!segments || segments.length === 0) && status !== 'rescued_text' && status !== 'unavailable') {
-                            const errorMsg = "Note: Full audio transcript unavailable. Proceeding with show notes/metadata.";
-                            setLogs(prev => [{ event: errorMsg, time: "Just now", status: "info" }, ...prev]);
-                        }
-                        
-                        // Show high-fidelity context banner if metadata-only
-                        if (status === 'rescued_text') {
-                            setLogs(prev => [{ 
-                                event: "Audio restricted; proceeding with Official Source Context Intelligence.", 
-                                time: "Just now", 
-                                status: "info" 
-                            }, ...prev]);
-                            setError({ 
-                                message: "Audio restricted by platform. Distill is analyzing the Official Source Context to generate intelligence.", 
-                                type: "info" 
-                            });
-                        }
+                if (stage.id === "transcript") {
+                    const tsData = (resValue as TranscriptResult);
+                    const segments = tsData?.segments || (resValue as { result?: { segments?: unknown[] } })?.result?.segments;
+                    const status = (resValue as {status?: string}).status || (resValue as {result?: {status?: string}}).result?.status;
+                    
+                    // Relaxed Gating: If no segments, warn but DO NOT halt
+                    if ((!segments || segments.length === 0) && status !== 'rescued_text' && status !== 'unavailable') {
+                        const errorMsg = "Note: Full audio transcript unavailable. Proceeding with show notes/metadata.";
+                        setLogs(prev => [{ event: errorMsg, time: "Just now", status: "info" }, ...prev]);
                     }
-
-                    if (panelContent && panelContent.stageId === stage.id) {
-                        setPanelContent({
-                            ...panelContent,
-                            data: resValue
+                    
+                    // Show high-fidelity context banner if metadata-only
+                    if (status === 'rescued_text') {
+                        setLogs(prev => [{ 
+                            event: "Audio restricted; proceeding with Official Source Context Intelligence.", 
+                            time: "Just now", 
+                            status: "info" 
+                        }, ...prev]);
+                        setError({ 
+                            message: "Audio restricted by platform. Distill is analyzing the Official Source Context to generate intelligence.", 
+                            type: "info" 
                         });
                     }
+                }
+
+                if (panelContent && panelContent.stageId === stage.id) {
+                    setPanelContent({
+                        ...panelContent,
+                        data: resValue
+                    });
                 }
 
                 setCompletedStages(prev => {

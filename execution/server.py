@@ -279,11 +279,11 @@ async def run_script_stream(run_req: RunRequest, x_api_key: str = Header(None)):
             trimmed = line.strip()
             if not trimmed: continue
             
-            # Simple heuristic: if it's JSON, it might be the final payload
-            if (trimmed.startswith('{') and trimmed.endsWith('}')) or (trimmed.startswith('[') and trimmed.endsWith(']')):
+            # If the script emitted valid JSON, forward it as-is to preserve stream chunk types
+            if (trimmed.startswith('{') and trimmed.endswith('}')) or (trimmed.startswith('[') and trimmed.endswith(']')):
                 try:
-                    parsed = json.loads(trimmed)
-                    yield json.dumps({"type": "payload", "data": parsed}) + "\n"
+                    json.loads(trimmed)
+                    yield trimmed + "\n"
                     continue
                 except: pass
                 

@@ -282,8 +282,8 @@ function InsightsResult({ data, compact }: { data: Record<string, unknown>; comp
     const implications = getArr(d, "implications")
     const quotes = getArr(d, "memorable_quotes")
     
-    // Check for is_rescued flag in d or data
-    const isRescued = d.is_rescued === true || data.is_rescued === true
+    // Check for is_rescued flag in d or data, or if status indicates a rescue/fallback
+    const isRescued = d.is_rescued === true || data.is_rescued === true || d.status === "rescued" || data.status === "rescued" || d.status === "success_fallback" || data.status === "success_fallback"
 
     if (compact) {
         return (
