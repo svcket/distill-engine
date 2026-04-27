@@ -415,6 +415,14 @@ function SourceMissionControlContent() {
         // set), NOT from getFirstIncompleteIndex() which reads stale React state.
         const tStatusNow = source?.transcriptStatus
         const isTranscriptDoneNow = tStatusNow === "transcribed" || tStatusNow === "rescued_text" || tStatusNow === "unavailable"
+        // Parallel stage guard: if both parallel stages are done, we consider the pipeline complete
+        if (authorativeCompleted.has("qa") || authorativeCompleted.has("socialise")) {
+            console.log("[Pipeline] Parallel stages detected as complete. Marking pipeline finished.")
+            isRunningAllRef.current = false
+            setIsRunningAll(false)
+            setShowCelebration(true)
+            return
+        }
         
         let startIndex = 0
         const currentCompletedIds = new Set(authorativeCompleted)

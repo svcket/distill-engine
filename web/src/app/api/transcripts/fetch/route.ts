@@ -5,6 +5,7 @@ import { runPythonScript } from '@/lib/python-runner';
 import { formatDuration } from '@/lib/utils';
 import fs from 'fs';
 import { getSafeTmpDir, getSafeTmpPath } from '@/lib/fs-utils';
+import { supabaseAdmin } from '@/lib/supabase';
 
 interface StagePayload {
     status?: string;
@@ -143,8 +144,25 @@ export async function POST(request: Request) {
                         finalSegments = scriptSegments;
                     }
 
-                    fs.writeFileSync(getSafeTmpPath(`${sourceId}_raw.json`, `transcripts/${sourceId}`), JSON.stringify(finalSegments, null, 2));
+                    const jsonPath = getSafeTmpPath(`${sourceId}_raw.json`, `transcripts/${sourceId}`);
+                    const jsonString = JSON.stringify(finalSegments, null, 2);
+                    
+                    fs.writeFileSync(jsonPath, jsonString);
                     fs.writeFileSync(getSafeTmpPath(`${sourceId}_raw.txt`, `transcripts/${sourceId}`), finalSegments.map(s => s.text).join("\n\n"));
+                    
+                    if (supabaseAdmin) {
+                        try {
+                            const { error: uploadErr } = await supabaseAdmin.storage
+                                .from('transcripts')
+                                .upload(`${sourceId}/${sourceId}_raw.json`, jsonString, {
+                                    upsert: true,
+                                    contentType: 'application/json'
+                                });
+                            if (uploadErr) console.error("[Rescue] Base Supabase Upload Error:", uploadErr);
+                        } catch (e) {
+                            console.error("[Rescue] Base Supabase Exception:", e);
+                        }
+                    }
                 } catch (e) {
                     console.error("[Rescue] FS Error", e);
                 }
@@ -171,8 +189,23 @@ export async function POST(request: Request) {
                         { text: `[Source Context: ${metadata.title || 'Untitled'}]\n\n${desc}`, start: 0, duration: 0 }
                     ];
                     try {
-                        fs.writeFileSync(getSafeTmpPath(`${sourceId}_raw.json`, `transcripts/${sourceId}`), JSON.stringify(enrichedSegments, null, 2));
+                        const enrichedJsonString = JSON.stringify(enrichedSegments, null, 2);
+                        fs.writeFileSync(getSafeTmpPath(`${sourceId}_raw.json`, `transcripts/${sourceId}`), enrichedJsonString);
                         fs.writeFileSync(getSafeTmpPath(`${sourceId}_raw.txt`, `transcripts/${sourceId}`), enrichedSegments[0].text);
+                        
+                        if (supabaseAdmin) {
+                            try {
+                                const { error: uploadErr } = await supabaseAdmin.storage
+                                    .from('transcripts')
+                                    .upload(`${sourceId}/${sourceId}_raw.json`, enrichedJsonString, {
+                                        upsert: true,
+                                        contentType: 'application/json'
+                                    });
+                                if (uploadErr) console.error("[Rescue] Enriched Supabase Upload Error:", uploadErr);
+                            } catch (e) {
+                                console.error("[Rescue] Enriched Supabase Exception:", e);
+                            }
+                        }
                     } catch (err) {
                         console.error("[Rescue] Enrich Error", err);
                     }
