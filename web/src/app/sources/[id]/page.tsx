@@ -215,6 +215,9 @@ function SourceMissionControlContent() {
     useEffect(() => {
         if (!source || !source.completedStages) return
         
+        // Prevent overwriting the active session state during pipeline execution
+        if (isHydrated) return
+        
         const initial = new Set<StageId>()
         
         // Sync from the database record
@@ -231,7 +234,8 @@ function SourceMissionControlContent() {
         }
         
         setCompletedStages(initial)
-    }, [source.completedStages, source.score, source.transcriptStatus])
+        setIsHydrated(true)
+    }, [source.completedStages, source.score, source.transcriptStatus, isHydrated])
 
 
 
