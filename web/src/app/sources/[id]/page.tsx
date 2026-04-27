@@ -741,7 +741,15 @@ function SourceMissionControlContent() {
                 })
 
                 let data: StagePayload | null = null;
-                if ((stage.id === "draft" || stage.id === "insights") && res.body) {
+                
+                if (!res.ok) {
+                    data = await res.json()
+                    const errorData = data as any;
+                    const errorDetails = errorData?.details ? (typeof errorData.details === 'string' ? errorData.details : JSON.stringify(errorData.details)) : "";
+                    throw new Error(`[${data?.error || "Execution failed"}] ${errorDetails}`)
+                }
+
+                if ((["draft", "insights", "angle", "qa", "socialise"].includes(stage.id)) && res.body) {
                     const reader = res.body.getReader();
                     const decoder = new TextDecoder();
                     let fullContent = "";
@@ -815,12 +823,6 @@ function SourceMissionControlContent() {
                     }
                 } else {
                     data = await res.json()
-                    if (!res.ok) {
-                        const errorData = data as any;
-                        const errorDetails = errorData?.details ? (typeof errorData.details === 'string' ? errorData.details : JSON.stringify(errorData.details)) : "";
-                        throw new Error(`[${data?.error || "Execution failed"}] ${errorDetails}`)
-                    }
-                    
                     // Verify execution actually returned success state
                     if (data?.status === 'failed') throw new Error(data.error || "Stage failed")
                 }
@@ -828,6 +830,14 @@ function SourceMissionControlContent() {
                 const resValue = (data?.result || data) as StageResultData
                 if (!resValue) {
                     throw new Error(`[Execution Error] ${stage.label} produced no output data. The pipeline execution crashed silently.`)
+                }
+                
+                // CRITICAL: Explicitly fail the pipeline if the returned payload contains an error
+                if (typeof resValue === 'object' && resValue !== null) {
+                    const rv = resValue as Record<string, unknown>;
+                    if (rv.status === 'failed' || rv.status === 'error') {
+                        throw new Error(`[Execution Error] ${rv.error || rv.message || "Stage failed"}`);
+                    }
                 }
                 
                 setStageResults(prev => {
