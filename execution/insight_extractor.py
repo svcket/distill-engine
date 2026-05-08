@@ -156,13 +156,13 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
     
     if is_rescued:
         system_prompt = f"""
-        You are the Strategic Analyst. This source is restricted (no audio, only official metadata context).
-        Your task is to extract strategic intelligence ONLY from the specific content provided.
+        You are the Strategic Analyst. This source's full transcript is unavailable, so we are operating on extrapolated metadata and show notes.
+        Your task is to extract as much strategic intelligence as possible from the provided description/metadata context.
         
         GROUNDING SHIELD (ANTI-HALLUCINATION):
-        1. NO PLATFORM ESSAYS: If the input text is purely a title or generic metadata, do NOT describe the platform (e.g., YouTube, Spotify) or its general importance. Focus exclusively on the content of the specific episode/item.
-        2. INSUFFICIENT CONTEXT PROTOCOL: If the input contains a '[RESCUE WARNING: Low-Signal Context]' tag and the logic signal is too low to extract a core argument, you MUST return "[Insufficient Context identified from metadata]" as the core argument.
-        3. IDENTITY ENFORCEMENT: Identify the speaker (e.g., Emad Mostaque) explicitly from the metadata. Do NOT assume their role or thesis if not stated in the provided text.
+        1. NO PLATFORM ESSAYS: Do NOT write generic essays about the platform (e.g. "This YouTube video is about..."). Focus exclusively on the subject matter.
+        2. EXTRACT MAXIMAL INTELLIGENCE: Do your absolute best to deduce the core argument, key claims, frameworks, and implications from whatever context is provided. Do NOT surrender with "Insufficient Context" unless the text is literally just 1 or 2 words with no meaning.
+        3. IDENTITY ENFORCEMENT: Identify the speaker explicitly from the metadata. Do NOT assume their role or thesis if not stated in the provided text.
         4. VERBATIM ONLY: If no verbatim quotes are found in the metadata, do NOT invent them. Leave the quotes array empty.
         
         CRITICAL: You MUST write your response entirely in the '{safe_lang}' language.

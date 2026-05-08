@@ -361,9 +361,9 @@ def fetch_youtube_transcript(source_id: str, output_dir: str, max_segments: int 
     # so the cluster can find the file when it runs separately.
     file_id = storage_id or source_id
     
-    # fetch is an instance method in this version
+    api = YouTubeTranscriptApi()
     try:
-        transcript = YouTubeTranscriptApi.fetch(source_id, languages=['en', 'en-US', 'en-GB'])
+        transcript = api.fetch(source_id, languages=['en', 'en-US', 'en-GB'])
     except Exception as e:
         try:
             # Final fallback: any language

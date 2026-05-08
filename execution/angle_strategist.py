@@ -19,6 +19,12 @@ class AngleStrategy(BaseModel):
     recommended_format: str = Field(description="Primary format (e.g., 'Long-form Essay', 'X Thread')")
     secondary_formats: List[str] = Field(description="Alternative formats that fit well.")
     target_audience: str = Field(description="Who is this for?")
+    tone: str = Field(default="Authoritative", description="The optimal writing tone (e.g., 'Authoritative', 'Conversational').")
+    reading_level: str = Field(default="Intermediate", description="Target reading level (e.g., 'Expert', 'Beginner').")
+    seo_priority: str = Field(default="", description="What SEO keywords or concepts to target.")
+    source_grounding_mode: str = Field(default="Strict", description="How closely to stick to the source (e.g., 'Strict', 'Loose').")
+    must_include: List[str] = Field(default_factory=list, description="Crucial elements that must be included.")
+    avoid_patterns: List[str] = Field(default_factory=list, description="Clichés or patterns to avoid.")
     framing_angle: str = Field(description="The central hook or narrative angle.")
     working_titles: List[str] = Field(description="3-5 punchy title ideas.")
     rationale: str = Field(description="Why this angle?")
@@ -47,6 +53,12 @@ def extract_angle(
         recommended_format: str = Field(description="Primary format (e.g., 'Long-form Essay', 'X Thread')")
         secondary_formats: List[str] = Field(description="Alternative formats that fit well.")
         target_audience: str = Field(description="Who is this for?")
+        tone: str = Field(default="Authoritative", description="The optimal writing tone (e.g., 'Authoritative', 'Conversational').")
+        reading_level: str = Field(default="Intermediate", description="Target reading level (e.g., 'Expert', 'Beginner').")
+        seo_priority: str = Field(default="", description="What SEO keywords or concepts to target.")
+        source_grounding_mode: str = Field(default="Strict", description="How closely to stick to the source (e.g., 'Strict', 'Loose').")
+        must_include: List[str] = Field(default_factory=list, description="Crucial elements that must be included.")
+        avoid_patterns: List[str] = Field(default_factory=list, description="Clichés or patterns to avoid.")
         framing_angle: str = Field(description="The central hook or narrative angle.")
         working_titles: List[str] = Field(description="3-5 punchy title ideas.")
         rationale: str = Field(description="Why this angle?")
@@ -97,6 +109,12 @@ def extract_angle(
                 "recommended_format": target_type or "Technical Deep Dive Essay",
                 "secondary_formats": ["X Thread", "LinkedIn Post"],
                 "target_audience": target_audience or "Senior engineers and Product managers",
+                "tone": target_tone or "Professional",
+                "reading_level": "Intermediate",
+                "seo_priority": "AI Orchestration, Agentic Systems",
+                "source_grounding_mode": "Strict",
+                "must_include": ["System architecture", "Failure modes"],
+                "avoid_patterns": ["Hype words", "Generic tech jargon"],
                 "framing_angle": f"Automatic Angle for {target_type or 'Essay'}: How rigid structure enables loose agency.",
                 "working_titles": ["The Agency Paradox", "Building Scaffolds"],
                 "rationale": f"Targeted at {target_audience or 'Builders'} with a {target_tone or 'Professional'} tone."
@@ -165,6 +183,12 @@ def extract_angle(
             "recommended_format": target_type or "Strategic Overview",
             "secondary_formats": ["X Thread", "LinkedIn Newsletter"],
             "target_audience": target_audience or "The Distill Community",
+            "tone": target_tone or "Professional",
+            "reading_level": "Intermediate",
+            "seo_priority": "High level context",
+            "source_grounding_mode": "Strict",
+            "must_include": [],
+            "avoid_patterns": ["Generic tech jargon"],
             "framing_angle": f"The '{source_title}' Perspective: A Meta-Analysis of {source_creator}'s latest contribution.",
             "working_titles": [
                 f"Analyzing {source_title}",
