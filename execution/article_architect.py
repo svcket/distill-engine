@@ -156,8 +156,57 @@ def generate_blueprint(angle_path: str, insights_path: str, lang: str = "en"):
         print(json.dumps(bundle))
         
     except Exception as e:
-        print(json.dumps({"status": "failed", "error": str(e)}), file=sys.stderr)
-        sys.exit(1)
+        error_msg = str(e)
+        print(f"[{source_id}] Architect: OpenAI call failed ({error_msg}). Writing fallback outline to prevent pipeline stall.", file=sys.stderr)
+        
+        # ZERO-FAILURE FALLBACK: Build a minimal outline from angle data so writer.py never stalls.
+        # This allows the pipeline to continue even when OpenAI quota/rate limits are hit.
+        fallback_title = (angle_data.get("working_titles") or ["Draft"])[0]
+        fallback_format = angle_data.get("recommended_format", "Blog Article")
+        
+        fallback_result = {
+            "status": "success_fallback",
+            "source_id": source_id,
+            "error_hint": error_msg,
+            "data": {
+                "title": fallback_title,
+                "format": fallback_format,
+                "total_word_count_target": 800,
+                "sections": [
+                    {
+                        "heading": "Introduction",
+                        "word_count_target": 150,
+                        "purpose": "Establish the premise",
+                        "key_points": ["State the central thesis clearly."]
+                    },
+                    {
+                        "heading": "Core Analysis",
+                        "word_count_target": 450,
+                        "purpose": "Develop the argument with evidence from the source",
+                        "key_points": ["Surface the key claims.", "Ground each point in the transcript.", "Draw out frameworks and examples."]
+                    },
+                    {
+                        "heading": "Implications & Takeaways",
+                        "word_count_target": 200,
+                        "purpose": "So what? Second-order effects",
+                        "key_points": ["State what this means for the reader.", "End with a clear point of view."]
+                    }
+                ]
+            }
+        }
+        
+        out_dir = get_safe_tmp_dir("outlines")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f"{source_id}_outline.json")
+        with open(out_path, 'w', encoding='utf-8') as f:
+            json.dump(fallback_result, f, indent=2)
+            
+        try:
+            from supabase_utils import upload_artifact
+            upload_artifact("outlines", source_id, out_path)
+        except Exception: pass
+        
+        print(json.dumps(fallback_result))
 
 # Deployment cache buster: Fri Apr 17 09:28:34 WAT 2026
 
