@@ -1771,35 +1771,18 @@ def fetch_transcript(
                             except Exception: pass
                     
                     # FINAL DEFENSE: Apify Universal Scavenger Rescue
+                    # NOTE: Apify's YouTube Scraper returns generic platform metadata, not video-specific transcripts.
+                    # For YouTube, the native transcript API + Whisper are already sufficient fallbacks.
+                    # Apify rescue is reserved for truly opaque sources (private websites, Spotify, etc.)
                     from scavenger_hub import ScavengerHub, trigger_scavenger_rescue
                     hub_check = ScavengerHub()
                     if not hub_check.is_available():
-                        print(f"[{source_id}] SCAVENGER SKIPPED: 'APIFY_TOKEN' not set. Restricted content cannot be recovered.", file=sys.stderr)
+                        print(f"[{source_id}] SCAVENGER SKIPPED: 'APIFY_TOKEN' not set.", file=sys.stderr)
+                        raise whisper_err
                     else:
-                        print(f"[{source_id}] SCAVENGER: All local methods failed. Launching cloud-scrapper rescue...", file=sys.stderr)
-                    
-                    rescue_res = trigger_scavenger_rescue("youtube", source_url or f"https://www.youtube.com/watch?v={yt_id}")
-                    
-                    if rescue_res:
-                        print(f"[{source_id}] SCAVENGER SUCCESS: Cloud rescue recovered {len(rescue_res)} characters of intelligence.", file=sys.stderr)
-                        # Transform to our internal format and save
-                        json_path = os.path.join(output_dir, f"{source_id}_raw.json")
-                        txt_path = os.path.join(output_dir, f"{source_id}_raw.txt")
-                        
-                        with open(json_path, "w", encoding="utf-8") as f:
-                            json.dump(rescue_res, f, indent=2)
-                        with open(txt_path, "w", encoding="utf-8") as f:
-                            f.write("\n\n".join(str(c.get("text", "")) for c in rescue_res))
-                            
-                        result = {
-                            "source_id": source_id,
-                            "status": "success",
-                            "json_path": json_path,
-                            "text_path": txt_path,
-                            "segment_count": len(rescue_res)
-                        }
-                    else:
-                        print(f"[{source_id}] SCAVENGER FAILED: Cloud rescue yielded no results. Final failure.", file=sys.stderr)
+                        # YouTube: Skip Apify — it returns generic channel/platform data, not transcripts.
+                        # Both native transcript API and Whisper have already failed; fail gracefully.
+                        print(f"[{source_id}] SCAVENGER SKIPPED for YouTube: native transcript + Whisper are the correct fallbacks. Apify YouTube Scraper returns platform-level metadata, not video transcripts.", file=sys.stderr)
                         raise whisper_err
 
         elif source_type in ("podcast", "upload", "vimeo", "recording", "apple_podcast", "spotify_podcast", "spotify"):
