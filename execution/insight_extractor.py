@@ -103,10 +103,14 @@ def extract_insights(packet_path: str, lang: str = "en") -> Dict[str, Any]:
         
         # If the summary stage produced a rescue message, it might be in the summary file
         # which is NOT in the packet yet. But we have results in the cluster if called via orchestrator.
-        # Check for shell/rescued messages
-        if description and "Analysis Rescue Active" in description:
-            # Try to find something better than just the rescue message
-            description = meta.get("title") or description
+        # Check for shell/rescued messages or generic platform boilerplate
+        generic_boilerplate = "YouTube is a platform designed for individuals to enjoy"
+        if description and ("Analysis Rescue Active" in description or "[Ingestion Incomplete]" in description or generic_boilerplate in description):
+            # If it's just the boilerplate or rescue msg, try to fallback to title, or else it will be thin
+            if generic_boilerplate in description or "[Ingestion Incomplete]" in description:
+                description = None # Force THIN CONTENT GATE
+            else:
+                description = meta.get("title") or description
 
         if description:
             transcript_text = f"[Source Description/Context]: {description}"

@@ -57,7 +57,11 @@ async function runPythonScriptRemote<T>(
         console.log(`[Python Runner] Proxying to Remote Backend: ${backendUrl}/run (${scriptName})`)
         
         const globalForwardEnv = {
+            OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+            YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || '',
             APIFY_TOKEN: process.env.APIFY_TOKEN || '',
+            SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+            NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
             ...options.env
         };
 
@@ -203,7 +207,11 @@ export async function runPythonScriptStream(
     console.log(`[Python Runner] Initiating Stream Proxy: ${backendUrl}/run-stream (${scriptName})`)
     
     const globalForwardEnv = {
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+        YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || '',
         APIFY_TOKEN: process.env.APIFY_TOKEN || '',
+        SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+        NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
         ...options.env
     };
 

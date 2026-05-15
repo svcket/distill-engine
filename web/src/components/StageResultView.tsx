@@ -488,18 +488,18 @@ function AngleResult({ data }: { data: Record<string, unknown> }) {
                     {displayFormat || "Article"}
                 </Badge>
                 {audience && (
-                    <Badge variant="secondary" className="flex items-center h-8 px-4 text-[13px] text-muted-foreground/80">
+                    <Badge variant="outline" className="flex items-center h-8 px-4 text-[13px] text-muted-foreground/80 border-border/30">
                         {audience.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
                     </Badge>
                 )}
                 {tone && (
-                    <Badge variant="secondary" className="flex items-center h-8 px-4 text-[13px] text-muted-foreground/80">
+                    <Badge variant="outline" className="flex items-center h-8 px-4 text-[13px] text-muted-foreground/80 border-border/30">
                         {tone.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
                     </Badge>
                 )}
                 {seoPriority && (
-                    <Badge variant="secondary" className="flex items-center h-8 px-4 text-[13px] text-muted-foreground/80">
-                        SEO: {seoPriority}
+                    <Badge variant="outline" className="flex items-center h-auto py-2 px-4 text-[13px] text-muted-foreground/80 border-border/30">
+                        <span className="font-bold mr-1 shrink-0">SEO:</span> {seoPriority}
                     </Badge>
                 )}
             </div>

@@ -1489,6 +1489,26 @@ function SourceMissionControlContent() {
                             });
                         } catch (e) { console.error("Prisma fixation failed:", e); }
                     }
+
+                    // 4. Draft Studio Fixation
+                    if (stage.id === "draft") {
+                        const draftContent = resObj.content || resObj.text || (typeof resObj === "string" ? resObj : "");
+                        const draftTitle = resObj.title || source?.title || "Generated Draft";
+                        
+                        if (draftContent) {
+                            try {
+                                await fetch("/api/drafts/save", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                        id: `draft_${id}`, 
+                                        content: draftContent,
+                                        title: draftTitle
+                                    })
+                                });
+                            } catch (e) { console.error("Draft save failed:", e); }
+                        }
+                    }
                 }
 
             // Add log
