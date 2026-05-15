@@ -874,7 +874,7 @@ function SocialiseResult({ data, sourceId }: { data: Record<string, unknown>; so
 
     return (
         <div className="space-y-6 pb-12">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 p-1 bg-muted/20 rounded-2xl border border-border/40 overflow-visible relative z-30">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 p-1 rounded-2xl border border-border/40 overflow-visible relative z-30">
                 <div className="p-4 space-y-1">
                     <p className="text-sm font-semibold text-foreground flex items-center gap-2">
                         <ShareIcon className="w-4 h-4 text-brand" />
@@ -919,7 +919,7 @@ function SocialiseResult({ data, sourceId }: { data: Record<string, unknown>; so
                         {/* Thread Circle */}
                         <div className="absolute left-4 top-1 w-4 h-4 rounded-full border-2 border-brand bg-background z-10" />
                         
-                        <div className="p-4 rounded-xl border border-border/50 bg-muted/20 hover:bg-muted/30 transition-all relative">
+                        <div className="p-4 rounded-xl border border-border/50 hover:bg-muted/10 transition-all relative">
                             <div className="flex justify-between items-start gap-4 mb-2">
                                 <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
                                     {i === 0 ? "The Hook" : i === allTweets.length - 1 ? "The Conclusion" : `Post ${i + 1}`}

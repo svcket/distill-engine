@@ -17,23 +17,27 @@ export async function POST(request: Request) {
 
         const userId = session.user.id
 
-        // TRUTH CHECK: We use the prisma.draft.upsert to either update an existing draft (by ID) 
-        // or create a new one. Since the incoming 'id' might be a CUID or a temporary frontend ID,
-        // we handle both cases.
-        const draft = await withRetry(() => prisma.draft.upsert({
-            where: { 
-                id: id?.includes('draft_') ? 'new' : id || 'new' 
-            },
-            update: {
-                content,
-                title: title || "Untitled Draft",
-            },
-            create: {
-                userId,
-                content,
-                title: title || "Untitled Draft",
+        // TRUTH CHECK: If no ID or a temporary frontend ID (draft_) is provided, we create a new draft.
+        // Otherwise, we update the existing draft.
+        const draft = await withRetry(() => {
+            if (!id || id.includes('draft_')) {
+                return prisma.draft.create({
+                    data: {
+                        userId,
+                        content,
+                        title: title || "Untitled Draft",
+                    }
+                })
+            } else {
+                return prisma.draft.update({
+                    where: { id },
+                    data: {
+                        content,
+                        title: title || "Untitled Draft",
+                    }
+                })
             }
-        }))
+        })
 
         return NextResponse.json({ 
             success: true, 

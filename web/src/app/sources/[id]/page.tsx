@@ -84,8 +84,8 @@ const STAGES: WorkflowStage[] = [
     { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles },
     { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (sid, params) => ({ sourceId: sid, transcriptId: sid, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (sid, params) => ({ sourceId: sid, transcriptId: sid, type: params?.type, audience: params?.audience, tone: params?.tone }) },
-    { id: "qa", label: "Analyze Matrix", description: "Score publishability and strategic alignment matrix", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (sid) => ({ sourceId: sid, transcriptId: sid }) },
-    { id: "socialise", label: "Social content", description: "Generate X threads, LinkedIn posts, and distribution assets", icon: Share2, apiEndpoint: "/api/socialise", apiBody: (sid) => ({ sourceId: sid, transcriptId: sid }) },
+    { id: "qa", label: "Analyze Matrix", description: "Evaluate against the 8-Point Distill Quality Matrix (DQM) for publishability scoring.", icon: ShieldCheck, apiEndpoint: "/api/execute" },
+    { id: "socialise", label: "Socialise", description: "Generate distribution assets (Threads, Hooks) using the Thread Architect.", icon: Share2, apiEndpoint: "/api/execute" },
 ];
 
 const INTENT_DESCRIPTIONS: Record<string, string> = {
@@ -1377,6 +1377,9 @@ function SourceMissionControlContent() {
                                     break;
                                 } else if (parsed.type === "success" || parsed.status === "success" || (parsed as StagePayload).data) {
                                     data = data || (parsed as StagePayload);
+                                } else if (parsed.hook && parsed.thread && Array.isArray(parsed.thread)) {
+                                    // Handle raw thread_architect.py output
+                                    data = { status: "success", result: parsed };
                                 }
                             } catch {
                                 // Ignore parse errors
@@ -1393,6 +1396,8 @@ function SourceMissionControlContent() {
                                     data = { status: "success", result: parsed.data };
                                 } else if (parsed.type === "success" || parsed.status === "success" || (parsed as StagePayload).data) {
                                     data = data || (parsed as StagePayload);
+                                } else if (parsed.hook && parsed.thread && Array.isArray(parsed.thread)) {
+                                    data = { status: "success", result: parsed };
                                 }
                             } catch {
                                 // Ignore final parse errors

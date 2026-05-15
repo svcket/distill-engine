@@ -65,7 +65,7 @@ const DQMCard = ({
         <TooltipProvider>
             <div className="space-y-8">
                 {/* Publishability Score */}
-                <div className="bg-background p-4 rounded-2xl shadow-sleek border border-border/60 relative overflow-hidden group">
+                <div className="p-4 rounded-2xl shadow-sleek border border-border/60 relative overflow-hidden group">
                     <div className="absolute -right-4 -top-4 w-24 h-24 bg-brand/10 rounded-full blur-2xl group-hover:bg-brand/15 transition-all duration-500" />
                     <div className="flex items-center justify-between mb-4 relative z-10">
                         <div className="flex flex-col">
