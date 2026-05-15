@@ -1342,48 +1342,63 @@ function SourceMissionControlContent() {
 
                 while (true) {
                     const { done, value } = await reader.read();
-                    if (done || shouldAbort) break;
 
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split("\n");
-                    buffer = lines.pop() || "";
+                    if (value) {
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split("\n");
+                        buffer = lines.pop() || "";
 
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (!trimmed) continue;
-                        try {
-                            const parsed = JSON.parse(trimmed);
-                            if (parsed.type === "status") {
-                                setLogs(prev => [{ event: parsed.text, time: "Just now", status: "info" as const }, ...prev]);
-                            } else if (parsed.type === "chunk" && (parsed as StreamChunk).text) {
-                                fullContent += (parsed as StreamChunk).text as string;
-                                setStageResults(prev => ({ 
-                                    ...prev, 
-                                    [stage.id]: { 
-                                        result: { 
-                                            content: fullContent, 
-                                            title: "Generating Draft...",
-                                            word_count: fullContent.trim().split(/\s+/).filter(Boolean).length
+                        for (const line of lines) {
+                            const trimmed = line.trim();
+                            if (!trimmed) continue;
+                            try {
+                                const parsed = JSON.parse(trimmed);
+                                if (parsed.type === "status") {
+                                    setLogs(prev => [{ event: parsed.text, time: "Just now", status: "info" as const }, ...prev]);
+                                } else if (parsed.type === "chunk" && (parsed as StreamChunk).text) {
+                                    fullContent += (parsed as StreamChunk).text as string;
+                                    setStageResults(prev => ({ 
+                                        ...prev, 
+                                        [stage.id]: { 
+                                            result: { 
+                                                content: fullContent, 
+                                                title: "Generating Draft...",
+                                                word_count: fullContent.trim().split(/\s+/).filter(Boolean).length
+                                            } 
                                         } 
-                                    } 
-                                }));
-                            } else if (parsed.type === "payload") {
-                                // Captured final JSON payload from the stream (e.g. angle strategy)
-                                data = { status: "success", result: parsed.data };
-                            } else if (parsed.type === "error") {
-                                // CRITICAL: Stop the stream and report backend error
-                                setError({ message: parsed.message || parsed.error || "A streaming error occurred", type: "error" });
-                                setLogs(prev => [{ event: `${stage.label} failed: ${parsed.message || parsed.error}`, time: "Just now", status: "error" }, ...prev]);
-                                shouldAbort = true;
-                                setExecutingStage(null);
-                                break;
-                            } else if (parsed.type === "success" || parsed.status === "success" || (parsed as StagePayload).data) {
-                                // Capture final payload if it comes with the success signal
-                                data = data || (parsed as StagePayload);
+                                    }));
+                                } else if (parsed.type === "payload") {
+                                    data = { status: "success", result: parsed.data };
+                                } else if (parsed.type === "error") {
+                                    setError({ message: parsed.message || parsed.error || "A streaming error occurred", type: "error" });
+                                    setLogs(prev => [{ event: `${stage.label} failed: ${parsed.message || parsed.error}`, time: "Just now", status: "error" }, ...prev]);
+                                    shouldAbort = true;
+                                    setExecutingStage(null);
+                                    break;
+                                } else if (parsed.type === "success" || parsed.status === "success" || (parsed as StagePayload).data) {
+                                    data = data || (parsed as StagePayload);
+                                }
+                            } catch {
+                                // Ignore parse errors
                             }
-                        } catch {
-                            // Minor parse issues during stream are ignored
                         }
+                    }
+
+                    if (done || shouldAbort) {
+                        // Process any remaining data in the buffer
+                        if (buffer.trim() && !shouldAbort) {
+                            try {
+                                const parsed = JSON.parse(buffer.trim());
+                                if (parsed.type === "payload") {
+                                    data = { status: "success", result: parsed.data };
+                                } else if (parsed.type === "success" || parsed.status === "success" || (parsed as StagePayload).data) {
+                                    data = data || (parsed as StagePayload);
+                                }
+                            } catch {
+                                // Ignore final parse errors
+                            }
+                        }
+                        break;
                     }
                 }
                 
