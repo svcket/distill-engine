@@ -84,8 +84,8 @@ const STAGES: WorkflowStage[] = [
     { id: "insights", label: "Extract Intelligence", description: "Thesis extraction, frameworks, and strategic takeaways", icon: Sparkles },
     { id: "angle", label: "Editorial Strategy", description: "Select framing, audience, and narrative angle", icon: Target, apiEndpoint: "/api/angles/strategize", apiBody: (sid, params) => ({ sourceId: sid, transcriptId: sid, type: params?.type, audience: params?.audience, tone: params?.tone }) },
     { id: "draft", label: "Generate Draft", description: "Full editorial content creation via LLM swarm", icon: Edit3, apiEndpoint: "/api/drafts/generate", apiBody: (sid, params) => ({ sourceId: sid, transcriptId: sid, type: params?.type, audience: params?.audience, tone: params?.tone }) },
-    { id: "qa", label: "Analyze Matrix", description: "Evaluate against the 8-Point Distill Quality Matrix (DQM) for publishability scoring.", icon: ShieldCheck, apiEndpoint: "/api/execute" },
-    { id: "socialise", label: "Socialise", description: "Generate distribution assets (Threads, Hooks) using the Thread Architect.", icon: Share2, apiEndpoint: "/api/execute" },
+    { id: "qa", label: "Analyze Matrix", description: "Evaluate against the 8-Point Distill Quality Matrix (DQM) for publishability scoring.", icon: ShieldCheck, apiEndpoint: "/api/drafts/evaluate", apiBody: (sid) => ({ sourceId: sid, transcriptId: sid }) },
+    { id: "socialise", label: "Socialise", description: "Generate distribution assets (Threads, Hooks) using the Thread Architect.", icon: Share2, apiEndpoint: "/api/socialise", apiBody: (sid) => ({ sourceId: sid, transcriptId: sid }) },
 ];
 
 const INTENT_DESCRIPTIONS: Record<string, string> = {
